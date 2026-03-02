@@ -17,15 +17,10 @@ ORANGE      = (255, 140,   0)
 PURPLE      = (160,  50, 220)
 CYAN        = (  0, 200, 220)
 
-# ── Road appearance ───────────────────────────────────────────────────────────
-ROAD_COLOR      = ( 58,  58,  63)
-ROAD_ALT_COLOR  = ( 50,  50,  55)
+# ── Background ────────────────────────────────────────────────────────────────
+TILE_SIZE       = 100
 GRASS_COLOR     = ( 48, 140,  48)
 GRASS_ALT_COLOR = ( 42, 122,  42)
-RUMBLE_A        = (200,  50,  50)
-RUMBLE_B        = (230, 230, 230)
-LANE_MARK_COLOR = (180, 180, 180)
-CENTER_COLOR    = (255, 210,   0)
 
 # ── Car colours ───────────────────────────────────────────────────────────────
 PLAYER_COLOR   = ( 30, 120, 255)
@@ -43,36 +38,38 @@ PLAYER_W  = 34
 PLAYER_H  = 56
 TRAFFIC_W = 34
 TRAFFIC_H = 56
-PLAYER_Y  = 545      # Fixed screen-y for the player car
 
-# ── Road geometry ─────────────────────────────────────────────────────────────
-ROAD_WIDTH      = 480   # Total road width in pixels
-LANE_COUNT      = 4     # 0-1 oncoming | 2-3 same-direction
-LANE_W          = ROAD_WIDTH // LANE_COUNT   # 120 px each
-SEGMENT_H       = 6     # Pixel height of one road strip
-RUMBLE_W        = 22    # Width of roadside rumble strip
-MAX_CURVE       = 130   # Max road-centre x-offset from screen centre
+# ── Player physics ────────────────────────────────────────────────────────────
+PLAYER_MAX_SPEED = 7.5    # Forward speed cap (px/frame)
+PLAYER_ACCEL     = 0.22   # Throttle acceleration
+PLAYER_BRAKE     = 0.35   # Braking deceleration
+PLAYER_COAST     = 0.975  # Speed retention when coasting
+PLAYER_TURN      = 3.0    # Degrees/frame steering
+PLAYER_GRIP      = 0.82   # Velocity→heading blend per frame
 
-# ── Speed ─────────────────────────────────────────────────────────────────────
-BASE_SPEED  = 3.5
-MAX_SPEED   = 14.0
-SPEED_RAMP  = 0.0006   # Speed added per frame
+# ── Drift ─────────────────────────────────────────────────────────────────────
+DRIFT_TRIGGER    = 0.5    # Minimum speed for drift to activate
+DRIFT_STEER_MULT = 1.4    # Extra slip multiplier
 
-# ── Traffic ───────────────────────────────────────────────────────────────────
-SPAWN_MIN      = 50    # Min frames between spawns
-SPAWN_MAX      = 150   # Max frames between spawns
-ONCOMING_EXTRA = 5.0   # Extra px/frame for oncoming cars (on top of scroll)
-SAME_DIR_DELTA = 1.8   # Base px/frame approach speed for same-direction cars
+# ── Enemies ───────────────────────────────────────────────────────────────────
+ENEMY_INITIAL      = 5
+ENEMY_ADD_EVERY    = 25   # Seconds between +1 enemy
+ENEMY_MAX          = 22
+ENEMY_BASE_SPEED   = 3.0
+ENEMY_SPEED_GROWTH = 0.025   # px/frame added per second of play
+ENEMY_SPEED_CAP    = 7.0
+ENEMY_SPAWN_RADIUS = 700  # World-distance from player to spawn
+ENEMY_DESPAWN_DIST = 1300 # Despawn if farther than this
 
 # ── Fuel ──────────────────────────────────────────────────────────────────────
 FUEL_MAX        = 100.0
-FUEL_DRAIN_BASE = 0.038   # Drain per frame at BASE_SPEED
-FUEL_PICKUP_AMT = 36.0
-FUEL_SPAWN_DIST = 1800    # Distance (scroll-px) between fuel spawns
+FUEL_DRAIN_BASE = 0.038   # Per frame, constant
+FUEL_PICKUP_AMT = 38.0
+FUEL_SPAWN_TIME = 18      # Seconds between spawns
 FUEL_R          = 13      # Pickup circle radius
 
 # ── Upgrades ──────────────────────────────────────────────────────────────────
-UPGRADE_DIST    = 4500   # Distance between upgrade offers
+UPGRADE_TIME    = 40      # Seconds between upgrade offers
 UPGRADE_CHOICES = 3
 
 # ── UI colours ────────────────────────────────────────────────────────────────

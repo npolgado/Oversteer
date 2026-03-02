@@ -20,24 +20,24 @@ ALL_UPGRADES: list[Upgrade] = [
     ),
     Upgrade(
         "fuel_tank", "Extended Tank",
-        "Fuel capacity +30 %. Collected pickup also refuels more.",
+        "Fuel capacity +30 %. Each pickup also refuels more.",
         "common",
     ),
     Upgrade(
         "steady_hands", "Steady Hands",
-        "Steering force +15 %. Quicker lane changes.",
+        "Steering angle +15 %. Turn tighter at speed.",
         "common",
     ),
     Upgrade(
         "lead_foot", "Lead Foot",
-        "Speed cap raised. The road gets faster sooner.",
+        "Top speed +1.5 px/frame. Go even faster.",
         "common",
     ),
 
     # ── Uncommon ──────────────────────────────────────────────────────────
     Upgrade(
         "nitro", "Nitro Boost",
-        "+1 nitro charge. Hold SPACE to burn it for a burst of speed.",
+        "+1 nitro charge. Press SPACE to burn it for a burst of speed.",
         "uncommon",
     ),
     Upgrade(
@@ -51,20 +51,20 @@ ALL_UPGRADES: list[Upgrade] = [
         "uncommon",
     ),
     Upgrade(
-        "road_feel", "Rally Suspension",
-        "Effective road width +50 px. More room to breathe.",
+        "overdrive", "Overdrive",
+        "Top speed +1.0 and grip improved. Push the limits.",
         "uncommon",
     ),
 
     # ── Rare ──────────────────────────────────────────────────────────────
     Upgrade(
         "ghost", "Ghost Mode",
-        "+2 ghost charges. Pass through traffic without dying.",
+        "+2 ghost charges. Pass through enemies without dying.",
         "rare",
     ),
     Upgrade(
         "overclock", "Overclock",
-        "Speed ramp doubled. Risky — but more upgrades come faster.",
+        "Enemy speed growth slowed 40 %. Buy yourself more time.",
         "rare",
     ),
     Upgrade(

@@ -13,15 +13,15 @@ class Modifier:
 ALL_MODIFIERS: list[Modifier] = [
     Modifier(
         "rush_hour", "Rush Hour",
-        "Traffic density doubled. The roads are packed.",
+        "Traffic doubled. The field is swarming with enemies.",
     ),
     Modifier(
         "black_ice", "Black Ice",
         "Slippery surface. Grip is significantly reduced.",
     ),
     Modifier(
-        "narrow", "Narrow Roads",
-        "Road width -30 %. Every swerve counts.",
+        "gridlock", "Gridlock",
+        "50 % more enemy cars from the start. Good luck.",
     ),
     Modifier(
         "low_fuel", "Empty Tank",
@@ -36,11 +36,11 @@ ALL_MODIFIERS: list[Modifier] = [
         "Begin with a free random upgrade.",
     ),
     Modifier(
-        "tailwind", "Tailwind",
-        "Speed starts 20 % higher and ramps faster. High risk.",
+        "adrenaline", "Adrenaline",
+        "Car starts with 25 % higher top speed. High risk.",
     ),
     Modifier(
         "no_fuel", "No Fuel System",
-        "Fuel drains disabled. Pure obstacle avoidance.",
+        "Fuel drain disabled. Pure enemy avoidance.",
     ),
 ]

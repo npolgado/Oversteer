@@ -1,21 +1,22 @@
 """Main game class: state machine, update loop, rendering."""
 
 import sys
+import math
 import random
 import pygame
 
 from .constants import (
-    WIDTH, HEIGHT, FPS, TITLE, GRASS_COLOR,
-    BASE_SPEED, MAX_SPEED, SPEED_RAMP,
-    FUEL_MAX, FUEL_DRAIN_BASE, FUEL_PICKUP_AMT,
-    UPGRADE_DIST, UPGRADE_CHOICES,
-    FUEL_SPAWN_DIST, LANE_COUNT, LANE_W, ROAD_WIDTH,
-    PLAYER_Y,
+    WIDTH, HEIGHT, FPS, TITLE,
+    FUEL_MAX, FUEL_DRAIN_BASE, FUEL_PICKUP_AMT, FUEL_SPAWN_TIME,
+    UPGRADE_TIME, UPGRADE_CHOICES,
+    ENEMY_INITIAL, ENEMY_ADD_EVERY, ENEMY_MAX,
+    ENEMY_BASE_SPEED, ENEMY_SPEED_GROWTH,
+    PLAYER_MAX_SPEED,
 )
-from .road      import Road
-from .player    import Player
-from .traffic   import TrafficManager
-from .pickups   import PickupManager
+from .world   import draw_world
+from .player  import Player
+from .traffic import TrafficManager
+from .pickups import PickupManager
 from .upgrades  import ALL_UPGRADES, Upgrade
 from .modifiers import ALL_MODIFIERS, Modifier
 from .ui import (
@@ -39,24 +40,32 @@ class Game:
         self.state = MENU
 
         # Run-time objects (created fresh each run)
-        self.road:    Road           = None
         self.player:  Player         = None
         self.traffic: TrafficManager = None
         self.pickups: PickupManager  = None
 
+        # Camera (top-left world coordinate)
+        self.cam_x = 0.0
+        self.cam_y = 0.0
+
         # Run state
-        self.scroll_speed    = BASE_SPEED
-        self.distance        = 0.0
-        self.fuel            = FUEL_MAX
-        self.fuel_max        = FUEL_MAX
-        self.fuel_siphon     = 1.0   # multiplier for fuel pickup (double_fuel upgrade)
-        self.speed_ramp      = SPEED_RAMP
-        self.active_upgrades: list[Upgrade]  = []
+        self.time_alive    = 0.0
+        self.distance      = 0.0
+        self.fuel          = FUEL_MAX
+        self.fuel_max      = FUEL_MAX
+        self.fuel_siphon   = 1.0
+        self.enemy_speed   = ENEMY_BASE_SPEED
+        self._speed_growth = ENEMY_SPEED_GROWTH   # may be modified by overclock
+
+        self.active_upgrades: list[Upgrade]   = []
         self.active_modifier: Modifier | None = None
-        self.death_reason    = ""
-        self.max_speed_reached = BASE_SPEED
-        self.next_upgrade_at = UPGRADE_DIST
-        self.next_fuel_at    = FUEL_SPAWN_DIST
+        self.death_reason  = ""
+
+        self.next_upgrade_at = UPGRADE_TIME
+        self.next_fuel_at    = FUEL_SPAWN_TIME
+        self.next_difficulty = float(ENEMY_ADD_EVERY)
+
+        self._fuel_drain_disabled = False
 
         # Selection pools
         self.modifier_pool: list[Modifier] = []
@@ -119,52 +128,45 @@ class Game:
         self.state = MODIFIER_SELECT
 
     def _start_run(self, modifier: Modifier):
-        self.active_modifier  = modifier
-        self.active_upgrades  = []
-        self.death_reason     = ""
+        self.active_modifier = modifier
+        self.active_upgrades = []
+        self.death_reason    = ""
 
-        # Modifier-adjusted settings
-        road_width            = ROAD_WIDTH
-        spawn_interval_factor = 1.0
-        start_fuel            = FUEL_MAX
-        start_speed           = BASE_SPEED
-        self.speed_ramp       = SPEED_RAMP
-        self.fuel_siphon      = 1.0
-        fuel_drain_disabled   = False
+        enemy_count         = ENEMY_INITIAL
+        start_fuel          = FUEL_MAX
+        fuel_drain_disabled = False
+        self.fuel_siphon    = 1.0
+        self.enemy_speed    = ENEMY_BASE_SPEED
+        self._speed_growth  = ENEMY_SPEED_GROWTH
 
         mid = modifier.id
-        if mid == "narrow":
-            road_width = int(ROAD_WIDTH * 0.70)
-        elif mid == "rush_hour":
-            spawn_interval_factor = 0.50
+        if mid == "rush_hour":
+            enemy_count = ENEMY_INITIAL * 2
+        elif mid == "gridlock":
+            enemy_count = int(ENEMY_INITIAL * 1.5)
         elif mid == "low_fuel":
             start_fuel = FUEL_MAX * 0.50
-        elif mid == "tailwind":
-            start_speed   = BASE_SPEED * 1.20
-            self.speed_ramp = SPEED_RAMP * 1.60
         elif mid == "no_fuel":
             fuel_drain_disabled = True
 
         self._fuel_drain_disabled = fuel_drain_disabled
-        self.fuel_max    = FUEL_MAX
-        self.fuel        = start_fuel
-        self.scroll_speed = start_speed
-        self.distance    = 0.0
-        self.max_speed_reached = start_speed
-        self.next_upgrade_at = UPGRADE_DIST
-        self.next_fuel_at    = FUEL_SPAWN_DIST
+        self.fuel_max  = FUEL_MAX
+        self.fuel      = start_fuel
+        self.time_alive = 0.0
+        self.distance   = 0.0
+        self.next_upgrade_at = UPGRADE_TIME
+        self.next_fuel_at    = FUEL_SPAWN_TIME
+        self.next_difficulty = float(ENEMY_ADD_EVERY)
 
-        # Create game objects
-        self.road    = Road(road_width)
-        # Player starts in lane 3 (rightmost same-direction lane)
-        player_start_x = WIDTH // 2 + ROAD_WIDTH // 2 - LANE_W // 2
-        self.player  = Player(player_start_x)
-        self.traffic = TrafficManager(spawn_interval_factor)
+        self.player  = Player(0.0, 0.0)
+        self.traffic = TrafficManager(target_count=enemy_count)
         self.pickups = PickupManager()
 
         # Modifier post-init tweaks
         if mid == "black_ice":
-            self.player.grip = max(0.55, self.player.grip * 0.78)
+            self.player.grip = max(0.45, self.player.grip * 0.78)
+        if mid == "adrenaline":
+            self.player.max_speed = PLAYER_MAX_SPEED * 1.25
         if mid == "lucky_start":
             self._apply_upgrade(random.choice(ALL_UPGRADES))
 
@@ -179,38 +181,37 @@ class Game:
         if uid == "wide_tires":
             self.player.grip = min(self.player.grip + 0.07, 0.96)
         elif uid == "fuel_tank":
-            self.fuel_max  = self.fuel_max * 1.30
-            self.fuel      = min(self.fuel + 20, self.fuel_max)
+            self.fuel_max = self.fuel_max * 1.30
+            self.fuel     = min(self.fuel + 20, self.fuel_max)
         elif uid == "steady_hands":
-            self.player.steer_force = min(self.player.steer_force + 0.25, 2.8)
+            self.player.turn_rate = min(self.player.turn_rate + 0.45, 6.0)
         elif uid == "lead_foot":
-            # Raise effective max speed by extending constant
-            pass   # handled in _update via active_upgrades count check
+            self.player.max_speed = min(self.player.max_speed + 1.5, 14.0)
         elif uid == "nitro":
             self.player.nitro_charges += 1
         elif uid == "shield":
             self.player.shield += 1
         elif uid == "magnet":
             self.player.has_magnet = True
-        elif uid == "road_feel":
-            self.road.road_width = min(self.road.road_width + 50, ROAD_WIDTH + 100)
+        elif uid == "overdrive":
+            self.player.max_speed = min(self.player.max_speed + 1.0, 14.0)
+            self.player.grip      = min(self.player.grip + 0.04, 0.96)
         elif uid == "ghost":
-            self.player.shield += 2   # re-use shield counter for ghost
+            self.player.shield += 2
         elif uid == "overclock":
-            self.speed_ramp *= 2.0
+            self._speed_growth *= 0.60   # slow enemy ramp → easier to last longer
         elif uid == "double_fuel":
             self.fuel_siphon *= 2.0
 
     # ── Offer upgrade ─────────────────────────────────────────────────────
 
     def _offer_upgrade(self):
-        # Avoid duplicating already-owned upgrades where possible
         owned_ids = {u.id for u in self.active_upgrades}
         pool = [u for u in ALL_UPGRADES if u.id not in owned_ids]
         if len(pool) < UPGRADE_CHOICES:
             pool = ALL_UPGRADES
         self.upgrade_pool = random.sample(pool, min(UPGRADE_CHOICES, len(pool)))
-        self.next_upgrade_at += UPGRADE_DIST
+        self.next_upgrade_at += UPGRADE_TIME
         self.state = UPGRADE_SELECT
 
     # ── Update ────────────────────────────────────────────────────────────
@@ -219,68 +220,56 @@ class Game:
         if self.state != PLAYING:
             return
 
-        # Effective max speed (lead_foot upgrade raises cap)
-        lead_foot_count = sum(1 for u in self.active_upgrades if u.id == "lead_foot")
-        eff_max_speed = MAX_SPEED + lead_foot_count * 1.5
-
-        # Nitro speed boost
-        nitro_bonus = 3.5 if self.player.nitro_active else 0.0
-
-        # Speed ramp
-        self.scroll_speed = min(self.scroll_speed + self.speed_ramp, eff_max_speed)
-        if self.scroll_speed > self.max_speed_reached:
-            self.max_speed_reached = self.scroll_speed
-
-        effective_speed = self.scroll_speed + nitro_bonus
-
-        # Distance
-        self.distance += effective_speed
-
-        # Player input & physics
         keys = pygame.key.get_pressed()
-        self.player.update(keys, effective_speed)
+        self.player.update(keys)
 
-        # Road scroll
-        self.road.update(effective_speed)
+        # Camera follows player
+        self.cam_x = self.player.x - WIDTH  // 2
+        self.cam_y = self.player.y - HEIGHT // 2
 
-        # ── Off-road check ────────────────────────────────────────────────
-        left_edge, right_edge = self.road.get_edges_at_y(PLAYER_Y)
-        pr = self.player.get_rect()
-        if pr.left < left_edge - 4 or pr.right > right_edge + 4:
-            self._die("You went off-road!")
-            return
+        # Time and distance
+        self.time_alive += 1.0 / FPS
+        self.distance   += math.hypot(self.player.vx, self.player.vy)
 
-        # ── Traffic ───────────────────────────────────────────────────────
-        self.traffic.update(effective_speed, self.road)
-        if self.traffic.check_collision(self.player, self.road):
-            if self.player.shield > 0:
-                self.player.shield -= 1
-                self.traffic.remove_colliding(self.player, self.road)
-            else:
-                self._die("You hit another car!")
-                return
-
-        # ── Fuel ──────────────────────────────────────────────────────────
+        # ── Fuel drain ────────────────────────────────────────────────────
         if not self._fuel_drain_disabled:
-            drain = FUEL_DRAIN_BASE * (effective_speed / BASE_SPEED)
-            self.fuel = max(0.0, self.fuel - drain)
+            self.fuel = max(0.0, self.fuel - FUEL_DRAIN_BASE)
             if self.fuel <= 0:
                 self._die("You ran out of fuel!")
                 return
 
+        # ── Enemy speed ramp ──────────────────────────────────────────────
+        self.enemy_speed = ENEMY_BASE_SPEED + self.time_alive * self._speed_growth
+
+        # ── Traffic ───────────────────────────────────────────────────────
+        self.traffic.update(self.player.x, self.player.y, self.enemy_speed)
+        if self.traffic.check_collision(self.player):
+            if self.player.shield > 0:
+                self.player.shield -= 1
+                self.traffic.remove_colliding(self.player)
+            else:
+                self._die("You hit another car!")
+                return
+
         # ── Pickups ───────────────────────────────────────────────────────
-        self.pickups.update(effective_speed, self.road, self.player)
-        if self.pickups.check_collection(self.player, self.road):
+        self.pickups.update(self.player.x, self.player.y, self.player.has_magnet)
+        if self.pickups.check_collection(self.player):
             gain = FUEL_PICKUP_AMT * self.fuel_siphon
             self.fuel = min(self.fuel + gain, self.fuel_max)
 
-        # ── Spawn new fuel canister ───────────────────────────────────────
-        if self.distance >= self.next_fuel_at and not self._fuel_drain_disabled:
-            self.pickups.spawn(self.road)
-            self.next_fuel_at += FUEL_SPAWN_DIST
+        # ── Spawn fuel canister ───────────────────────────────────────────
+        if self.time_alive >= self.next_fuel_at and not self._fuel_drain_disabled:
+            self.pickups.spawn(self.player.x, self.player.y)
+            self.next_fuel_at += FUEL_SPAWN_TIME
+
+        # ── Difficulty ramp: add one more enemy every N seconds ───────────
+        if self.time_alive >= self.next_difficulty:
+            self.next_difficulty += ENEMY_ADD_EVERY
+            if self.traffic.target_count < ENEMY_MAX:
+                self.traffic.target_count += 1
 
         # ── Upgrade offer ─────────────────────────────────────────────────
-        if self.distance >= self.next_upgrade_at:
+        if self.time_alive >= self.next_upgrade_at:
             self._offer_upgrade()
 
     def _die(self, reason: str):
@@ -300,20 +289,21 @@ class Game:
             pygame.display.flip()
             return
 
-        # ── Game world (drawn for PLAYING, UPGRADE_SELECT, GAME_OVER) ────
-        self.screen.fill(GRASS_COLOR)
-        self.road.draw(self.screen)
-        self.pickups.draw(self.screen, self.road)
-        self.traffic.draw(self.screen, self.road)
+        # ── Game world ────────────────────────────────────────────────────
+        draw_world(self.screen, self.cam_x, self.cam_y)
+        self.pickups.draw(self.screen, self.cam_x, self.cam_y)
+        self.traffic.draw(self.screen, self.cam_x, self.cam_y)
         self.player.draw(self.screen)
 
         if self.state in (PLAYING, UPGRADE_SELECT):
+            speed = math.hypot(self.player.vx, self.player.vy)
             draw_hud(
                 self.screen,
                 fuel=self.fuel,
                 fuel_max=self.fuel_max,
+                time_alive=self.time_alive,
                 distance=self.distance,
-                scroll_speed=self.scroll_speed,
+                speed=speed,
                 upgrades=self.active_upgrades,
                 modifier=self.active_modifier,
                 player=self.player,
@@ -327,8 +317,8 @@ class Game:
             draw_game_over(
                 self.screen,
                 death_reason=self.death_reason,
+                time_alive=self.time_alive,
                 distance=self.distance,
-                max_speed=self.max_speed_reached,
                 upgrades=self.active_upgrades,
                 modifier=self.active_modifier,
             )

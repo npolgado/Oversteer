@@ -1,11 +1,12 @@
 """All UI rendering: HUD, menus, overlays."""
 
+import math
 import pygame
 from .constants import (
     WIDTH, HEIGHT,
     BLACK, WHITE, GRAY, YELLOW, RED, GREEN, ORANGE,
     UI_BG, UI_CARD_BG, UI_CARD_BORDER, UI_ACCENT, RARITY_COLORS,
-    FUEL_MAX, BASE_SPEED, MAX_SPEED,
+    FUEL_MAX, PLAYER_MAX_SPEED,
 )
 
 _FONT_CACHE: dict = {}
@@ -41,25 +42,22 @@ def _panel(surface, rect, bg=UI_CARD_BG, border=UI_CARD_BORDER, radius=10):
 def draw_menu(surface: pygame.Surface):
     surface.fill(UI_BG)
 
-    # Title
     title_r = _text(surface, "OVERSTEER", 88, UI_ACCENT,
                     (WIDTH // 2, HEIGHT // 2 - 120), "center", bold=True)
 
-    # Tagline
-    _text(surface, "A roguelike road survival", 26, (160, 160, 180),
+    _text(surface, "A roguelike free-driving survival", 26, (160, 160, 180),
           (WIDTH // 2, title_r.bottom + 16), "center")
 
-    # Prompt
     _text(surface, "PRESS  ENTER  TO  START", 32, WHITE,
           (WIDTH // 2, HEIGHT // 2 + 60), "center", bold=True)
 
-    # Controls
     controls = [
-        ("A / ←   D / →", "Steer"),
-        ("SPACE",          "Nitro boost"),
-        ("ESC",            "Quit to menu"),
+        ("W / ↑   S / ↓",  "Accelerate / Brake"),
+        ("A / ←   D / →",  "Turn left / right"),
+        ("SPACE",           "Nitro boost"),
+        ("ESC",             "Quit to menu"),
     ]
-    cy = HEIGHT - 130
+    cy = HEIGHT - 150
     for key, action in controls:
         _text(surface, f"{key:<18} {action}", 20, GRAY,
               (WIDTH // 2, cy), "center")
@@ -82,7 +80,6 @@ def draw_modifier_select(surface: pygame.Surface, modifiers: list):
 # ── Upgrade selection ─────────────────────────────────────────────────────────
 
 def draw_upgrade_select(surface: pygame.Surface, upgrades: list):
-    # Semi-transparent overlay
     overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 175))
     surface.blit(overlay, (0, 0))
@@ -110,34 +107,30 @@ def _draw_cards(surface, items, y_top, key_labels, name_attr, desc_attr,
         r  = pygame.Rect(cx, y_top, card_w, card_h)
         _panel(surface, r)
 
-        # Key badge
         badge_r = pygame.Rect(cx + 8, y_top + 8, 32, 32)
         pygame.draw.rect(surface, UI_ACCENT, badge_r, border_radius=6)
         _text(surface, key_labels[i], 22, BLACK,
               badge_r.center, "center", bold=True)
 
-        # Rarity
         if rarity_attr:
             rar  = getattr(item, rarity_attr, "common")
             rcol = RARITY_COLORS.get(rar, GRAY)
             _text(surface, rar.upper(), 16, rcol,
                   (cx + card_w // 2, y_top + 16), "center", bold=True)
 
-        # Name
         _text(surface, getattr(item, name_attr), 22, WHITE,
               (cx + card_w // 2, y_top + 64), "center", bold=True)
 
-        # Description (word-wrap manually)
-        desc     = getattr(item, desc_attr)
-        wrapped  = _wrap(desc, card_w - 20, 18)
-        dy       = y_top + 102
+        desc    = getattr(item, desc_attr)
+        wrapped = _wrap(desc, card_w - 20, 18)
+        dy      = y_top + 102
         for line in wrapped:
             _text(surface, line, 18, (200, 200, 210), (cx + card_w // 2, dy), "center")
             dy += 24
 
 
 def _wrap(text: str, max_width: int, font_size: int) -> list[str]:
-    f    = _font(font_size)
+    f     = _font(font_size)
     words = text.split()
     lines = []
     line  = ""
@@ -157,21 +150,19 @@ def _wrap(text: str, max_width: int, font_size: int) -> list[str]:
 # ── HUD ───────────────────────────────────────────────────────────────────────
 
 def draw_hud(surface: pygame.Surface, fuel: float, fuel_max: float,
-             distance: float, scroll_speed: float,
+             time_alive: float, distance: float, speed: float,
              upgrades: list, modifier, player):
     _draw_fuel_bar(surface, fuel, fuel_max)
-    _draw_speed_bar(surface, scroll_speed)
-    _draw_distance(surface, distance)
+    _draw_speed_bar(surface, speed)
+    _draw_time(surface, time_alive)
     _draw_upgrade_icons(surface, upgrades)
     if modifier:
         _text(surface, modifier.name, 18, ORANGE,
               (WIDTH // 2, 10), "center")
-    # Nitro charges
     if player.nitro_charges > 0 or player.nitro_active:
         label = f"NITRO  {'▮' * player.nitro_charges}"
         col   = (80, 220, 255) if player.nitro_active else (100, 180, 220)
         _text(surface, label, 20, col, (WIDTH // 2, 36), "center", bold=True)
-    # Shield
     if player.shield > 0:
         _text(surface, f"SHIELD  {'◆' * player.shield}", 20, (100, 180, 255),
               (WIDTH // 2, 60), "center")
@@ -187,29 +178,29 @@ def _draw_fuel_bar(surface, fuel, fuel_max):
     _text(surface, f"FUEL  {int(fuel)}", 17, WHITE, (bx + bw + 8, by + 1))
 
 
-def _draw_speed_bar(surface, scroll_speed):
+def _draw_speed_bar(surface, speed: float):
     bx, by, bw, bh = 14, 40, 160, 12
-    pct = (scroll_speed - BASE_SPEED) / (MAX_SPEED - BASE_SPEED)
-    pct = max(0.0, min(1.0, pct))
+    pct = max(0.0, min(1.0, speed / PLAYER_MAX_SPEED))
     pygame.draw.rect(surface, (40, 40, 50), (bx, by, bw, bh), border_radius=3)
     pygame.draw.rect(surface, UI_ACCENT, (bx, by, int(bw * pct), bh), border_radius=3)
     pygame.draw.rect(surface, WHITE, (bx, by, bw, bh), 1, border_radius=3)
-    kmh = int(scroll_speed * 28)
+    kmh = int(speed * 28)
     _text(surface, f"SPEED  {kmh} km/h", 17, WHITE, (bx + bw + 8, by))
 
 
-def _draw_distance(surface, distance):
-    km = distance / 1000.0
-    _text(surface, f"{km:.2f} km", 26, WHITE, (WIDTH - 14, 14), "topright", bold=True)
+def _draw_time(surface, time_alive: float):
+    mins = int(time_alive // 60)
+    secs = int(time_alive % 60)
+    _text(surface, f"{mins:02d}:{secs:02d}", 26, WHITE,
+          (WIDTH - 14, 14), "topright", bold=True)
 
 
 def _draw_upgrade_icons(surface, upgrades):
     if not upgrades:
         return
-    names = [u.name for u in upgrades]
     y = HEIGHT - 14
-    for name in reversed(names):
-        _text(surface, f"• {name}", 17, (160, 160, 200), (WIDTH - 14, y), "bottomright")
+    for u in reversed(upgrades):
+        _text(surface, f"• {u.name}", 17, (160, 160, 200), (WIDTH - 14, y), "bottomright")
         y -= 22
 
 
@@ -227,7 +218,7 @@ def draw_fog(surface: pygame.Surface):
 # ── Game over ─────────────────────────────────────────────────────────────────
 
 def draw_game_over(surface: pygame.Surface, death_reason: str,
-                   distance: float, max_speed: float,
+                   time_alive: float, distance: float,
                    upgrades: list, modifier):
     overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 190))
@@ -243,18 +234,18 @@ def draw_game_over(surface: pygame.Surface, death_reason: str,
     _text(surface, death_reason, 24, (220, 140, 80), (cx, y), "center")
     y += 46
 
-    # Stats
+    mins  = int(time_alive // 60)
+    secs  = int(time_alive % 60)
     km    = distance / 1000.0
-    kmh   = int(max_speed * 28)
     stats = [
+        ("Survived",   f"{mins:02d}:{secs:02d}"),
         ("Distance",   f"{km:.2f} km"),
-        ("Top speed",  f"{kmh} km/h"),
         ("Upgrades",   str(len(upgrades))),
         ("Modifier",   modifier.name if modifier else "None"),
     ]
     for label, val in stats:
-        _text(surface, label,  20, GRAY,  (cx - 90, y), "topleft")
-        _text(surface, val,    20, WHITE, (cx + 90, y), "topright", bold=True)
+        _text(surface, label, 20, GRAY,  (cx - 90, y), "topleft")
+        _text(surface, val,   20, WHITE, (cx + 90, y), "topright", bold=True)
         y += 34
 
     y += 20

@@ -1,29 +1,39 @@
-"""Traffic cars: oncoming (lanes 0-1) and same-direction (lanes 2-3)."""
+"""Enemy cars: world-space waypoint AI."""
 
+import math
 import random
+from collections import deque
 import pygame
+
 from .constants import (
-    LANE_COUNT, LANE_W, ROAD_WIDTH, TRAFFIC_W, TRAFFIC_H,
-    TRAFFIC_COLORS, SPAWN_MIN, SPAWN_MAX, ONCOMING_EXTRA, SAME_DIR_DELTA,
-    HEIGHT, PLAYER_Y,
+    WIDTH, HEIGHT,
+    TRAFFIC_W, TRAFFIC_H, TRAFFIC_COLORS,
+    ENEMY_BASE_SPEED, ENEMY_SPEED_CAP,
+    ENEMY_SPAWN_RADIUS, ENEMY_DESPAWN_DIST,
 )
 
+_WAYPOINT_DIST_MIN = 300
+_WAYPOINT_DIST_MAX = 800
+_WAYPOINT_ARRIVE   = 40    # px — switch to next waypoint within this distance
+_ENEMY_GRIP        = 0.88
+_MAX_TURN          = 3.0   # degrees/frame
 
-class TrafficCar:
-    def __init__(self, lane: int, road_center_at_spawn: int, scroll_speed: float):
-        self.lane        = lane
-        self.is_oncoming = lane < LANE_COUNT // 2  # lanes 0-1
-        self.y           = float(-TRAFFIC_H - 10)
-        self.color       = random.choice(TRAFFIC_COLORS)
-        self.width       = TRAFFIC_W
-        self.height      = TRAFFIC_H
 
-        # How fast this car moves DOWN the screen each frame
-        if self.is_oncoming:
-            self.speed = scroll_speed + ONCOMING_EXTRA
-        else:
-            # Same-direction: approaches player more slowly
-            self.speed = max(SAME_DIR_DELTA, scroll_speed * 0.45 + 0.8)
+class EnemyCar:
+    def __init__(self, x: float, y: float, speed: float):
+        self.x     = float(x)
+        self.y     = float(y)
+        self.angle = random.uniform(0.0, 360.0)
+        self.speed = speed
+        self.vx    = 0.0
+        self.vy    = 0.0
+        self.color  = random.choice(TRAFFIC_COLORS)
+        self.width  = TRAFFIC_W
+        self.height = TRAFFIC_H
+
+        self.waypoints: deque = deque()
+        for _ in range(3):
+            self._add_waypoint()
 
         self._surf = self._build_surface()
 
@@ -32,102 +42,134 @@ class TrafficCar:
         surf = pygame.Surface((w, h), pygame.SRCALPHA)
         pygame.draw.rect(surf, self.color, (0, 0, w, h), border_radius=6)
 
-        # Windshield
         ww = int(w * 0.7)
         wx = (w - ww) // 2
-        if self.is_oncoming:
-            # Windshield at top (they face us)
-            pygame.draw.rect(surf, (180, 220, 255, 180), (wx, 4, ww, int(h * 0.26)), border_radius=3)
-            # Headlights
-            pygame.draw.rect(surf, (255, 255, 200), (2,      4, 8, 6), border_radius=2)
-            pygame.draw.rect(surf, (255, 255, 200), (w - 10, 4, 8, 6), border_radius=2)
-        else:
-            # Windshield at top (back of car faces us)
-            pygame.draw.rect(surf, (160, 200, 255, 160), (wx, 4, ww, int(h * 0.26)), border_radius=3)
-            # Brake lights
-            pygame.draw.rect(surf, (255, 60, 60), (2,      h - 8, 8, 6), border_radius=2)
-            pygame.draw.rect(surf, (255, 60, 60), (w - 10, h - 8, 8, 6), border_radius=2)
+        # Windshield at top (front)
+        pygame.draw.rect(surf, (180, 220, 255, 180),
+                         (wx, 4, ww, int(h * 0.26)), border_radius=3)
+        # Headlights
+        pygame.draw.rect(surf, (255, 255, 200), (2,       4, 8, 6), border_radius=2)
+        pygame.draw.rect(surf, (255, 255, 200), (w - 10,  4, 8, 6), border_radius=2)
         return surf
+
+    def _add_waypoint(self):
+        dist  = random.uniform(_WAYPOINT_DIST_MIN, _WAYPOINT_DIST_MAX)
+        angle = random.uniform(0.0, 360.0)
+        rad   = math.radians(angle)
+        if self.waypoints:
+            bx, by = self.waypoints[-1]
+        else:
+            bx, by = self.x, self.y
+        self.waypoints.append((bx + math.cos(rad) * dist,
+                               by + math.sin(rad) * dist))
+
+    # ── Update ────────────────────────────────────────────────────────────
+
+    def update(self):
+        if not self.waypoints:
+            self._add_waypoint()
+
+        wpt_x, wpt_y = self.waypoints[0]
+        dx = wpt_x - self.x
+        dy = wpt_y - self.y
+        dist = math.hypot(dx, dy)
+
+        if dist < _WAYPOINT_ARRIVE:
+            self.waypoints.popleft()
+            self._add_waypoint()
+            return
+
+        # Steer toward waypoint
+        desired_angle = math.degrees(math.atan2(dy, dx)) % 360
+        diff = (desired_angle - self.angle + 180) % 360 - 180
+        self.angle = (self.angle + max(-_MAX_TURN, min(_MAX_TURN, diff))) % 360
+
+        rad = math.radians(self.angle)
+        desired_vx = math.cos(rad) * self.speed
+        desired_vy = math.sin(rad) * self.speed
+
+        self.vx += (desired_vx - self.vx) * _ENEMY_GRIP
+        self.vy += (desired_vy - self.vy) * _ENEMY_GRIP
+
+        self.x += self.vx
+        self.y += self.vy
 
     # ── Geometry ──────────────────────────────────────────────────────────
 
-    def get_x(self, road) -> int:
-        """Compute screen-x from lane + current road centre at this car's y."""
-        cx   = road.get_center_at_y(self.y)
-        half = road.road_width // 2
-        lx   = cx - half + self.lane * LANE_W + LANE_W // 2
-        return lx
+    def get_screen_pos(self, cam_x: float, cam_y: float) -> tuple:
+        return (self.x - cam_x, self.y - cam_y)
 
-    def get_rect(self, road) -> pygame.Rect:
-        x = self.get_x(road)
+    def get_rect(self, cam_x: float, cam_y: float) -> pygame.Rect:
+        sx, sy = self.get_screen_pos(cam_x, cam_y)
         return pygame.Rect(
-            x - self.width  // 2,
-            int(self.y) - self.height // 2,
+            int(sx) - self.width  // 2,
+            int(sy) - self.height // 2,
             self.width,
             self.height,
         )
 
-    # ── Update ────────────────────────────────────────────────────────────
-
-    def update(self, scroll_speed: float):
-        self.speed = (scroll_speed + ONCOMING_EXTRA
-                      if self.is_oncoming
-                      else max(SAME_DIR_DELTA, scroll_speed * 0.45 + 0.8))
-        self.y += self.speed
-
-    def is_off_screen(self) -> bool:
-        return self.y > HEIGHT + TRAFFIC_H + 10
-
     # ── Draw ──────────────────────────────────────────────────────────────
 
-    def draw(self, surface: pygame.Surface, road):
-        x = self.get_x(road)
-        rect = self._surf.get_rect(center=(x, int(self.y)))
-        surface.blit(self._surf, rect)
+    def draw(self, surface: pygame.Surface, cam_x: float, cam_y: float):
+        sx, sy = self.get_screen_pos(cam_x, cam_y)
+        if not (-100 <= sx <= WIDTH + 100 and -100 <= sy <= HEIGHT + 100):
+            return
+        pygame_rot = (270.0 - self.angle) % 360
+        rotated = pygame.transform.rotate(self._surf, pygame_rot)
+        rect = rotated.get_rect(center=(int(sx), int(sy)))
+        surface.blit(rotated, rect)
 
 
 # ── Manager ───────────────────────────────────────────────────────────────────
 
 class TrafficManager:
-    def __init__(self, interval_factor: float = 1.0):
-        self.cars: list[TrafficCar] = []
-        self._interval_factor = interval_factor
-        self._spawn_timer = self._next_interval()
+    def __init__(self, target_count: int = 5):
+        self.cars: list[EnemyCar] = []
+        self.target_count = target_count
 
-    def _next_interval(self) -> int:
-        base = random.randint(SPAWN_MIN, SPAWN_MAX)
-        return max(20, int(base * self._interval_factor))
-
-    def update(self, scroll_speed: float, road):
-        self._spawn_timer -= 1
-        if self._spawn_timer <= 0:
-            self._spawn_timer = self._next_interval()
-            self._spawn(road, scroll_speed)
-
+    def update(self, player_x: float, player_y: float, enemy_speed: float):
+        spd = min(enemy_speed, ENEMY_SPEED_CAP)
         for car in self.cars:
-            car.update(scroll_speed)
+            car.speed = spd
+            car.update()
 
-        self.cars = [c for c in self.cars if not c.is_off_screen()]
+        # Despawn cars that wandered too far
+        self.cars = [
+            c for c in self.cars
+            if math.hypot(c.x - player_x, c.y - player_y) <= ENEMY_DESPAWN_DIST
+        ]
 
-    def _spawn(self, road, scroll_speed: float):
-        lane          = random.randint(0, LANE_COUNT - 1)
-        cx            = road.get_center_at_y(0)
-        self.cars.append(TrafficCar(lane, cx, scroll_speed))
+        # Maintain target count
+        while len(self.cars) < self.target_count:
+            self._spawn(player_x, player_y, spd)
 
-    def check_collision(self, player, road) -> bool:
-        pr = player.get_rect()
-        # Shrink hitbox slightly for fairness
-        pr = pr.inflate(-8, -10)
+    def _spawn(self, player_x: float, player_y: float, speed: float):
+        angle = random.uniform(0.0, 360.0)
+        rad   = math.radians(angle)
+        dist  = ENEMY_SPAWN_RADIUS + random.uniform(0.0, 200.0)
+        sx    = player_x + math.cos(rad) * dist
+        sy    = player_y + math.sin(rad) * dist
+        self.cars.append(EnemyCar(sx, sy, speed))
+
+    def check_collision(self, player) -> bool:
+        cam_x = player.x - WIDTH  // 2
+        cam_y = player.y - HEIGHT // 2
+        pr = player.get_rect().inflate(-8, -10)
         for car in self.cars:
-            cr = car.get_rect(road).inflate(-8, -10)
+            cr = car.get_rect(cam_x, cam_y).inflate(-8, -10)
             if pr.colliderect(cr):
                 return True
         return False
 
-    def remove_colliding(self, player, road):
+    def remove_colliding(self, player):
+        cam_x = player.x - WIDTH  // 2
+        cam_y = player.y - HEIGHT // 2
         pr = player.get_rect().inflate(-8, -10)
-        self.cars = [c for c in self.cars if not pr.colliderect(c.get_rect(road).inflate(-8, -10))]
+        self.cars = [
+            c for c in self.cars
+            if not pr.colliderect(c.get_rect(cam_x, cam_y).inflate(-8, -10))
+        ]
 
-    def draw(self, surface: pygame.Surface, road):
+    def draw(self, surface: pygame.Surface, cam_x: float, cam_y: float):
         for car in self.cars:
-            car.draw(surface, road)
+            car.draw(surface, cam_x, cam_y)
