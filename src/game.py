@@ -105,7 +105,7 @@ class Game:
         elif self.state == PLAYING:
             if key == pygame.K_ESCAPE:
                 self.state = MENU
-            if key == pygame.K_SPACE:
+            if key == pygame.K_n:
                 self.player.activate_nitro()
 
         elif self.state == UPGRADE_SELECT:
@@ -161,6 +161,10 @@ class Game:
         self.player  = Player(0.0, 0.0)
         self.traffic = TrafficManager(target_count=enemy_count)
         self.pickups = PickupManager()
+
+        # Spawn 2 fuel canisters near the player at the start of each run
+        for _ in range(2):
+            self.pickups.spawn(self.player.x, self.player.y)
 
         # Modifier post-init tweaks
         if mid == "black_ice":
@@ -242,7 +246,9 @@ class Game:
         self.enemy_speed = ENEMY_BASE_SPEED + self.time_alive * self._speed_growth
 
         # ── Traffic ───────────────────────────────────────────────────────
-        self.traffic.update(self.player.x, self.player.y, self.enemy_speed)
+        self.traffic.update(self.player.x, self.player.y,
+                            self.player.vx, self.player.vy,
+                            self.enemy_speed)
         if self.traffic.check_collision(self.player):
             if self.player.shield > 0:
                 self.player.shield -= 1

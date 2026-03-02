@@ -47,25 +47,28 @@ PLAYER_COAST     = 0.975  # Speed retention when coasting
 PLAYER_TURN      = 3.0    # Degrees/frame steering
 PLAYER_GRIP      = 0.82   # Velocity→heading blend per frame
 
-# ── Drift ─────────────────────────────────────────────────────────────────────
-DRIFT_TRIGGER    = 0.5    # Minimum speed for drift to activate
-DRIFT_STEER_MULT = 1.4    # Extra slip multiplier
+# ── Drift / handbrake ─────────────────────────────────────────────────────────
+DRIFT_TRIGGER         = 0.5    # Minimum speed for drift to activate
+DRIFT_STEER_MULT      = 1.4    # Extra slip multiplier
+PLAYER_HANDBRAKE_GRIP = 0.18   # Grip while SPACE held (very slippery)
 
 # ── Enemies ───────────────────────────────────────────────────────────────────
-ENEMY_INITIAL      = 5
-ENEMY_ADD_EVERY    = 25   # Seconds between +1 enemy
+ENEMY_INITIAL      = 8
+ENEMY_ADD_EVERY    = 20   # Seconds between +1 enemy
 ENEMY_MAX          = 22
 ENEMY_BASE_SPEED   = 3.0
 ENEMY_SPEED_GROWTH = 0.025   # px/frame added per second of play
 ENEMY_SPEED_CAP    = 7.0
-ENEMY_SPAWN_RADIUS = 700  # World-distance from player to spawn
+ENEMY_SPAWN_RADIUS = 500  # World-distance from player to spawn
 ENEMY_DESPAWN_DIST = 1300 # Despawn if farther than this
+ENEMY_CHASE_RADIUS = 900  # Within this world-px, enemy targets player
+ENEMY_CHASE_BIAS   = 0.72 # Probability of chase vs random waypoint
 
 # ── Fuel ──────────────────────────────────────────────────────────────────────
 FUEL_MAX        = 100.0
 FUEL_DRAIN_BASE = 0.038   # Per frame, constant
 FUEL_PICKUP_AMT = 38.0
-FUEL_SPAWN_TIME = 18      # Seconds between spawns
+FUEL_SPAWN_TIME = 10      # Seconds between spawns
 FUEL_R          = 13      # Pickup circle radius
 
 # ── Upgrades ──────────────────────────────────────────────────────────────────

@@ -52,9 +52,10 @@ def draw_menu(surface: pygame.Surface):
           (WIDTH // 2, HEIGHT // 2 + 60), "center", bold=True)
 
     controls = [
-        ("W / ↑   S / ↓",  "Accelerate / Brake"),
+        ("W / ↑   S / ↓",  "Accelerate / Reverse"),
         ("A / ←   D / →",  "Turn left / right"),
-        ("SPACE",           "Nitro boost"),
+        ("SPACE (hold)",    "Handbrake / drift"),
+        ("N",               "Nitro boost"),
         ("ESC",             "Quit to menu"),
     ]
     cy = HEIGHT - 150

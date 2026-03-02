@@ -6,7 +6,7 @@ from .constants import (
     WIDTH, HEIGHT,
     PLAYER_W, PLAYER_H, PLAYER_COLOR,
     PLAYER_MAX_SPEED, PLAYER_ACCEL, PLAYER_BRAKE, PLAYER_COAST,
-    PLAYER_TURN, PLAYER_GRIP,
+    PLAYER_TURN, PLAYER_GRIP, PLAYER_HANDBRAKE_GRIP,
 )
 
 # Screen-centre where the player is always drawn
@@ -74,20 +74,29 @@ class Player:
     # ── Update ────────────────────────────────────────────────────────────
 
     def update(self, keys: pygame.key.ScancodeWrapper):
-        # ── Steering ──────────────────────────────────────────────────────
+        handbrake    = keys[pygame.K_SPACE]
+        accelerating = keys[pygame.K_UP] or keys[pygame.K_w]
+        reversing    = keys[pygame.K_DOWN] or keys[pygame.K_s]
+
+        # ── Steering — turn rate boosted 35 % during handbrake ────────────
         steer = 0
         if keys[pygame.K_LEFT]  or keys[pygame.K_a]:
             steer -= 1
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
             steer += 1
-        self.angle = (self.angle + steer * self.turn_rate) % 360
+        effective_turn = self.turn_rate * (1.35 if handbrake else 1.0)
+        self.angle = (self.angle + steer * effective_turn) % 360
 
-        # ── Throttle / brake ──────────────────────────────────────────────
+        # ── Throttle / reverse / handbrake friction ────────────────────────
         nitro_cap = self.max_speed + (3.0 if self.nitro_active else 0.0)
-        if keys[pygame.K_UP] or keys[pygame.K_w]:
+        if accelerating:
             self.speed = min(self.speed + PLAYER_ACCEL, nitro_cap)
-        elif keys[pygame.K_DOWN] or keys[pygame.K_s]:
-            self.speed = max(self.speed - PLAYER_BRAKE, -self.max_speed * 0.3)
+        elif reversing:
+            self.speed = max(self.speed - PLAYER_BRAKE, -self.max_speed * 0.45)
+        elif handbrake:
+            self.speed *= 0.88
+            if abs(self.speed) < 0.1:
+                self.speed = 0.0
         else:
             self.speed *= PLAYER_COAST
 
@@ -99,14 +108,15 @@ class Player:
 
         # ── Drift physics ─────────────────────────────────────────────────
         # Effective grip drops at higher speed → car slides sideways
-        eff_grip = max(0.45, self.grip / (1.0 + abs(self.speed) * 0.06))
+        eff_grip  = max(0.45, self.grip / (1.0 + abs(self.speed) * 0.06))
+        drift_grip = PLAYER_HANDBRAKE_GRIP if handbrake else eff_grip
 
         rad = math.radians(self.angle)
         desired_vx = math.cos(rad) * self.speed
         desired_vy = math.sin(rad) * self.speed
 
-        self.vx += (desired_vx - self.vx) * eff_grip
-        self.vy += (desired_vy - self.vy) * eff_grip
+        self.vx += (desired_vx - self.vx) * drift_grip
+        self.vy += (desired_vy - self.vy) * drift_grip
 
         # ── Move ──────────────────────────────────────────────────────────
         self.x += self.vx

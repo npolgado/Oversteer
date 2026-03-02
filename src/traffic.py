@@ -10,6 +10,7 @@ from .constants import (
     TRAFFIC_W, TRAFFIC_H, TRAFFIC_COLORS,
     ENEMY_BASE_SPEED, ENEMY_SPEED_CAP,
     ENEMY_SPAWN_RADIUS, ENEMY_DESPAWN_DIST,
+    ENEMY_CHASE_RADIUS, ENEMY_CHASE_BIAS,
 )
 
 _WAYPOINT_DIST_MIN = 300
@@ -63,11 +64,25 @@ class EnemyCar:
         self.waypoints.append((bx + math.cos(rad) * dist,
                                by + math.sin(rad) * dist))
 
+    def _decide_next_waypoint(self, px: float, py: float,
+                               pvx: float, pvy: float):
+        """Add a pursuit or random waypoint depending on proximity."""
+        dist = math.hypot(self.x - px, self.y - py)
+        if dist < ENEMY_CHASE_RADIUS and random.random() < ENEMY_CHASE_BIAS:
+            # Lead-shot: aim at predicted player position
+            t  = dist / max(self.speed, 1.0) * 0.4
+            tx = px + pvx * t + random.uniform(-80, 80)
+            ty = py + pvy * t + random.uniform(-80, 80)
+            self.waypoints.append((tx, ty))
+        else:
+            self._add_waypoint()
+
     # ── Update ────────────────────────────────────────────────────────────
 
-    def update(self):
+    def update(self, player_x: float, player_y: float,
+               player_vx: float, player_vy: float):
         if not self.waypoints:
-            self._add_waypoint()
+            self._decide_next_waypoint(player_x, player_y, player_vx, player_vy)
 
         wpt_x, wpt_y = self.waypoints[0]
         dx = wpt_x - self.x
@@ -76,7 +91,7 @@ class EnemyCar:
 
         if dist < _WAYPOINT_ARRIVE:
             self.waypoints.popleft()
-            self._add_waypoint()
+            self._decide_next_waypoint(player_x, player_y, player_vx, player_vy)
             return
 
         # Steer toward waypoint
@@ -127,11 +142,12 @@ class TrafficManager:
         self.cars: list[EnemyCar] = []
         self.target_count = target_count
 
-    def update(self, player_x: float, player_y: float, enemy_speed: float):
+    def update(self, player_x: float, player_y: float,
+               player_vx: float, player_vy: float, enemy_speed: float):
         spd = min(enemy_speed, ENEMY_SPEED_CAP)
         for car in self.cars:
             car.speed = spd
-            car.update()
+            car.update(player_x, player_y, player_vx, player_vy)
 
         # Despawn cars that wandered too far
         self.cars = [
