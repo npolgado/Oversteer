@@ -116,6 +116,22 @@ const CFG = {
   ENEMY_OFFSCREEN_BOOST: 1.5,
   ENEMY_OFFSCREEN_DESPAWN: 5,
   ENEMY_FAR_DESPAWN_DIST: 1200,
+  // Handbrake
+  HANDBRAKE_TURN_MULT: 2.0,
+  HANDBRAKE_DURATION: 0.3,
+  HANDBRAKE_DECEL: 1800,
+  // Speed boost zones
+  BOOST_ZONE_RADIUS: 22,
+  BOOST_ZONE_DURATION: 1.5,
+  BOOST_ZONE_MULT: 1.3,
+  BOOST_ZONE_SPAWN_INTERVAL: 12,
+  // Drift chaining
+  DRIFT_CHAIN_WINDOW: 0.5,
+  DRIFT_CHAIN_MULT_1: 1.5,
+  DRIFT_CHAIN_MULT_2: 2.0,
+  // Wall riding
+  WALL_RIDE_DIST: 30,
+  WALL_RIDE_SPEED_BONUS: 0.10,
   // Early-game balancing
   FIRST_SPAWN_INITIAL: 2.5,
   SPAWN_INTERVAL_INITIAL: 4.0,
@@ -335,10 +351,25 @@ function updatePhysics(ent, dt, turnInput, throttle, braking, wantDrift, isPlaye
     if (!ent.drifting) {
       ent.drifting = true;
       ent.driftJustStarted = true;
-      // Boost impulse
+      // Boost impulse (Drift King: +50%, Afterburner: x2, drift chain stacks)
+      let driftBoost = CFG.DRIFT_BOOST;
+      if (ent.driftKing) driftBoost *= 1.5;
+      if (ent.afterburner) driftBoost *= 2;
+      // Drift chaining: re-entering drift within window
+      if (isPlayer && ent.lastDriftEndTime > 0) {
+        const elapsed = performance.now() / 1000 - ent.lastDriftEndTime;
+        if (elapsed < CFG.DRIFT_CHAIN_WINDOW) {
+          ent.driftChain = Math.min(2, (ent.driftChain || 0) + 1);
+          const chainMult = ent.driftChain === 1 ? CFG.DRIFT_CHAIN_MULT_1 : CFG.DRIFT_CHAIN_MULT_2;
+          driftBoost *= chainMult;
+        } else {
+          ent.driftChain = 0;
+        }
+        ent.lastDriftEndTime = 0;
+      }
       const dir = U.vec2FromAngle(ent.heading);
-      ent.vx += dir.x * CFG.DRIFT_BOOST;
-      ent.vy += dir.y * CFG.DRIFT_BOOST;
+      ent.vx += dir.x * driftBoost;
+      ent.vy += dir.y * driftBoost;
     }
   } else {
     ent.drifting = false;
@@ -377,7 +408,8 @@ function updatePhysics(ent, dt, turnInput, throttle, braking, wantDrift, isPlaye
   const latY = ent.vy - fwd.y * dot;
 
   // Apply friction
-  const latFric = ent.drifting ? CFG.DRIFT_LATERAL : CFG.LATERAL_FRICTION;
+  let latFric = ent.drifting ? CFG.DRIFT_LATERAL : CFG.LATERAL_FRICTION;
+  if (ent.drifting && ent.driftKing) latFric *= 0.75; // Drift King: reduced drift lateral friction
   const fwdDrag = ent.drifting ? CFG.DRIFT_DRAG : CFG.FORWARD_DRAG;
 
   // Oil slip override
@@ -450,6 +482,18 @@ class Player {
     this.oilResistant = false;
     this.speedDemon = false;
     this.encircleScoreBonus = 1;
+    // Handbrake
+    this.handbrakeTimer = 0;
+    // Speed boost
+    this.speedBoostTimer = 0;
+    // Drift chaining
+    this.lastDriftEndTime = 0;
+    this.driftChain = 0;
+    // Wall riding
+    this.wallRiding = false;
+    // Near-miss streak
+    this.consecutiveNearMisses = 0;
+    this.nearMissStreakTimer = 0;
   }
 
   get speed() { return Math.hypot(this.vx, this.vy); }
@@ -471,6 +515,25 @@ class Player {
 
     this.braking = Input.down;
 
+    // Handbrake turn: reverse while moving forward fast
+    if (Input.down && this.speed > CFG.DRIFT_THRESHOLD && !this.drifting) {
+      const fwd = U.vec2FromAngle(this.heading);
+      const dot = this.vx * fwd.x + this.vy * fwd.y;
+      if (dot > 30 && this.handbrakeTimer <= 0) {
+        this.handbrakeTimer = CFG.HANDBRAKE_DURATION;
+      }
+    }
+    if (this.handbrakeTimer > 0) this.handbrakeTimer -= dt;
+
+    // Speed boost timer
+    if (this.speedBoostTimer > 0) this.speedBoostTimer -= dt;
+
+    // Near-miss streak timer
+    if (this.nearMissStreakTimer > 0) {
+      this.nearMissStreakTimer -= dt;
+      if (this.nearMissStreakTimer <= 0) this.consecutiveNearMisses = 0;
+    }
+
     // Drift denied FX
     if (Input.drift && this.speed < CFG.DRIFT_THRESHOLD && !this.drifting) {
       this.driftDeniedTimer = 0.12;
@@ -479,20 +542,58 @@ class Player {
 
     // Tight turns upgrade
     const origTurn = this.turnRate;
+    const origMaxSpeed = this.maxSpeed;
     if (this.tightTurns) this.turnRate = CFG.TURN_RATE * 1.25;
+    // Handbrake: boosted turn rate
+    if (this.handbrakeTimer > 0) this.turnRate *= CFG.HANDBRAKE_TURN_MULT;
+    // Speed boost zone: temporary max speed increase
+    if (this.speedBoostTimer > 0) this.maxSpeed *= CFG.BOOST_ZONE_MULT;
 
     this.wallHit = false;
     this.driftJustStarted = false;
     updatePhysics(this, dt, turnInput, Input.up, Input.down, Input.drift, true);
 
     this.turnRate = origTurn;
+    this.maxSpeed = origMaxSpeed;
 
-    // Drift time tracking
+    // Handbrake deceleration
+    if (this.handbrakeTimer > 0) {
+      const spd = Math.hypot(this.vx, this.vy);
+      if (spd > 10) {
+        const decel = Math.min(CFG.HANDBRAKE_DECEL * dt, spd * 0.5);
+        const s = (spd - decel) / spd;
+        this.vx *= s;
+        this.vy *= s;
+      }
+    }
+
+    // Wall riding detection
+    const pad = CFG.ARENA_PAD;
+    const wd = CFG.WALL_RIDE_DIST;
+    this.wallRiding = this.drifting && (
+      this.x < pad + wd || this.x > CFG.WORLD_W - pad - wd ||
+      this.y < pad + wd || this.y > CFG.WORLD_H - pad - wd
+    );
+    if (this.wallRiding) {
+      // Speed bonus while wall riding
+      const fwd = U.vec2FromAngle(this.heading);
+      const boost = CFG.WALL_RIDE_SPEED_BONUS * (this.maxSpeed || CFG.MAX_SPEED) * dt;
+      this.vx += fwd.x * boost;
+      this.vy += fwd.y * boost;
+    }
+
+    // Drift time tracking + drift chaining
+    const wasDrifting = this.driftTime > 0;
     if (this.drifting) {
       this.driftTime += dt;
     } else {
+      if (wasDrifting && this.driftTime > 0) {
+        // Just stopped drifting — record end time for chain detection
+        this.lastDriftEndTime = this.driftTime > 0.1 ? performance.now() / 1000 : 0;
+      }
       this.driftTime = 0;
-      this.comboLevel = Math.max(0, this.comboLevel - dt * 2);
+      const comboDecay = this.comboMaster ? 1.0 : 2.0;
+      this.comboLevel = Math.max(0, this.comboLevel - dt * comboDecay);
     }
 
     // Invulnerability
@@ -604,7 +705,7 @@ class Player {
 // ── 6. ENEMIES ──────────────────────────────────────────────
 class Enemy {
   constructor(type, x, y) {
-    this.type = type; // 'chaser', 'interceptor', 'drifter'
+    this.type = type; // 'chaser', 'interceptor', 'drifter', 'elite'
     this.x = x; this.y = y;
     this.vx = 0; this.vy = 0;
     this.heading = 0;
@@ -621,8 +722,18 @@ class Enemy {
     this.lifespan = U.randFloat(CFG.ENEMY_LIFESPAN_MIN, CFG.ENEMY_LIFESPAN_MAX);
     this.fadeAlpha = 1;
     this.baseMaxSpeed = 0; // set after maxSpeed is assigned
+    this.health = 1;
+    this.armored = false;
 
-    if (type === 'chaser') { this.maxSpeed = CFG.CHASER_SPEED; this.turnRate = CFG.ENEMY_TURN_RATE; }
+    this.radius = CFG.ENEMY_RADIUS;
+    if (type === 'elite') {
+      this.maxSpeed = CFG.CHASER_SPEED * 0.9;
+      this.turnRate = CFG.ENEMY_TURN_RATE * 0.8;
+      this.health = 2;
+      this.armored = true;
+      this.radius = 14; // larger collision
+      this.lifespan *= 1.5; // elites live longer
+    } else if (type === 'chaser') { this.maxSpeed = CFG.CHASER_SPEED; this.turnRate = CFG.ENEMY_TURN_RATE; }
     else if (type === 'interceptor') { this.maxSpeed = CFG.INTERCEPTOR_SPEED; this.turnRate = CFG.ENEMY_TURN_RATE * 0.85; }
     else { this.maxSpeed = CFG.DRIFTER_SPEED; this.turnRate = CFG.ENEMY_TURN_RATE * 1.1; }
     this.baseMaxSpeed = this.maxSpeed;
@@ -695,6 +806,10 @@ class Enemy {
   render(ctx, time) {
     if (!this.alive) return;
 
+    const isElite = this.type === 'elite';
+    const ew = isElite ? 40 : CFG.ENEMY_W;
+    const eh = isElite ? 20 : CFG.ENEMY_H;
+
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.heading);
@@ -704,27 +819,50 @@ class Enemy {
       ctx.globalAlpha = Math.max(0.15, this.fadeAlpha);
     }
 
+    // Elite: pulsing purple aura
+    if (isElite) {
+      const auraPulse = 0.3 + 0.2 * Math.sin((time || 0) * 4);
+      ctx.shadowColor = this.armored ? CFG.C_RARE : CFG.C_ENEMY;
+      ctx.shadowBlur = 20 + this.glowExtra + auraPulse * 10;
+      // Outer aura circle
+      ctx.globalAlpha *= (0.15 + auraPulse * 0.1);
+      ctx.fillStyle = this.armored ? CFG.C_RARE : CFG.C_ENEMY;
+      ctx.beginPath();
+      ctx.arc(0, 0, 28, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = this.fadeAlpha !== undefined ? Math.max(0.15, this.fadeAlpha) : 1;
+    }
+
     // Danger aura
-    ctx.shadowColor = CFG.C_ENEMY;
+    ctx.shadowColor = isElite ? (this.armored ? CFG.C_RARE : CFG.C_ENEMY) : CFG.C_ENEMY;
     ctx.shadowBlur = 12 + this.glowExtra;
 
     // Body
-    ctx.fillStyle = CFG.C_ENEMY_DARK;
-    ctx.fillRect(-CFG.ENEMY_W/2, -CFG.ENEMY_H/2, CFG.ENEMY_W, CFG.ENEMY_H);
-    ctx.strokeStyle = CFG.C_ENEMY;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(-CFG.ENEMY_W/2, -CFG.ENEMY_H/2, CFG.ENEMY_W, CFG.ENEMY_H);
+    ctx.fillStyle = isElite ? (this.armored ? '#2A1A4A' : CFG.C_ENEMY_DARK) : CFG.C_ENEMY_DARK;
+    ctx.fillRect(-ew/2, -eh/2, ew, eh);
+    ctx.strokeStyle = isElite ? (this.armored ? CFG.C_RARE : CFG.C_ENEMY) : CFG.C_ENEMY;
+    ctx.lineWidth = isElite ? 2.5 : 1.5;
+    ctx.strokeRect(-ew/2, -eh/2, ew, eh);
 
     ctx.shadowBlur = 0;
+
+    // Armor indicator on elite
+    if (isElite && this.armored) {
+      ctx.strokeStyle = CFG.C_RARE;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.5;
+      ctx.strokeRect(-ew/2 + 3, -eh/2 + 3, ew - 6, eh - 6);
+      ctx.globalAlpha = 1;
+    }
 
     // Headlight wedge
     ctx.fillStyle = CFG.C_TEXT;
     ctx.globalAlpha = 0.7;
     ctx.beginPath();
-    ctx.moveTo(CFG.ENEMY_W/2, -2);
-    ctx.lineTo(CFG.ENEMY_W/2 + 10, -8);
-    ctx.lineTo(CFG.ENEMY_W/2 + 10, 8);
-    ctx.lineTo(CFG.ENEMY_W/2, 2);
+    ctx.moveTo(ew/2, -2);
+    ctx.lineTo(ew/2 + 10, -8);
+    ctx.lineTo(ew/2 + 10, 8);
+    ctx.lineTo(ew/2, 2);
     ctx.closePath();
     ctx.fill();
     ctx.globalAlpha = 1;
@@ -1204,18 +1342,45 @@ const Trail = {
         if (poly.length < 10) continue; // too small
 
         // Check which enemies are inside
+        // Compute loop centroid for shockwave
+        let cxSum = 0, cySum = 0;
+        for (const p of poly) { cxSum += p.x; cySum += p.y; }
+        const loopCX = cxSum / poly.length, loopCY = cySum / poly.length;
+
         let killCount = 0;
         for (const e of enemies) {
           if (!e.alive) continue;
           if (this._pointInPoly(e.x, e.y, poly)) {
+            // Elite enemies: strip armor first, then kill
+            if (e.health > 1) {
+              e.health--;
+              e.armored = false;
+              // Armor strip FX
+              Particles.spawn(e.x, e.y, CFG.C_RARE, 10, {
+                vxMin: -150, vxMax: 150, vyMin: -150, vyMax: 150,
+                lifeMin: 0.3, lifeMax: 0.6, sizeMin: 3, sizeMax: 6, type: 'shard',
+              });
+              Particles.addRing(e.x, e.y, CFG.C_RARE);
+              Particles.addFloat(e.x, e.y - 25, 'ARMOR BROKEN!', CFG.C_RARE, 16);
+              ScreenFX.shake(4, 0.15);
+              continue;
+            }
             e.alive = false;
-            killCount++;
-            // FX
-            Particles.spawn(e.x, e.y, CFG.C_ACCENT, 10, {
+            const isElite = e.type === 'elite';
+            killCount += isElite ? 3 : 1; // Elite worth 3x
+            // Enhanced kill FX: red-to-white flash shards spinning outward
+            const dirFromCenter = Math.atan2(e.y - loopCY, e.x - loopCX);
+            Particles.spawn(e.x, e.y, '#FF6688', isElite ? 12 : 6, {
               vxMin: -200, vxMax: 200, vyMin: -200, vyMax: 200,
-              lifeMin: 0.3, lifeMax: 0.7, sizeMin: 3, sizeMax: 8, type: 'shard',
+              lifeMin: 0.3, lifeMax: 0.7, sizeMin: 4, sizeMax: isElite ? 14 : 10, type: 'shard',
+            });
+            Particles.spawn(e.x, e.y, '#fff', 5, {
+              vxMin: Math.cos(dirFromCenter) * 100, vxMax: Math.cos(dirFromCenter) * 250,
+              vyMin: Math.sin(dirFromCenter) * 100, vyMax: Math.sin(dirFromCenter) * 250,
+              lifeMin: 0.2, lifeMax: 0.5, sizeMin: 3, sizeMax: 7, type: 'shard',
             });
             Particles.addRing(e.x, e.y, CFG.C_ACCENT);
+            if (isElite) Particles.addRing(e.x, e.y, CFG.C_RARE); // Extra ring for elite
           }
         }
 
@@ -1234,6 +1399,8 @@ const Trail = {
           // Flash the enclosed polygon briefly
           this._flashPoly = poly.slice();
           this._flashPolyTimer = 0.3;
+          // Shockwave ring from loop centroid
+          Particles.rings.push({ x: loopCX, y: loopCY, color: CFG.C_ACCENT, radius: 0, maxRadius: 150, life: 0.5 });
           ScreenFX.flash(CFG.C_ACCENT, 0.15, 0.12);
           ScreenFX.shake(5, 0.2);
 
@@ -1263,15 +1430,29 @@ const Trail = {
   render(ctx) {
     if (this.count < 2) return;
 
+    // Check if loop is about to close (for glow pulse)
+    let nearLoop = false;
+    if (this.count > this.SKIP_RECENT + 5 && this._lastPlayerX !== undefined) {
+      const searchEnd = this.count - this.SKIP_RECENT;
+      for (let i = 0; i < searchEnd; i++) {
+        const pt = this.getPoint(i);
+        if (Math.hypot(this._lastPlayerX - pt.x, this._lastPlayerY - pt.y) < 80) {
+          nearLoop = true; break;
+        }
+      }
+    }
+
     // Trail with color gradient: dim oldest -> bright cyan newest
     ctx.save();
     ctx.shadowColor = CFG.C_ACCENT;
-    ctx.shadowBlur = 6;
-    ctx.lineWidth = 2.5;
+    const glowPulse = nearLoop ? 10 + 6 * Math.sin(performance.now() / 150) : 6;
+    ctx.shadowBlur = glowPulse;
+    ctx.lineWidth = nearLoop ? 3.5 : 2.5;
     ctx.lineCap = 'round';
     for (let i = 1; i < this.count; i++) {
       const frac = i / this.count; // 0=oldest, 1=newest
-      const alpha = 0.08 + frac * 0.30; // 0.08 -> 0.38
+      const alphaBoost = nearLoop ? 0.15 : 0;
+      const alpha = 0.08 + frac * 0.30 + alphaBoost; // 0.08 -> 0.38 (+ boost)
       const r = Math.round(53 + frac * (53 - 53));
       const g = Math.round(100 + frac * (242 - 100));
       const b = Math.round(140 + frac * (208 - 140));
@@ -1342,6 +1523,8 @@ const Waves = {
   obstacles: [],
   scraps: [],
   scrapTimer: 0,
+  boostZones: [],
+  boostZoneTimer: 0,
   upgradeCards: [],
   upgradeChosen: false,
   cadenceMult: 1,
@@ -1357,6 +1540,8 @@ const Waves = {
     this.obstacles = [];
     this.scraps = [];
     this.scrapTimer = CFG.SCRAP_INTERVAL;
+    this.boostZones = [];
+    this.boostZoneTimer = CFG.BOOST_ZONE_SPAWN_INTERVAL;
     this.upgradeCards = [];
     this.upgradeChosen = false;
     this.cadenceMult = 1;
@@ -1407,6 +1592,8 @@ const Waves = {
     const pool = ['chaser'];
     if (score >= 1000) pool.push('interceptor');
     if (score >= 1500) pool.push('drifter');
+    // Elite: rare spawn from wave 4+
+    if (this.waveIndex >= 4 && Math.random() < 0.12) return 'elite';
     return U.randChoice(pool);
   },
 
@@ -1497,10 +1684,17 @@ const Waves = {
     if (this.scrapTimer <= 0 && this.phase === 'combat') {
       const angle = U.randFloat(0, Math.PI * 2);
       const dist = U.randFloat(220, 340);
+      // Pickup type selection
+      let pickupType = 'scrap';
+      const roll = Math.random();
+      if (this.waveIndex >= 5 && roll < 0.04) pickupType = 'bomb'; // very rare, wave 5+
+      else if (roll < 0.12) pickupType = 'trail_boost';
+      else if (roll < 0.20) pickupType = 'speed_pickup';
       this.scraps.push({
         x: U.clamp(player.x + Math.cos(angle) * dist, 40, CFG.WORLD_W - 40),
         y: U.clamp(player.y + Math.sin(angle) * dist, 40, CFG.WORLD_H - 40),
         life: 15, bobPhase: U.randFloat(0, Math.PI * 2),
+        type: pickupType,
       });
       this.scrapTimer = CFG.SCRAP_INTERVAL;
     }
@@ -1521,11 +1715,37 @@ const Waves = {
       }
       // Collection
       if (U.dist(s.x, s.y, player.x, player.y) < CFG.SCRAP_RADIUS + player.radius + 10) {
+        const pType = s.type || 'scrap';
         this.scraps.splice(i, 1);
-        return 'scrap';
+        return pType;
       }
       if (s.life <= 0) this.scraps.splice(i, 1);
     }
+
+    // Boost zone spawning
+    this.boostZoneTimer -= dt;
+    if (this.boostZoneTimer <= 0 && this.phase === 'combat') {
+      const angle = U.randFloat(0, Math.PI * 2);
+      const dist = U.randFloat(200, 400);
+      this.boostZones.push({
+        x: U.clamp(player.x + Math.cos(angle) * dist, 60, CFG.WORLD_W - 60),
+        y: U.clamp(player.y + Math.sin(angle) * dist, 60, CFG.WORLD_H - 60),
+        life: 12, phase: 0,
+      });
+      this.boostZoneTimer = CFG.BOOST_ZONE_SPAWN_INTERVAL;
+    }
+    // Update boost zones
+    for (let i = this.boostZones.length - 1; i >= 0; i--) {
+      const bz = this.boostZones[i];
+      bz.life -= dt;
+      bz.phase += dt * 3;
+      if (U.dist(bz.x, bz.y, player.x, player.y) < CFG.BOOST_ZONE_RADIUS + player.radius) {
+        this.boostZones.splice(i, 1);
+        return 'boost';
+      }
+      if (bz.life <= 0) this.boostZones.splice(i, 1);
+    }
+
     return null;
   },
 
@@ -1566,6 +1786,46 @@ const Waves = {
     ctx.lineWidth = 2;
     ctx.strokeRect(CFG.ARENA_PAD, CFG.ARENA_PAD, CFG.WORLD_W - CFG.ARENA_PAD*2, CFG.WORLD_H - CFG.ARENA_PAD*2);
 
+    // Dynamic background: slow-moving geometric shapes
+    // Color temperature shifts with wave progress (cool blue early -> warm red late)
+    const waveProgress = Math.min(1, (Waves.waveIndex || 1) / 8);
+    const bgR = Math.round(20 + waveProgress * 30);
+    const bgG = Math.round(30 + (1 - waveProgress) * 20);
+    const bgB = Math.round(50 + (1 - waveProgress) * 30);
+    ctx.strokeStyle = `rgb(${bgR},${bgG},${bgB})`;
+    ctx.globalAlpha = 0.06;
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 8; i++) {
+      const gx = vx + ((time * 8 + i * 371) % (CFG.W + 200)) - 100;
+      const gy = vy + ((time * 5 + i * 523) % (CFG.H + 200)) - 100;
+      const rot = time * 0.1 + i * 1.3;
+      ctx.save();
+      ctx.translate(gx, gy);
+      ctx.rotate(rot);
+      if (i % 3 === 0) {
+        // Triangle
+        ctx.beginPath();
+        ctx.moveTo(0, -20); ctx.lineTo(17, 10); ctx.lineTo(-17, 10);
+        ctx.closePath(); ctx.stroke();
+      } else if (i % 3 === 1) {
+        // Diamond
+        ctx.beginPath();
+        ctx.moveTo(0, -15); ctx.lineTo(12, 0); ctx.lineTo(0, 15); ctx.lineTo(-12, 0);
+        ctx.closePath(); ctx.stroke();
+      } else {
+        // Hexagon
+        ctx.beginPath();
+        for (let j = 0; j < 6; j++) {
+          const a = Math.PI / 3 * j;
+          const hx = Math.cos(a) * 14, hy = Math.sin(a) * 14;
+          if (j === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
+        }
+        ctx.closePath(); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+
     // Dust motes (camera-relative)
     ctx.fillStyle = CFG.C_PANEL;
     ctx.globalAlpha = 0.2;
@@ -1592,22 +1852,83 @@ const Waves = {
   renderScraps(ctx) {
     for (const s of this.scraps) {
       const bob = Math.sin(s.bobPhase) * 3;
+      const pType = s.type || 'scrap';
       ctx.save();
       ctx.translate(s.x, s.y + bob);
-      // Hex shape
-      ctx.fillStyle = CFG.C_PICKUP;
-      ctx.shadowColor = CFG.C_PICKUP;
-      ctx.shadowBlur = 8;
-      ctx.beginPath();
-      for (let i = 0; i < 6; i++) {
-        const a = Math.PI / 3 * i - Math.PI / 6;
-        const px = Math.cos(a) * CFG.SCRAP_RADIUS;
-        const py = Math.sin(a) * CFG.SCRAP_RADIUS;
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+
+      const colors = {
+        scrap: CFG.C_PICKUP,
+        speed_pickup: CFG.C_ACCENT,
+        trail_boost: CFG.C_RARE,
+        bomb: '#FF4444',
+      };
+      const color = colors[pType] || CFG.C_PICKUP;
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = pType === 'bomb' ? 14 : 8;
+
+      if (pType === 'bomb') {
+        // Circle with X
+        ctx.beginPath();
+        ctx.arc(0, 0, CFG.SCRAP_RADIUS + 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-3, -3); ctx.lineTo(3, 3);
+        ctx.moveTo(3, -3); ctx.lineTo(-3, 3);
+        ctx.stroke();
+      } else if (pType === 'speed_pickup') {
+        // Lightning bolt shape
+        ctx.beginPath();
+        ctx.moveTo(-3, -8); ctx.lineTo(2, -2); ctx.lineTo(-1, -2);
+        ctx.lineTo(3, 8); ctx.lineTo(-2, 2); ctx.lineTo(1, 2);
+        ctx.closePath();
+        ctx.fill();
+      } else if (pType === 'trail_boost') {
+        // Diamond
+        ctx.beginPath();
+        ctx.moveTo(0, -8); ctx.lineTo(6, 0); ctx.lineTo(0, 8); ctx.lineTo(-6, 0);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        // Default hex shape
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = Math.PI / 3 * i - Math.PI / 6;
+          const px = Math.cos(a) * CFG.SCRAP_RADIUS;
+          const py = Math.sin(a) * CFG.SCRAP_RADIUS;
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
       }
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+  },
+
+  renderBoostZones(ctx) {
+    for (const bz of this.boostZones) {
+      ctx.save();
+      ctx.translate(bz.x, bz.y);
+      const pulse = 0.6 + 0.3 * Math.sin(bz.phase);
+      ctx.globalAlpha = pulse * Math.min(1, bz.life / 2);
+      ctx.fillStyle = CFG.C_ACCENT;
+      ctx.shadowColor = CFG.C_ACCENT;
+      ctx.shadowBlur = 15;
+      ctx.beginPath();
+      ctx.arc(0, 0, CFG.BOOST_ZONE_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+      // Inner chevron
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#fff';
+      ctx.globalAlpha *= 0.7;
+      ctx.beginPath();
+      ctx.moveTo(-6, 5); ctx.lineTo(0, -7); ctx.lineTo(6, 5);
       ctx.closePath();
       ctx.fill();
-      ctx.shadowBlur = 0;
       ctx.restore();
     }
   },
@@ -1832,6 +2153,11 @@ const Game = {
   tutorialDismissed: false,
   tutorialTimer: 0,
   encircleCount: 0,
+  // Wave announce
+  waveAnnounceTimer: 0,
+  waveAnnounceNum: 0,
+  // Death cause
+  deathCause: '',
   // Touch UI
   sandbox: false,
   touchDriftBtn: { x: CFG.W - S(70), y: CFG.H - S(80), r: S(40) },
@@ -1862,6 +2188,9 @@ const Game = {
     this.tutorialDismissed = false;
     this.tutorialTimer = 0;
     this.encircleCount = 0;
+    this.waveAnnounceTimer = 0;
+    this.waveAnnounceNum = 0;
+    this.deathCause = '';
     Particles.clear();
     ScreenFX.reset();
     Trail.reset();
@@ -1869,6 +2198,8 @@ const Game = {
     Camera.reset(this.player.x, this.player.y);
     if (!this.sandbox) {
       Waves.startWave(this.player);
+      this.waveAnnounceTimer = 2.0;
+      this.waveAnnounceNum = 1;
     }
   },
 
@@ -1897,12 +2228,14 @@ const Game = {
     if (this.state === STATE.MENU) {
       if (Input.enter || Input.keys['Space']) {
         this.sandbox = false;
+        localStorage.setItem('oversteer_sandbox', '0');
         this.reset();
         this.state = STATE.PLAYING;
         Input.keys['Space'] = false;
       }
       if (Input.keys['KeyS']) {
         this.sandbox = true;
+        localStorage.setItem('oversteer_sandbox', '1');
         this.reset();
         this.state = STATE.PLAYING;
         Input.keys['KeyS'] = false;
@@ -1920,6 +2253,13 @@ const Game = {
       if (this.gameOverTimer <= 0 && (Input.enter || Input.keys['Space'])) {
         this.state = STATE.MENU;
         Input.keys['Space'] = false;
+      }
+      // R to quick restart
+      if (this.gameOverTimer <= 0 && Input.keys['KeyR']) {
+        Input.keys['KeyR'] = false;
+        this.sandbox = false;
+        this.reset();
+        this.state = STATE.PLAYING;
       }
       return;
     }
@@ -1986,6 +2326,8 @@ const Game = {
           Waves.upgradeChosen = true;
         }
         Waves.startWave(this.player);
+        this.waveAnnounceTimer = 2.0;
+        this.waveAnnounceNum = Waves.waveIndex;
         this.state = STATE.PLAYING;
       }
       // Player can still move slowly
@@ -2021,6 +2363,34 @@ const Game = {
     }
     if (this.encircleCount > 0 && !this.tutorialDismissed) this.tutorialDismissed = true;
 
+    // Handbrake smoke FX
+    if (this.player.handbrakeTimer > 0 && Math.random() < 0.6) {
+      const cos = Math.cos(this.player.heading), sin = Math.sin(this.player.heading);
+      const rearX = this.player.x - cos * CFG.PLAYER_W/2;
+      const rearY = this.player.y - sin * CFG.PLAYER_W/2;
+      Particles.spawn(rearX, rearY, '#ccc', 3, {
+        vxMin: -80, vxMax: 80, vyMin: -80, vyMax: 80,
+        lifeMin: 0.3, lifeMax: 0.7, sizeMin: 4, sizeMax: 9, type: 'smoke',
+      });
+    }
+
+    // Wall riding FX
+    if (this.player.wallRiding && Math.random() < 0.5) {
+      Particles.spawn(this.player.x, this.player.y, CFG.C_ACCENT, 1, {
+        vxMin: -20, vxMax: 20, vyMin: -20, vyMax: 20,
+        lifeMin: 0.2, lifeMax: 0.4, sizeMin: 2, sizeMax: 4, type: 'spark',
+      });
+    }
+
+    // Speed boost streak FX
+    if (this.player.speedBoostTimer > 0 && Math.random() < 0.4) {
+      const cos = Math.cos(this.player.heading), sin = Math.sin(this.player.heading);
+      Particles.spawn(this.player.x - cos * 10, this.player.y - sin * 10, CFG.C_ACCENT, 1, {
+        vxMin: -cos * 100, vxMax: -cos * 150, vyMin: -sin * 100, vyMax: -sin * 150,
+        lifeMin: 0.15, lifeMax: 0.3, sizeMin: 1, sizeMax: 3, type: 'spark',
+      });
+    }
+
     // Drift FX
     if (this.player.drifting) {
       // Skid marks at rear wheels
@@ -2032,26 +2402,36 @@ const Game = {
       Particles.addSkid(rearX + perpX * 6, rearY + perpY * 6, color, 0.6);
       Particles.addSkid(rearX - perpX * 6, rearY - perpY * 6, color, 0.6);
 
-      // Smoke
-      if (Math.random() < 0.4) {
-        Particles.spawn(rearX, rearY, '#999', 1, {
-          vxMin: -30, vxMax: 30, vyMin: -30, vyMax: 30,
-          lifeMin: 0.3, lifeMax: 0.6, sizeMin: 3, sizeMax: 6, type: 'smoke',
+      // Smoke — thicker during drift, color shifts with combo
+      const smokeChance = 0.6;
+      if (Math.random() < smokeChance) {
+        const comboInt = Math.floor(this.player.comboLevel);
+        const smokeColor = comboInt >= 5 ? CFG.C_RARE : comboInt >= 3 ? CFG.C_ACCENT : '#bbb';
+        Particles.spawn(rearX, rearY, smokeColor, 2, {
+          vxMin: -40, vxMax: 40, vyMin: -40, vyMax: 40,
+          lifeMin: 0.4, lifeMax: 0.8, sizeMin: 4, sizeMax: 8, type: 'smoke',
         });
       }
 
       // Drift just started FX
       if (this.player.driftJustStarted) {
-        Particles.spawn(rearX, rearY, '#fff', 6, {
+        // Drift chain color escalation: cyan -> purple -> gold
+        const chainColors = ['#fff', CFG.C_ACCENT, CFG.C_RARE, '#FFD700'];
+        const chainColor = chainColors[Math.min(this.player.driftChain, 3)] || '#fff';
+        Particles.spawn(rearX, rearY, chainColor, 6 + this.player.driftChain * 3, {
           vxMin: -80, vxMax: 80, vyMin: -80, vyMax: 80,
-          lifeMin: 0.15, lifeMax: 0.3, sizeMin: 2, sizeMax: 4, type: 'smoke',
+          lifeMin: 0.15, lifeMax: 0.3, sizeMin: 2, sizeMax: 4 + this.player.driftChain, type: 'smoke',
         });
-        ScreenFX.zoom(1.03, 0.1);
-        // Tire chirp visual: white ticks
-        Particles.spawn(rearX + perpX * 6, rearY + perpY * 6, '#fff', 2, {
+        ScreenFX.zoom(1.03 + this.player.driftChain * 0.01, 0.1);
+        // Tire chirp visual
+        Particles.spawn(rearX + perpX * 6, rearY + perpY * 6, chainColor, 2, {
           vxMin: -20, vxMax: 20, vyMin: -20, vyMax: 20,
           lifeMin: 0.1, lifeMax: 0.15, sizeMin: 2, sizeMax: 3, type: 'spark',
         });
+        if (this.player.driftChain >= 1) {
+          const chainLabel = this.player.driftChain >= 2 ? 'CHAIN x2!' : 'CHAIN!';
+          Particles.addFloat(this.player.x, this.player.y - 35, chainLabel, chainColor, 14);
+        }
       }
     }
 
@@ -2096,6 +2476,48 @@ const Game = {
         lifeMin: 0.2, lifeMax: 0.5, sizeMin: 2, sizeMax: 4, type: 'spark',
       });
       Particles.addFloat(this.player.x, this.player.y - 20, '+SCRAP', CFG.C_PICKUP, 14);
+    } else if (scrapResult === 'speed_pickup') {
+      this.player.speedBoostTimer = CFG.BOOST_ZONE_DURATION;
+      Particles.spawn(this.player.x, this.player.y, CFG.C_ACCENT, 10, {
+        vxMin: -70, vxMax: 70, vyMin: -70, vyMax: 70,
+        lifeMin: 0.3, lifeMax: 0.5, sizeMin: 2, sizeMax: 4, type: 'spark',
+      });
+      Particles.addFloat(this.player.x, this.player.y - 20, 'SPEED!', CFG.C_ACCENT, 16);
+    } else if (scrapResult === 'trail_boost') {
+      // Temporarily increase trail length
+      Trail.MAX_POINTS = Math.min(800, Trail.MAX_POINTS + 200);
+      Particles.spawn(this.player.x, this.player.y, CFG.C_RARE, 10, {
+        vxMin: -60, vxMax: 60, vyMin: -60, vyMax: 60,
+        lifeMin: 0.3, lifeMax: 0.5, sizeMin: 2, sizeMax: 5, type: 'spark',
+      });
+      Particles.addFloat(this.player.x, this.player.y - 20, 'TRAIL+', CFG.C_RARE, 16);
+    } else if (scrapResult === 'bomb') {
+      // Kill all on-screen enemies
+      let bombKills = 0;
+      for (const e of Waves.enemies) {
+        if (!e.alive) continue;
+        if (Camera.isVisible(e.x, e.y, 50)) {
+          e.alive = false;
+          bombKills++;
+          Particles.spawn(e.x, e.y, CFG.C_ENEMY, 8, {
+            vxMin: -200, vxMax: 200, vyMin: -200, vyMax: 200,
+            lifeMin: 0.3, lifeMax: 0.6, sizeMin: 3, sizeMax: 8, type: 'shard',
+          });
+          Particles.addRing(e.x, e.y, CFG.C_ENEMY);
+        }
+      }
+      ScreenFX.flash('#fff', 0.3, 0.2);
+      ScreenFX.shake(12, 0.4);
+      Particles.addFloat(this.player.x, this.player.y - 30, `BOMB! x${bombKills}`, '#FF4444', 22);
+      this.score += bombKills * 50 * this.player.scoreMult;
+    } else if (scrapResult === 'boost') {
+      this.player.speedBoostTimer = CFG.BOOST_ZONE_DURATION;
+      Particles.spawn(this.player.x, this.player.y, CFG.C_ACCENT, 12, {
+        vxMin: -80, vxMax: 80, vyMin: -80, vyMax: 80,
+        lifeMin: 0.3, lifeMax: 0.6, sizeMin: 2, sizeMax: 5, type: 'spark',
+      });
+      Particles.addFloat(this.player.x, this.player.y - 20, 'SPEED BOOST!', CFG.C_ACCENT, 16);
+      ScreenFX.zoom(1.04, 0.15);
     }
 
     // Check for upgrade break transition
@@ -2125,8 +2547,9 @@ const Game = {
     for (const e of Waves.enemies) {
       if (!e.alive) continue;
       const d = U.dist(this.player.x, this.player.y, e.x, e.y);
-      const collDist = pRadius + CFG.ENEMY_RADIUS;
-      const nearDist = pRadius + CFG.ENEMY_RADIUS + CFG.NEAR_MISS_ENEMY;
+      const eRadius = e.radius || CFG.ENEMY_RADIUS;
+      const collDist = pRadius + eRadius;
+      const nearDist = pRadius + eRadius + CFG.NEAR_MISS_ENEMY;
 
       if (d < collDist) {
         if (this.player.invulnTimer > 0 || this.player.ghostFrameTimer > 0) continue;
@@ -2134,6 +2557,7 @@ const Game = {
         if (this.player.shield) {
           this.shieldBreak(e);
         } else {
+          this.deathCause = `HIT BY ${e.type.toUpperCase()}`;
           this.die();
           return;
         }
@@ -2166,6 +2590,7 @@ const Game = {
           if (this.player.shield) {
             this.shieldBreak(o);
           } else {
+            this.deathCause = `HIT ${o.type.toUpperCase()}`;
             this.die();
             return;
           }
@@ -2236,6 +2661,9 @@ const Game = {
     }
     if (this.milestoneTimer > 0) this.milestoneTimer -= dt;
 
+    // Wave announce timer
+    if (this.waveAnnounceTimer > 0) this.waveAnnounceTimer -= dt;
+
     // New best detection
     if (this.score > this.highScore) this.newBest = true;
 
@@ -2245,10 +2673,37 @@ const Game = {
     Particles.update(dt);
   },
 
+  checkComboMilestone(oldLevel, newLevel) {
+    const milestones = [3, 5, 8];
+    for (const m of milestones) {
+      if (Math.floor(oldLevel) < m && Math.floor(newLevel) >= m) {
+        Particles.addRing(this.player.x, this.player.y, m >= 8 ? '#FFD700' : m >= 5 ? CFG.C_RARE : CFG.C_ACCENT);
+        ScreenFX.flash(CFG.C_ACCENT, 0.12, 0.1);
+        Particles.addFloat(this.player.x, this.player.y - 50, `x${m} COMBO!`,
+          m >= 8 ? '#FFD700' : m >= 5 ? CFG.C_RARE : CFG.C_ACCENT, 22);
+        ScreenFX.zoom(1.05, 0.15);
+        break;
+      }
+    }
+  },
+
   nearMiss(target, type) {
     const pts = type === 'enemy' ? CFG.NEAR_MISS_ENEMY_PTS : CFG.NEAR_MISS_HAZARD_PTS;
     this.score += pts * this.player.scoreMult;
+    const oldCombo = this.player.comboLevel;
     this.player.comboLevel = Math.min(CFG.MAX_COMBO, this.player.comboLevel + 1);
+    this.checkComboMilestone(oldCombo, this.player.comboLevel);
+
+    // Near-miss streak
+    this.player.consecutiveNearMisses++;
+    this.player.nearMissStreakTimer = 2.0;
+    if (this.player.consecutiveNearMisses >= 3) {
+      const streakBonus = 50 * this.player.consecutiveNearMisses;
+      this.score += streakBonus * this.player.scoreMult;
+      this.player.invulnTimer = Math.max(this.player.invulnTimer, 0.3);
+      Particles.addFloat(this.player.x, this.player.y - 50, `STREAK x${this.player.consecutiveNearMisses}! +${streakBonus}`, '#FFD700', 18);
+      ScreenFX.flash('#FFD700', 0.15, 0.1);
+    }
 
     // FX
     ScreenFX.slowmo(0.85, 0.15);
@@ -2299,6 +2754,9 @@ const Game = {
     this.deathPhase = 0;
     this.deathTimer = CFG.FREEZE_TIME;
     ScreenFX.freeze(CFG.FREEZE_TIME);
+    if (this.deathCause) {
+      Particles.addFloat(this.player.x, this.player.y - 40, this.deathCause, CFG.C_ENEMY, 16);
+    }
   },
 
   selectUpgradeCard(index) {
@@ -2338,6 +2796,9 @@ const Game = {
     // Scraps
     Waves.renderScraps(ctx);
 
+    // Boost zones
+    Waves.renderBoostZones(ctx);
+
     // Enemies
     Waves.renderEnemies(ctx, this.time);
 
@@ -2362,6 +2823,52 @@ const Game = {
     ctx.fillStyle = vig;
     ctx.fillRect(0, 0, CFG.W, CFG.H);
 
+    // Speed lines (screen space, at >70% max speed)
+    {
+      const speedFrac = this.player.speed / (this.player.maxSpeed || CFG.MAX_SPEED);
+      if (speedFrac > 0.7 && this.state !== STATE.DYING) {
+        const intensity = (speedFrac - 0.7) / 0.3; // 0..1
+        const lineCount = Math.floor(6 + intensity * 8);
+        ctx.save();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        const heading = this.player.heading;
+        for (let i = 0; i < lineCount; i++) {
+          const seed = (this.time * 3 + i * 7.13) % 1;
+          const perpOff = (i / lineCount - 0.5) * CFG.H * 1.2;
+          const len = S(40 + intensity * 60);
+          const sx = CFG.W / 2 + Math.cos(heading + Math.PI) * seed * CFG.W * 0.6 - Math.sin(heading) * perpOff;
+          const sy = CFG.H / 2 + Math.sin(heading + Math.PI) * seed * CFG.H * 0.6 + Math.cos(heading) * perpOff;
+          ctx.globalAlpha = intensity * 0.15 * (1 - seed);
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(sx - Math.cos(heading) * len, sy - Math.sin(heading) * len);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      }
+    }
+
+    // Chromatic aberration at edges (high speed or dying)
+    {
+      const speedFrac = this.player.speed / (this.player.maxSpeed || CFG.MAX_SPEED);
+      const abIntensity = this.state === STATE.DYING ? 0.4 : (speedFrac > 0.8 ? (speedFrac - 0.8) * 2 : 0);
+      if (abIntensity > 0.01) {
+        const off = S(2 + abIntensity * 4);
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        // Red tint left edge
+        ctx.fillStyle = `rgba(255,50,50,${abIntensity * 0.08})`;
+        ctx.fillRect(0, 0, S(60), CFG.H);
+        // Blue tint right edge
+        ctx.fillStyle = `rgba(50,50,255,${abIntensity * 0.08})`;
+        ctx.fillRect(CFG.W - S(60), 0, S(60), CFG.H);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.restore();
+      }
+    }
+
     // HUD
     if (this.state !== STATE.DYING) {
       renderHUD(ctx, this);
@@ -2375,6 +2882,23 @@ const Game = {
     // Minimap (top-right corner, screen space)
     if ((this.state === STATE.PLAYING || this.state === STATE.UPGRADE) && !this.sandbox) {
       this.renderMinimap(ctx);
+    }
+
+    // Wave announce banner
+    if (this.waveAnnounceTimer > 0) {
+      const fadeIn = Math.min(1, (2.0 - this.waveAnnounceTimer) / 0.3);
+      const fadeOut = Math.min(1, this.waveAnnounceTimer / 0.3);
+      const alpha = Math.min(fadeIn, fadeOut);
+      // Slide-in from top
+      const slideY = S(70) - (1 - fadeIn) * S(40);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      U.roundRect(ctx, CFG.W/2 - S(100), slideY - S(18), S(200), S(36), S(6));
+      ctx.fill();
+      U.text(ctx, `WAVE ${this.waveAnnounceNum}`, CFG.W/2, slideY, {
+        align: 'center', color: CFG.C_ACCENT, size: 26, bold: true, shadow: true
+      });
+      ctx.globalAlpha = 1;
     }
 
     // Milestone banner
@@ -2409,12 +2933,37 @@ const Game = {
     if (this.state === STATE.PAUSED) {
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(0, 0, CFG.W, CFG.H);
-      U.text(ctx, 'PAUSED', CFG.W/2, CFG.H/2 - S(20), { align: 'center', color: CFG.C_TEXT, size: 40, bold: true, shadow: true });
-      U.text(ctx, 'P / Esc to resume', CFG.W/2, CFG.H/2 + S(30), { align: 'center', color: '#888', size: 16 });
+      U.text(ctx, 'PAUSED', CFG.W/2, CFG.H/2 - S(60), { align: 'center', color: CFG.C_TEXT, size: 40, bold: true, shadow: true });
+      U.text(ctx, 'P / Esc to resume', CFG.W/2, CFG.H/2 - S(20), { align: 'center', color: '#888', size: 16 });
       // Controls reminder
-      U.text(ctx, 'WASD: Drive  |  SPACE: Drift  |  Loop around enemies to kill', CFG.W/2, CFG.H/2 + S(60), {
-        align: 'center', color: '#555', size: 12
+      U.text(ctx, 'WASD: Drive  |  SPACE: Drift  |  S+brake: Handbrake  |  Loop around enemies to kill', CFG.W/2, CFG.H/2 + S(10), {
+        align: 'center', color: '#555', size: 11
       });
+
+      // Collected upgrades with names
+      const ups = this.player.upgrades;
+      if (ups.length > 0) {
+        U.text(ctx, 'UPGRADES', CFG.W/2, CFG.H/2 + S(40), { align: 'center', color: '#888', size: 13, bold: true });
+        const upNames = ups.map(id => {
+          const u = ARENA_UPGRADES.find(a => a.id === id);
+          return u ? u.name : id;
+        });
+        // Display in rows of up to 3
+        for (let i = 0; i < upNames.length; i += 3) {
+          const row = upNames.slice(i, i + 3).join('  |  ');
+          U.text(ctx, row, CFG.W/2, CFG.H/2 + S(58) + Math.floor(i / 3) * S(18), {
+            align: 'center', color: CFG.C_ACCENT, size: 12
+          });
+        }
+      }
+
+      // Difficulty indicator
+      if (!this.sandbox) {
+        const diffY = CFG.H/2 + S(ups.length > 0 ? 100 + Math.ceil(ups.length / 3) * 18 : 50);
+        U.text(ctx, `Wave ${this.waveIndex}  |  Enemy speed bonus: +${this.speedBonus}`, CFG.W/2, diffY, {
+          align: 'center', color: '#555', size: 11
+        });
+      }
     }
 
     // Game over
@@ -2456,8 +3005,13 @@ const Game = {
         U.text(ctx, upStr, CFG.W/2, sy + S(205), { align: 'center', color: CFG.C_ACCENT, size: 20, bold: true });
       }
 
+      // Death cause
+      if (this.deathCause) {
+        U.text(ctx, this.deathCause, CFG.W/2, sy + S(225), { align: 'center', color: '#666', size: 13 });
+      }
+
       if (Math.floor(this.menuAnim * 2) % 2 === 0) {
-        U.text(ctx, 'Press ENTER to retry', CFG.W/2, CFG.H - S(50), { align: 'center', color: CFG.C_ACCENT, size: 18, bold: true, shadow: true });
+        U.text(ctx, 'ENTER to menu  |  R to restart', CFG.W/2, CFG.H - S(50), { align: 'center', color: CFG.C_ACCENT, size: 18, bold: true, shadow: true });
       }
     }
 
