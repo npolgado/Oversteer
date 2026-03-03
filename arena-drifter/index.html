@@ -26,7 +26,9 @@ canvas {
 
 // ── 1. CONFIG ───────────────────────────────────────────────
 const CFG = {
-  W: 960, H: 540,
+  W: 1280, H: 720,
+  // UI scale factor (reference: 1280x720)
+  get S() { return Math.min(this.W / 1280, this.H / 720); },
   // Physics
   ACCEL: 900,
   MAX_SPEED: 520,
@@ -122,6 +124,9 @@ const CFG = {
   WAVE_COMBAT_WAVE1: 30,
 };
 
+// Scale helper: converts reference-resolution pixels to current resolution
+function S(px) { return Math.round(px * CFG.S); }
+
 // ── 2. UTILS ────────────────────────────────────────────────
 const U = {
   lerp(a, b, t) { return a + (b - a) * t; },
@@ -178,18 +183,20 @@ const U = {
   },
   text(ctx, str, x, y, opts = {}) {
     const { color = '#fff', size = 18, align = 'left', shadow = false, bold = false } = opts;
-    ctx.font = `${bold ? 'bold ' : ''}${size}px 'Courier New', monospace`;
+    const sz = Math.max(1, Math.round(size * CFG.S));
+    ctx.font = `${bold ? 'bold ' : ''}${sz}px 'Courier New', monospace`;
     ctx.textAlign = align;
     ctx.textBaseline = 'middle';
     if (shadow) {
       ctx.fillStyle = 'rgba(0,0,0,0.7)';
-      ctx.fillText(str, x + 2, y + 2);
+      ctx.fillText(str, x + S(2), y + S(2));
     }
     ctx.fillStyle = color;
     ctx.fillText(str, x, y);
   },
   wrapText(ctx, text, x, y, maxW, lineH, opts = {}) {
-    ctx.font = `${opts.size || 13}px 'Courier New', monospace`;
+    const sz = Math.max(1, Math.round((opts.size || 13) * CFG.S));
+    ctx.font = `${sz}px 'Courier New', monospace`;
     ctx.textAlign = opts.align || 'left';
     ctx.textBaseline = 'top';
     ctx.fillStyle = opts.color || '#fff';
@@ -294,12 +301,12 @@ const Input = {
       const dx = t.stickPos.x - t.stickOrigin.x;
       const dy = t.stickPos.y - t.stickOrigin.y;
       const mag = Math.hypot(dx, dy);
-      if (mag > 15) {
+      if (mag > S(15)) {
         const angle = Math.atan2(dy, dx);
-        this.up = this.up || dy < -15;
-        this.down = this.down || dy > 15;
-        this.left = this.left || dx < -15;
-        this.right = this.right || dx > 15;
+        this.up = this.up || dy < -S(15);
+        this.down = this.down || dy > S(15);
+        this.left = this.left || dx < -S(15);
+        this.right = this.right || dx > S(15);
       }
     }
     if (t.driftId !== null) this.drift = true;
@@ -1646,62 +1653,62 @@ function renderHUD(ctx, game) {
 
   // Sandbox label
   if (game.sandbox) {
-    U.text(ctx, 'SANDBOX', CFG.W/2, 24, { align: 'center', color: CFG.C_ACCENT, size: 18, bold: true, shadow: true });
-    U.text(ctx, 'Just drive. No enemies. Press P to pause, ESC to menu.', CFG.W/2, 44, { align: 'center', color: '#555', size: 11 });
+    U.text(ctx, 'SANDBOX', CFG.W/2, S(24), { align: 'center', color: CFG.C_ACCENT, size: 18, bold: true, shadow: true });
+    U.text(ctx, 'Just drive. No enemies. Press P to pause, ESC to menu.', CFG.W/2, S(44), { align: 'center', color: '#555', size: 11 });
     return;
   }
 
   // Score (top-left)
   const scoreStr = Math.floor(score).toLocaleString();
-  U.text(ctx, 'SCORE', 20, 22, { color: '#888', size: 12, bold: true });
-  U.text(ctx, scoreStr, 20, 42, { color: newBest ? CFG.C_PICKUP : CFG.C_TEXT, size: 22, bold: true, shadow: true });
+  U.text(ctx, 'SCORE', S(20), S(22), { color: '#888', size: 12, bold: true });
+  U.text(ctx, scoreStr, S(20), S(42), { color: newBest ? CFG.C_PICKUP : CFG.C_TEXT, size: 22, bold: true, shadow: true });
   if (newBest) {
-    U.text(ctx, 'NEW BEST!', 20, 60, { color: CFG.C_PICKUP, size: 10, bold: true });
+    U.text(ctx, 'NEW BEST!', S(20), S(60), { color: CFG.C_PICKUP, size: 10, bold: true });
   }
 
   // Wave timer (top-center)
   if (phase === 'combat') {
     const frac = U.clamp(waveTimer / (Waves.currentCombatDuration || CFG.WAVE_COMBAT), 0, 1);
-    const barW = 200, barH = 8;
-    const bx = CFG.W/2 - barW/2, by = 14;
+    const barW = S(200), barH = S(8);
+    const bx = CFG.W/2 - barW/2, by = S(14);
     ctx.fillStyle = CFG.C_PANEL;
     ctx.fillRect(bx, by, barW, barH);
     ctx.fillStyle = CFG.C_ACCENT;
     ctx.fillRect(bx, by, barW * frac, barH);
-    U.text(ctx, `WAVE ${waveIndex}`, CFG.W/2, by + barH + 14, { align: 'center', color: '#666', size: 11 });
+    U.text(ctx, `WAVE ${waveIndex}`, CFG.W/2, by + barH + S(14), { align: 'center', color: '#666', size: 11 });
   }
 
   // Drift combo (bottom-left)
   if (player.drifting || player.comboLevel > 0.5) {
     const comboInt = Math.floor(player.comboLevel);
-    const barW = 120, barH = 6;
-    const bx = 20, by = CFG.H - 30;
+    const barW = S(120), barH = S(6);
+    const bx = S(20), by = CFG.H - S(30);
     ctx.fillStyle = CFG.C_PANEL;
     ctx.fillRect(bx, by, barW, barH);
     const comboPct = U.clamp(player.driftTime % CFG.DRIFT_COMBO_INTERVAL / CFG.DRIFT_COMBO_INTERVAL, 0, 1);
     ctx.fillStyle = CFG.C_ACCENT;
     ctx.fillRect(bx, by, barW * comboPct, barH);
-    U.text(ctx, `DRIFT x${comboInt}`, bx, by - 8, { color: CFG.C_ACCENT, size: 13, bold: true });
+    U.text(ctx, `DRIFT x${comboInt}`, bx, by - S(8), { color: CFG.C_ACCENT, size: 13, bold: true });
   }
 
   // Drift available pulse
   if (player.speed >= CFG.DRIFT_THRESHOLD && !player.drifting) {
     const pulse = 0.4 + 0.3 * Math.sin(game.time * 6);
     ctx.globalAlpha = pulse;
-    U.text(ctx, 'SPACE TO DRIFT', CFG.W/2, CFG.H - 20, { align: 'center', color: CFG.C_ACCENT, size: 11 });
+    U.text(ctx, 'SPACE TO DRIFT', CFG.W/2, CFG.H - S(20), { align: 'center', color: CFG.C_ACCENT, size: 11 });
     ctx.globalAlpha = 1;
   }
 
   // Enemy count (top-right area, below upgrades)
   if (phase === 'combat') {
     const aliveCount = Waves.enemies.filter(e => e.alive).length;
-    U.text(ctx, `ENEMIES: ${aliveCount}`, CFG.W - 20, 46, { align: 'right', color: '#666', size: 11 });
+    U.text(ctx, `ENEMIES: ${aliveCount}`, CFG.W - S(20), S(46), { align: 'right', color: '#666', size: 11 });
   }
 
   // Speed indicator bar (bottom-right)
   {
-    const barW = 60, barH = 4;
-    const bx = CFG.W - 20 - barW, by = CFG.H - 34;
+    const barW = S(60), barH = S(4);
+    const bx = CFG.W - S(20) - barW, by = CFG.H - S(34);
     const speedFrac = U.clamp(player.speed / (player.maxSpeed || CFG.MAX_SPEED), 0, 1);
     const driftFrac = CFG.DRIFT_THRESHOLD / (player.maxSpeed || CFG.MAX_SPEED);
     ctx.fillStyle = CFG.C_PANEL;
@@ -1710,12 +1717,12 @@ function renderHUD(ctx, game) {
     ctx.fillRect(bx, by, barW * speedFrac, barH);
     // Drift threshold marker
     ctx.fillStyle = '#888';
-    ctx.fillRect(bx + barW * driftFrac - 1, by - 1, 2, barH + 2);
-    U.text(ctx, 'SPD', bx - 6, by + 2, { align: 'right', color: '#555', size: 9 });
+    ctx.fillRect(bx + barW * driftFrac - S(1), by - S(1), S(2), barH + S(2));
+    U.text(ctx, 'SPD', bx - S(6), by + S(2), { align: 'right', color: '#555', size: 9 });
   }
 
   // Controls hint (bottom-right)
-  U.text(ctx, 'WASD + SPACE', CFG.W - 20, CFG.H - 20, { align: 'right', color: '#444', size: 10 });
+  U.text(ctx, 'WASD + SPACE', CFG.W - S(20), CFG.H - S(20), { align: 'right', color: '#444', size: 10 });
 
   // Upgrades taken
   const ups = player.upgrades;
@@ -1724,15 +1731,15 @@ function renderHUD(ctx, game) {
       const upg = ARENA_UPGRADES.find(u => u.id === ups[i]);
       if (upg) {
         ctx.fillStyle = CFG.C_PANEL;
-        ctx.fillRect(CFG.W - 26 - i * 22, 14, 20, 20);
-        U.text(ctx, upg.icon, CFG.W - 16 - i * 22, 24, { align: 'center', color: CFG.C_ACCENT, size: 12, bold: true });
+        ctx.fillRect(CFG.W - S(26) - i * S(22), S(14), S(20), S(20));
+        U.text(ctx, upg.icon, CFG.W - S(16) - i * S(22), S(24), { align: 'center', color: CFG.C_ACCENT, size: 12, bold: true });
       }
     }
   }
 
   // Shield indicator
   if (player.shield) {
-    U.text(ctx, 'SHIELD', CFG.W - 20, 50, { align: 'right', color: CFG.C_SHIELD, size: 11, bold: true });
+    U.text(ctx, 'SHIELD', CFG.W - S(20), S(50), { align: 'right', color: CFG.C_SHIELD, size: 11, bold: true });
   }
 }
 
@@ -1741,23 +1748,23 @@ function renderUpgradeBreak(ctx, cards, breakTimer, selectedIndex) {
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
   ctx.fillRect(0, 0, CFG.W, CFG.H);
 
-  U.text(ctx, 'CHOOSE UPGRADE', CFG.W/2, 60, { align: 'center', color: CFG.C_ACCENT, size: 28, bold: true, shadow: true });
+  U.text(ctx, 'CHOOSE UPGRADE', CFG.W/2, S(60), { align: 'center', color: CFG.C_ACCENT, size: 28, bold: true, shadow: true });
 
   // Timer
   const secs = Math.ceil(breakTimer);
-  U.text(ctx, `${secs}s`, CFG.W/2, 90, { align: 'center', color: '#888', size: 16 });
+  U.text(ctx, `${secs}s`, CFG.W/2, S(90), { align: 'center', color: '#888', size: 16 });
 
   // Cards
-  const cardW = 180, cardH = 200, gap = 20;
+  const cardW = S(180), cardH = S(200), gap = S(20);
   const total = cards.length * cardW + (cards.length - 1) * gap;
   let cx = (CFG.W - total) / 2;
 
   for (let i = 0; i < cards.length; i++) {
     const card = cards[i];
-    const y = 120;
+    const y = S(120);
 
     // Slide-up animation (staggered)
-    const slideOffset = Math.max(0, 24 - breakTimer * 120 + i * 7);
+    const slideOffset = Math.max(0, S(24) - breakTimer * S(120) + i * S(7));
 
     ctx.save();
     ctx.translate(0, slideOffset);
@@ -1765,27 +1772,27 @@ function renderUpgradeBreak(ctx, cards, breakTimer, selectedIndex) {
 
     // Card bg
     ctx.fillStyle = selectedIndex === i ? '#2A3344' : CFG.C_PANEL;
-    U.roundRect(ctx, cx, y, cardW, cardH, 8);
+    U.roundRect(ctx, cx, y, cardW, cardH, S(8));
     ctx.fill();
 
     // Border
     ctx.strokeStyle = selectedIndex === i ? CFG.C_ACCENT : '#444';
-    ctx.lineWidth = selectedIndex === i ? 3 : 1.5;
-    U.roundRect(ctx, cx, y, cardW, cardH, 8);
+    ctx.lineWidth = selectedIndex === i ? S(3) : S(1.5);
+    U.roundRect(ctx, cx, y, cardW, cardH, S(8));
     ctx.stroke();
 
     // Key hint
-    U.text(ctx, `[${i + 1}]`, cx + cardW/2, y + 20, { align: 'center', color: CFG.C_ACCENT, size: 14, bold: true });
+    U.text(ctx, `[${i + 1}]`, cx + cardW/2, y + S(20), { align: 'center', color: CFG.C_ACCENT, size: 14, bold: true });
 
     // Icon
-    U.text(ctx, card.icon, cx + cardW/2, y + 55, { align: 'center', color: CFG.C_TEXT, size: 36, bold: true });
+    U.text(ctx, card.icon, cx + cardW/2, y + S(55), { align: 'center', color: CFG.C_TEXT, size: 36, bold: true });
 
     // Name
-    U.text(ctx, card.name, cx + cardW/2, y + 90, { align: 'center', color: CFG.C_TEXT, size: 14, bold: true });
+    U.text(ctx, card.name, cx + cardW/2, y + S(90), { align: 'center', color: CFG.C_TEXT, size: 14, bold: true });
 
     // Desc
     ctx.textBaseline = 'top';
-    U.wrapText(ctx, card.desc, cx + 12, y + 110, cardW - 24, 16, { size: 12, color: '#aaa' });
+    U.wrapText(ctx, card.desc, cx + S(12), y + S(110), cardW - S(24), S(16), { size: 12, color: '#aaa' });
 
     ctx.globalAlpha = 1;
     ctx.restore();
@@ -1793,7 +1800,7 @@ function renderUpgradeBreak(ctx, cards, breakTimer, selectedIndex) {
     cx += cardW + gap;
   }
 
-  U.text(ctx, 'Press 1 / 2 / 3 to choose', CFG.W/2, CFG.H - 40, { align: 'center', color: '#666', size: 13 });
+  U.text(ctx, 'Press 1 / 2 / 3 to choose', CFG.W/2, CFG.H - S(40), { align: 'center', color: '#666', size: 13 });
 }
 
 // ── 13. GAME STATE MACHINE ─────────────────────────────────
@@ -1827,7 +1834,7 @@ const Game = {
   encircleCount: 0,
   // Touch UI
   sandbox: false,
-  touchDriftBtn: { x: CFG.W - 70, y: CFG.H - 80, r: 40 },
+  touchDriftBtn: { x: CFG.W - S(70), y: CFG.H - S(80), r: S(40) },
 
   init() {
     Input.init();
@@ -2373,7 +2380,7 @@ const Game = {
     // Milestone banner
     if (this.milestoneTimer > 0) {
       ctx.globalAlpha = U.clamp(this.milestoneTimer / 0.35, 0, 1);
-      U.text(ctx, this.milestoneText, CFG.W/2, 100, {
+      U.text(ctx, this.milestoneText, CFG.W/2, S(100), {
         align: 'center', color: CFG.C_RARE, size: 28, bold: true, shadow: true
       });
       ctx.globalAlpha = 1;
@@ -2385,7 +2392,7 @@ const Game = {
       ctx.globalAlpha = alpha * 0.9;
       const ty = CFG.H * 0.18;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      U.roundRect(ctx, CFG.W/2 - 220, ty - 16, 440, 32, 6);
+      U.roundRect(ctx, CFG.W/2 - S(220), ty - S(16), S(440), S(32), S(6));
       ctx.fill();
       U.text(ctx, 'DRIVE A CIRCLE AROUND ENEMIES TO KILL THEM', CFG.W/2, ty, {
         align: 'center', color: CFG.C_ACCENT, size: 15, bold: true, shadow: true
@@ -2402,10 +2409,10 @@ const Game = {
     if (this.state === STATE.PAUSED) {
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(0, 0, CFG.W, CFG.H);
-      U.text(ctx, 'PAUSED', CFG.W/2, CFG.H/2 - 20, { align: 'center', color: CFG.C_TEXT, size: 40, bold: true, shadow: true });
-      U.text(ctx, 'P / Esc to resume', CFG.W/2, CFG.H/2 + 30, { align: 'center', color: '#888', size: 16 });
+      U.text(ctx, 'PAUSED', CFG.W/2, CFG.H/2 - S(20), { align: 'center', color: CFG.C_TEXT, size: 40, bold: true, shadow: true });
+      U.text(ctx, 'P / Esc to resume', CFG.W/2, CFG.H/2 + S(30), { align: 'center', color: '#888', size: 16 });
       // Controls reminder
-      U.text(ctx, 'WASD: Drive  |  SPACE: Drift  |  Loop around enemies to kill', CFG.W/2, CFG.H/2 + 60, {
+      U.text(ctx, 'WASD: Drive  |  SPACE: Drift  |  Loop around enemies to kill', CFG.W/2, CFG.H/2 + S(60), {
         align: 'center', color: '#555', size: 12
       });
     }
@@ -2418,38 +2425,39 @@ const Game = {
       U.text(ctx, 'GAME OVER', CFG.W/2, CFG.H * 0.25, { align: 'center', color: CFG.C_ENEMY, size: 48, bold: true, shadow: true });
 
       const sy = CFG.H * 0.4;
-      U.text(ctx, 'SCORE', CFG.W/2 - 60, sy, { align: 'right', color: '#888', size: 16 });
+      const col = S(60);
+      U.text(ctx, 'SCORE', CFG.W/2 - col, sy, { align: 'right', color: '#888', size: 16 });
       U.text(ctx, Math.floor(this.score).toLocaleString(), CFG.W/2, sy, { align: 'left', color: CFG.C_TEXT, size: 20, bold: true });
 
-      U.text(ctx, 'BEST', CFG.W/2 - 60, sy + 30, { align: 'right', color: '#888', size: 16 });
-      U.text(ctx, this.highScore.toLocaleString(), CFG.W/2, sy + 30, { align: 'left', color: this.newBest ? CFG.C_PICKUP : CFG.C_TEXT, size: 20, bold: true });
+      U.text(ctx, 'BEST', CFG.W/2 - col, sy + S(30), { align: 'right', color: '#888', size: 16 });
+      U.text(ctx, this.highScore.toLocaleString(), CFG.W/2, sy + S(30), { align: 'left', color: this.newBest ? CFG.C_PICKUP : CFG.C_TEXT, size: 20, bold: true });
 
-      U.text(ctx, 'WAVE', CFG.W/2 - 60, sy + 60, { align: 'right', color: '#888', size: 16 });
-      U.text(ctx, `${this.waveIndex}`, CFG.W/2, sy + 60, { align: 'left', color: CFG.C_TEXT, size: 20, bold: true });
+      U.text(ctx, 'WAVE', CFG.W/2 - col, sy + S(60), { align: 'right', color: '#888', size: 16 });
+      U.text(ctx, `${this.waveIndex}`, CFG.W/2, sy + S(60), { align: 'left', color: CFG.C_TEXT, size: 20, bold: true });
 
-      U.text(ctx, 'ENCIRCLED', CFG.W/2 - 60, sy + 90, { align: 'right', color: '#888', size: 16 });
-      U.text(ctx, `${this.encircleCount}`, CFG.W/2, sy + 90, { align: 'left', color: CFG.C_ACCENT, size: 20, bold: true });
+      U.text(ctx, 'ENCIRCLED', CFG.W/2 - col, sy + S(90), { align: 'right', color: '#888', size: 16 });
+      U.text(ctx, `${this.encircleCount}`, CFG.W/2, sy + S(90), { align: 'left', color: CFG.C_ACCENT, size: 20, bold: true });
 
-      U.text(ctx, 'TIME', CFG.W/2 - 60, sy + 120, { align: 'right', color: '#888', size: 16 });
-      U.text(ctx, `${Math.floor(this.time)}s`, CFG.W/2, sy + 120, { align: 'left', color: CFG.C_TEXT, size: 20, bold: true });
+      U.text(ctx, 'TIME', CFG.W/2 - col, sy + S(120), { align: 'right', color: '#888', size: 16 });
+      U.text(ctx, `${Math.floor(this.time)}s`, CFG.W/2, sy + S(120), { align: 'left', color: CFG.C_TEXT, size: 20, bold: true });
 
       if (this.newBest) {
-        U.text(ctx, 'NEW BEST!', CFG.W/2, sy + 155, { align: 'center', color: CFG.C_PICKUP, size: 22, bold: true, shadow: true });
+        U.text(ctx, 'NEW BEST!', CFG.W/2, sy + S(155), { align: 'center', color: CFG.C_PICKUP, size: 22, bold: true, shadow: true });
       }
 
       // Upgrades taken
       const ups = this.player.upgrades;
       if (ups.length > 0) {
-        U.text(ctx, 'UPGRADES:', CFG.W/2, sy + 185, { align: 'center', color: '#666', size: 12 });
+        U.text(ctx, 'UPGRADES:', CFG.W/2, sy + S(185), { align: 'center', color: '#666', size: 12 });
         const upStr = ups.map(id => {
           const u = ARENA_UPGRADES.find(a => a.id === id);
           return u ? u.icon : '?';
         }).join('  ');
-        U.text(ctx, upStr, CFG.W/2, sy + 205, { align: 'center', color: CFG.C_ACCENT, size: 20, bold: true });
+        U.text(ctx, upStr, CFG.W/2, sy + S(205), { align: 'center', color: CFG.C_ACCENT, size: 20, bold: true });
       }
 
       if (Math.floor(this.menuAnim * 2) % 2 === 0) {
-        U.text(ctx, 'Press ENTER to retry', CFG.W/2, CFG.H - 50, { align: 'center', color: CFG.C_ACCENT, size: 18, bold: true, shadow: true });
+        U.text(ctx, 'Press ENTER to retry', CFG.W/2, CFG.H - S(50), { align: 'center', color: CFG.C_ACCENT, size: 18, bold: true, shadow: true });
       }
     }
 
@@ -2458,7 +2466,7 @@ const Game = {
   },
 
   renderOffscreenIndicators(ctx) {
-    const margin = 20;
+    const margin = S(20);
     for (const e of Waves.enemies) {
       if (!e.alive) continue;
       if (Camera.isVisible(e.x, e.y, 0)) continue;
@@ -2491,9 +2499,9 @@ const Game = {
       ctx.fillStyle = CFG.C_ENEMY;
       ctx.globalAlpha = 0.7;
       ctx.beginPath();
-      ctx.moveTo(8, 0);
-      ctx.lineTo(-5, -5);
-      ctx.lineTo(-5, 5);
+      ctx.moveTo(S(8), 0);
+      ctx.lineTo(S(-5), S(-5));
+      ctx.lineTo(S(-5), S(5));
       ctx.closePath();
       ctx.fill();
       ctx.globalAlpha = 1;
@@ -2502,8 +2510,8 @@ const Game = {
   },
 
   renderMinimap(ctx) {
-    const mmW = 80, mmH = 80;
-    const mx = CFG.W - mmW - 10, my = CFG.H - mmH - 30;
+    const mmW = S(80), mmH = S(80);
+    const mx = CFG.W - mmW - S(10), my = CFG.H - mmH - S(30);
     const sx = mmW / CFG.WORLD_W, sy = mmH / CFG.WORLD_H;
 
     ctx.save();
@@ -2519,12 +2527,12 @@ const Game = {
     for (const e of Waves.enemies) {
       if (!e.alive) continue;
       ctx.fillStyle = CFG.C_ENEMY;
-      ctx.fillRect(mx + e.x * sx - 1, my + e.y * sy - 1, 2, 2);
+      ctx.fillRect(mx + e.x * sx - S(1), my + e.y * sy - S(1), S(2), S(2));
     }
 
     // Player as cyan dot
     ctx.fillStyle = CFG.C_ACCENT;
-    ctx.fillRect(mx + this.player.x * sx - 2, my + this.player.y * sy - 2, 4, 4);
+    ctx.fillRect(mx + this.player.x * sx - S(2), my + this.player.y * sy - S(2), S(4), S(4));
 
     // Viewport rect
     ctx.strokeStyle = CFG.C_ACCENT;
@@ -2553,7 +2561,7 @@ const Game = {
     ctx.lineWidth = 3;
     for (let i = 0; i < 5; i++) {
       ctx.beginPath();
-      const sx = 100 + i * 200;
+      const sx = S(100) + i * S(200);
       const sy = CFG.H * 0.8;
       for (let t = 0; t < 60; t++) {
         const x = sx + t * 3 + Math.sin(t * 0.3 + this.menuAnim + i) * 40;
@@ -2587,12 +2595,12 @@ const Game = {
       ['1 / 2 / 3', 'Select upgrade'],
     ];
     for (let i = 0; i < controls.length; i++) {
-      U.text(ctx, controls[i][0], CFG.W/2 - 10, cy + 22 + i * 20, { align: 'right', size: 12, color: CFG.C_ACCENT });
-      U.text(ctx, controls[i][1], CFG.W/2 + 10, cy + 22 + i * 20, { align: 'left', size: 12, color: '#aaa' });
+      U.text(ctx, controls[i][0], CFG.W/2 - S(10), cy + S(22) + i * S(20), { align: 'right', size: 12, color: CFG.C_ACCENT });
+      U.text(ctx, controls[i][1], CFG.W/2 + S(10), cy + S(22) + i * S(20), { align: 'left', size: 12, color: '#aaa' });
     }
 
     // Mobile
-    U.text(ctx, 'TOUCH: Left stick + Right DRIFT button + 2-finger pause', CFG.W/2, cy + 130, {
+    U.text(ctx, 'TOUCH: Left stick + Right DRIFT button + 2-finger pause', CFG.W/2, cy + S(130), {
       align: 'center', size: 11, color: '#555',
     });
 
@@ -2637,14 +2645,14 @@ const Game = {
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(o.x, o.y, 50, 0, Math.PI * 2);
+      ctx.arc(o.x, o.y, S(50), 0, Math.PI * 2);
       ctx.stroke();
       if (p) {
         ctx.fillStyle = '#fff';
         ctx.beginPath();
-        const dx = U.clamp(p.x - o.x, -40, 40);
-        const dy = U.clamp(p.y - o.y, -40, 40);
-        ctx.arc(o.x + dx, o.y + dy, 18, 0, Math.PI * 2);
+        const dx = U.clamp(p.x - o.x, -S(40), S(40));
+        const dy = U.clamp(p.y - o.y, -S(40), S(40));
+        ctx.arc(o.x + dx, o.y + dy, S(18), 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.globalAlpha = 1;
