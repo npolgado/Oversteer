@@ -1,0 +1,2189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OVERSTEER</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+canvas {
+  display: block;
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  image-rendering: pixelated;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// ============================================================
+// OVERSTEER — Top-Down Arena Drifter
+// Single-file implementation
+// ============================================================
+
+// ── 1. CONFIG ───────────────────────────────────────────────
+const CFG = {
+  W: 960, H: 540,
+  // Physics
+  ACCEL: 900,
+  MAX_SPEED: 520,
+  REVERSE_ACCEL: 600,
+  REVERSE_MAX: 240,
+  TURN_RATE: 240 * Math.PI / 180, // rad/sec
+  TURN_REDUCE_AT_MAX: 0.45,
+  LATERAL_FRICTION: 8.5,
+  FORWARD_DRAG: 1.7,
+  DRIFT_LATERAL: 3.2,
+  DRIFT_DRAG: 2.1,
+  DRIFT_THRESHOLD: 180,
+  DRIFT_BOOST: 60,
+  ARENA_PAD: 24,
+  BOUNCE_RETAIN: 0.35,
+  // Player
+  PLAYER_W: 34, PLAYER_H: 18,
+  PLAYER_RADIUS: 10,
+  PLAYER_DRIFT_SHRINK: 2,
+  // Enemies
+  CHASER_SPEED: 420,
+  INTERCEPTOR_SPEED: 460,
+  DRIFTER_SPEED: 440,
+  ENEMY_RADIUS: 9,
+  ENEMY_W: 32, ENEMY_H: 16,
+  ENEMY_ACCEL: 700,
+  ENEMY_TURN_RATE: 200 * Math.PI / 180,
+  // Near-miss
+  NEAR_MISS_ENEMY: 8,
+  NEAR_MISS_HAZARD: 10,
+  NEAR_MISS_COOLDOWN: 1.2,
+  // Scoring
+  SCORE_PER_SEC: 4,
+  NEAR_MISS_ENEMY_PTS: 25,
+  NEAR_MISS_HAZARD_PTS: 15,
+  DRIFT_COMBO_INTERVAL: 1.0,
+  DRIFT_COMBO_BASE: 5,
+  MAX_COMBO: 8,
+  // Waves
+  WAVE_COMBAT: 25,
+  WAVE_BREAK: 8,
+  FIRST_SPAWN: 0.8,
+  SPAWN_INTERVAL: 2.2,
+  BURST_INTERVAL: 8,
+  BURST_COUNT: 2,
+  BURST_DELAY: 0.3,
+  // Hazards
+  HAZARD_RADIUS: 14,
+  BARRIER_RADIUS: 10,
+  OIL_SLIP_DURATION: 1.2,
+  OIL_SLIP_FRICTION: 2.2,
+  // Scrap
+  SCRAP_INTERVAL: 6,
+  SCRAP_RADIUS: 7,
+  SCRAP_NEAR_MISS_CHANCE: 0.35,
+  // Upgrades
+  UPGRADES_TO_OFFER: 3,
+  UPGRADE_BREAK_TIME: 8,
+  // Colors
+  C_BG: '#07080B',
+  C_BG2: '#0E1118',
+  C_PANEL: '#1A2233',
+  C_TEXT: '#EAEFF7',
+  C_PLAYER: '#EAEFF7',
+  C_ACCENT: '#35F2D0',
+  C_ENEMY: '#FF3B6B',
+  C_ENEMY_DARK: '#7A1B33',
+  C_PICKUP: '#FFB000',
+  C_RARE: '#7C5CFF',
+  C_SHIELD: '#5BFF4A',
+  C_OBSTACLE: '#6B7280',
+  // Death
+  FREEZE_TIME: 0.10,
+  DEATH_SLOWMO: 0.35,
+  DEATH_SLOWMO_DUR: 0.35,
+  SHARD_COUNT_MIN: 10,
+  SHARD_COUNT_MAX: 14,
+  // Shield
+  SHIELD_KNOCKBACK: 140,
+  SHIELD_INVULN: 1.0,
+};
+
+// ── 2. UTILS ────────────────────────────────────────────────
+const U = {
+  lerp(a, b, t) { return a + (b - a) * t; },
+  clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); },
+  randInt(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; },
+  randFloat(a, b) { return Math.random() * (b - a) + a; },
+  randChoice(arr) { return arr[Math.floor(Math.random() * arr.length)]; },
+  randSample(arr, n) {
+    const c = arr.slice(), o = [];
+    for (let i = 0; i < n && c.length; i++) {
+      const idx = Math.floor(Math.random() * c.length);
+      o.push(c.splice(idx, 1)[0]);
+    }
+    return o;
+  },
+  approach(cur, tgt, step) {
+    if (cur < tgt) return Math.min(cur + step, tgt);
+    if (cur > tgt) return Math.max(cur - step, tgt);
+    return tgt;
+  },
+  normalizeAngle(a) {
+    while (a > Math.PI) a -= 2 * Math.PI;
+    while (a < -Math.PI) a += 2 * Math.PI;
+    return a;
+  },
+  angleLerp(a, b, t) {
+    return a + U.normalizeAngle(b - a) * t;
+  },
+  angleDiff(a, b) {
+    return U.normalizeAngle(b - a);
+  },
+  vec2FromAngle(a) { return { x: Math.cos(a), y: Math.sin(a) }; },
+  dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); },
+  drawRotatedRect(ctx, cx, cy, w, h, angle, fill, stroke) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    if (fill) { ctx.fillStyle = fill; ctx.fillRect(-w/2, -h/2, w, h); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1.5; ctx.strokeRect(-w/2, -h/2, w, h); }
+    ctx.restore();
+  },
+  roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  },
+  text(ctx, str, x, y, opts = {}) {
+    const { color = '#fff', size = 18, align = 'left', shadow = false, bold = false } = opts;
+    ctx.font = `${bold ? 'bold ' : ''}${size}px 'Courier New', monospace`;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    if (shadow) {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillText(str, x + 2, y + 2);
+    }
+    ctx.fillStyle = color;
+    ctx.fillText(str, x, y);
+  },
+  wrapText(ctx, text, x, y, maxW, lineH, opts = {}) {
+    ctx.font = `${opts.size || 13}px 'Courier New', monospace`;
+    ctx.textAlign = opts.align || 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = opts.color || '#fff';
+    const words = text.split(' ');
+    let line = '', ly = y;
+    for (const w of words) {
+      const test = line + (line ? ' ' : '') + w;
+      if (ctx.measureText(test).width > maxW && line) {
+        ctx.fillText(line, x, ly);
+        line = w; ly += lineH;
+      } else line = test;
+    }
+    if (line) ctx.fillText(line, x, ly);
+  },
+};
+
+// ── 3. INPUT ────────────────────────────────────────────────
+const Input = {
+  keys: {},
+  up: false, down: false, left: false, right: false,
+  drift: false, pause: false, enter: false,
+  _pausePressed: false, _enterPressed: false,
+  // Touch state
+  touch: { active: false, stickId: null, stickOrigin: null, stickPos: null, driftId: null, pauseTap: false },
+
+  init() {
+    document.addEventListener('keydown', e => {
+      Input.keys[e.code] = true;
+      e.preventDefault();
+    });
+    document.addEventListener('keyup', e => {
+      Input.keys[e.code] = false;
+    });
+    // Touch controls
+    const cv = document.getElementById('c');
+    cv.addEventListener('touchstart', e => { e.preventDefault(); Input._touchStart(e); }, { passive: false });
+    cv.addEventListener('touchmove', e => { e.preventDefault(); Input._touchMove(e); }, { passive: false });
+    cv.addEventListener('touchend', e => { e.preventDefault(); Input._touchEnd(e); }, { passive: false });
+    cv.addEventListener('touchcancel', e => { e.preventDefault(); Input._touchEnd(e); }, { passive: false });
+  },
+
+  _getTouchPos(t) {
+    const cv = document.getElementById('c');
+    const r = cv.getBoundingClientRect();
+    return {
+      x: (t.clientX - r.left) / r.width * CFG.W,
+      y: (t.clientY - r.top) / r.height * CFG.H
+    };
+  },
+
+  _touchStart(e) {
+    const t = this.touch;
+    // Two-finger = pause
+    if (e.touches.length >= 2) { t.pauseTap = true; return; }
+    for (const touch of e.changedTouches) {
+      const p = this._getTouchPos(touch);
+      if (p.x < CFG.W / 2) {
+        // Left side = stick
+        t.active = true;
+        t.stickId = touch.identifier;
+        t.stickOrigin = { x: p.x, y: p.y };
+        t.stickPos = { x: p.x, y: p.y };
+      } else {
+        // Right side = drift
+        t.driftId = touch.identifier;
+      }
+    }
+  },
+
+  _touchMove(e) {
+    const t = this.touch;
+    for (const touch of e.changedTouches) {
+      if (touch.identifier === t.stickId) {
+        t.stickPos = this._getTouchPos(touch);
+      }
+    }
+  },
+
+  _touchEnd(e) {
+    const t = this.touch;
+    for (const touch of e.changedTouches) {
+      if (touch.identifier === t.stickId) {
+        t.stickId = null; t.stickOrigin = null; t.stickPos = null; t.active = false;
+      }
+      if (touch.identifier === t.driftId) {
+        t.driftId = null;
+      }
+    }
+  },
+
+  poll() {
+    const k = this.keys;
+    this.up = !!(k['ArrowUp'] || k['KeyW']);
+    this.down = !!(k['ArrowDown'] || k['KeyS']);
+    this.left = !!(k['ArrowLeft'] || k['KeyA']);
+    this.right = !!(k['ArrowRight'] || k['KeyD']);
+    this.drift = !!k['Space'];
+
+    // Touch stick
+    const t = this.touch;
+    if (t.stickOrigin && t.stickPos) {
+      const dx = t.stickPos.x - t.stickOrigin.x;
+      const dy = t.stickPos.y - t.stickOrigin.y;
+      const mag = Math.hypot(dx, dy);
+      if (mag > 15) {
+        const angle = Math.atan2(dy, dx);
+        this.up = this.up || dy < -15;
+        this.down = this.down || dy > 15;
+        this.left = this.left || dx < -15;
+        this.right = this.right || dx > 15;
+      }
+    }
+    if (t.driftId !== null) this.drift = true;
+
+    // Edge-triggered pause
+    const pNow = !!(k['KeyP'] || k['Escape']);
+    this.pause = pNow && !this._pausePressed;
+    this._pausePressed = pNow;
+
+    // Edge-triggered enter
+    const eNow = !!k['Enter'];
+    this.enter = eNow && !this._enterPressed;
+    this._enterPressed = eNow;
+
+    // Touch pause
+    if (t.pauseTap) { this.pause = true; t.pauseTap = false; }
+  },
+};
+
+// ── 4. SHARED PHYSICS ENGINE ────────────────────────────────
+function updatePhysics(ent, dt, turnInput, throttle, braking, wantDrift, isPlayer) {
+  const speed = Math.hypot(ent.vx, ent.vy);
+
+  // Drift activation
+  if (wantDrift && speed >= CFG.DRIFT_THRESHOLD) {
+    if (!ent.drifting) {
+      ent.drifting = true;
+      ent.driftJustStarted = true;
+      // Boost impulse
+      const dir = U.vec2FromAngle(ent.heading);
+      ent.vx += dir.x * CFG.DRIFT_BOOST;
+      ent.vy += dir.y * CFG.DRIFT_BOOST;
+    }
+  } else {
+    ent.drifting = false;
+  }
+
+  // Turn rate (reduced at high speed)
+  const speedFrac = U.clamp(speed / (ent.maxSpeed || CFG.MAX_SPEED), 0, 1);
+  const turnMult = 1 - speedFrac * CFG.TURN_REDUCE_AT_MAX;
+  const turnRate = (ent.turnRate || CFG.TURN_RATE) * turnMult;
+  ent.heading += turnInput * turnRate * dt;
+  ent.heading = U.normalizeAngle(ent.heading);
+
+  // Acceleration
+  const fwd = U.vec2FromAngle(ent.heading);
+  if (throttle) {
+    ent.vx += fwd.x * CFG.ACCEL * dt;
+    ent.vy += fwd.y * CFG.ACCEL * dt;
+  }
+  if (braking) {
+    // If moving forward, brake; if slow, reverse
+    const dot = ent.vx * fwd.x + ent.vy * fwd.y;
+    if (dot > 30) {
+      // Brake
+      ent.vx -= fwd.x * CFG.ACCEL * 1.5 * dt;
+      ent.vy -= fwd.y * CFG.ACCEL * 1.5 * dt;
+    } else {
+      // Reverse
+      ent.vx -= fwd.x * CFG.REVERSE_ACCEL * dt;
+      ent.vy -= fwd.y * CFG.REVERSE_ACCEL * dt;
+    }
+  }
+
+  // Decompose velocity into forward and lateral
+  const dot = ent.vx * fwd.x + ent.vy * fwd.y;
+  const latX = ent.vx - fwd.x * dot;
+  const latY = ent.vy - fwd.y * dot;
+
+  // Apply friction
+  const latFric = ent.drifting ? CFG.DRIFT_LATERAL : CFG.LATERAL_FRICTION;
+  const fwdDrag = ent.drifting ? CFG.DRIFT_DRAG : CFG.FORWARD_DRAG;
+
+  // Oil slip override
+  const effectiveLatFric = (ent.slipTimer > 0) ? Math.min(latFric, CFG.OIL_SLIP_FRICTION) : latFric;
+
+  const latDecay = Math.exp(-effectiveLatFric * dt);
+  const fwdDecay = Math.exp(-fwdDrag * dt);
+
+  ent.vx = fwd.x * dot * fwdDecay + latX * latDecay;
+  ent.vy = fwd.y * dot * fwdDecay + latY * latDecay;
+
+  // Clamp speed
+  const newSpeed = Math.hypot(ent.vx, ent.vy);
+  const maxSpd = braking && !throttle ? CFG.REVERSE_MAX : (ent.maxSpeed || CFG.MAX_SPEED);
+  if (newSpeed > maxSpd) {
+    const s = maxSpd / newSpeed;
+    ent.vx *= s; ent.vy *= s;
+  }
+
+  // Move
+  ent.x += ent.vx * dt;
+  ent.y += ent.vy * dt;
+
+  // Arena bounds
+  const pad = CFG.ARENA_PAD;
+  if (ent.x < pad) { ent.x = pad; ent.vx = Math.abs(ent.vx) * CFG.BOUNCE_RETAIN; ent.wallHit = true; }
+  if (ent.x > CFG.W - pad) { ent.x = CFG.W - pad; ent.vx = -Math.abs(ent.vx) * CFG.BOUNCE_RETAIN; ent.wallHit = true; }
+  if (ent.y < pad) { ent.y = pad; ent.vy = Math.abs(ent.vy) * CFG.BOUNCE_RETAIN; ent.wallHit = true; }
+  if (ent.y > CFG.H - pad) { ent.y = CFG.H - pad; ent.vy = -Math.abs(ent.vy) * CFG.BOUNCE_RETAIN; ent.wallHit = true; }
+
+  // Slip timer
+  if (ent.slipTimer > 0) ent.slipTimer -= dt;
+}
+
+// ── 5. PLAYER ───────────────────────────────────────────────
+class Player {
+  constructor() { this.reset(); }
+
+  reset() {
+    this.x = CFG.W / 2;
+    this.y = CFG.H / 2;
+    this.vx = 0; this.vy = 0;
+    this.heading = -Math.PI / 2; // facing up
+    this.drifting = false;
+    this.driftJustStarted = false;
+    this.maxSpeed = CFG.MAX_SPEED;
+    this.turnRate = CFG.TURN_RATE;
+    this.shield = false;
+    this.invulnTimer = 0;
+    this.slipTimer = 0;
+    this.wallHit = false;
+    this.upgrades = [];
+    this.comboLevel = 0;
+    this.driftTime = 0;
+    this.leanTimer = 0;
+    this.leanDir = 0;
+    this.exhaustTimer = 0;
+    this.braking = false;
+    this.glowPhase = 0;
+    this.driftDeniedTimer = 0;
+    // Upgrade flags
+    this.tightTurns = false;
+    this.driftKing = false;
+    this.magnetRange = 0;
+    this.scoreMult = 1;
+    this.ghostFrameTimer = 0;
+    this.thickPlating = false;
+    this.afterburner = false;
+    this.comboMaster = false;
+    this.oilResistant = false;
+    this.speedDemon = false;
+  }
+
+  get speed() { return Math.hypot(this.vx, this.vy); }
+  get radius() { return CFG.PLAYER_RADIUS - (this.drifting ? CFG.PLAYER_DRIFT_SHRINK : 0); }
+
+  update(dt) {
+    // Turn input
+    let turnInput = 0;
+    if (Input.left) turnInput -= 1;
+    if (Input.right) turnInput += 1;
+
+    // Lean FX
+    if (turnInput !== 0) { this.leanTimer = 0.08; this.leanDir = turnInput; }
+    if (this.leanTimer > 0) this.leanTimer -= dt;
+
+    // Exhaust FX
+    if (Input.up) this.exhaustTimer = 0.06;
+    if (this.exhaustTimer > 0) this.exhaustTimer -= dt;
+
+    this.braking = Input.down;
+
+    // Drift denied FX
+    if (Input.drift && this.speed < CFG.DRIFT_THRESHOLD && !this.drifting) {
+      this.driftDeniedTimer = 0.12;
+    }
+    if (this.driftDeniedTimer > 0) this.driftDeniedTimer -= dt;
+
+    // Tight turns upgrade
+    const origTurn = this.turnRate;
+    if (this.tightTurns) this.turnRate = CFG.TURN_RATE * 1.25;
+
+    this.wallHit = false;
+    this.driftJustStarted = false;
+    updatePhysics(this, dt, turnInput, Input.up, Input.down, Input.drift, true);
+
+    this.turnRate = origTurn;
+
+    // Drift time tracking
+    if (this.drifting) {
+      this.driftTime += dt;
+    } else {
+      this.driftTime = 0;
+      this.comboLevel = Math.max(0, this.comboLevel - dt * 2);
+    }
+
+    // Invulnerability
+    if (this.invulnTimer > 0) this.invulnTimer -= dt;
+    if (this.ghostFrameTimer > 0) this.ghostFrameTimer -= dt;
+
+    // Glow
+    this.glowPhase += dt;
+  }
+
+  render(ctx) {
+    const speed = this.speed;
+    const drifting = this.drifting;
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.heading);
+
+    // Invulnerability blink
+    if (this.invulnTimer > 0 && Math.floor(this.invulnTimer * 10) % 2 === 0) {
+      ctx.globalAlpha = 0.4;
+    }
+
+    // Lean effect
+    let sx = 1, sy = 1;
+    if (this.leanTimer > 0) {
+      sx = 1.03; sy = 0.97;
+    }
+    ctx.scale(sx, sy);
+
+    // Underglow
+    const glowPulse = 0.3 + 0.15 * Math.sin(this.glowPhase * 2 * Math.PI / 1.2);
+    ctx.shadowColor = CFG.C_ACCENT;
+    ctx.shadowBlur = drifting ? 18 : 10;
+    ctx.globalAlpha *= (0.6 + glowPulse);
+
+    // Body
+    ctx.fillStyle = CFG.C_PLAYER;
+    ctx.fillRect(-CFG.PLAYER_W/2, -CFG.PLAYER_H/2, CFG.PLAYER_W, CFG.PLAYER_H);
+
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+
+    // Outline
+    ctx.strokeStyle = drifting ? CFG.C_ACCENT : '#888';
+    ctx.lineWidth = drifting ? 2 : 1;
+    ctx.strokeRect(-CFG.PLAYER_W/2, -CFG.PLAYER_H/2, CFG.PLAYER_W, CFG.PLAYER_H);
+
+    // Windshield
+    ctx.fillStyle = '#8AF';
+    ctx.fillRect(CFG.PLAYER_W/2 - 8, -CFG.PLAYER_H/2 + 3, 5, CFG.PLAYER_H - 6);
+
+    // Nose highlight
+    ctx.fillStyle = CFG.C_ACCENT;
+    ctx.beginPath();
+    ctx.moveTo(CFG.PLAYER_W/2, 0);
+    ctx.lineTo(CFG.PLAYER_W/2 - 6, -5);
+    ctx.lineTo(CFG.PLAYER_W/2 - 6, 5);
+    ctx.closePath();
+    ctx.fill();
+
+    // Rear lights
+    ctx.fillStyle = this.braking ? '#FF4444' : '#AA2222';
+    ctx.fillRect(-CFG.PLAYER_W/2, -CFG.PLAYER_H/2 + 2, 3, 3);
+    ctx.fillRect(-CFG.PLAYER_W/2, CFG.PLAYER_H/2 - 5, 3, 3);
+
+    // Exhaust flare
+    if (this.exhaustTimer > 0) {
+      ctx.fillStyle = CFG.C_PICKUP;
+      ctx.globalAlpha = this.exhaustTimer / 0.06;
+      ctx.beginPath();
+      ctx.moveTo(-CFG.PLAYER_W/2, 0);
+      ctx.lineTo(-CFG.PLAYER_W/2 - 12, -4);
+      ctx.lineTo(-CFG.PLAYER_W/2 - 12, 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // Drift denied flash
+    if (this.driftDeniedTimer > 0) {
+      ctx.strokeStyle = CFG.C_PICKUP;
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = this.driftDeniedTimer / 0.12;
+      ctx.strokeRect(-CFG.PLAYER_W/2 - 2, -CFG.PLAYER_H/2 - 2, CFG.PLAYER_W + 4, CFG.PLAYER_H + 4);
+      ctx.globalAlpha = 1;
+    }
+
+    // Shield indicator
+    if (this.shield) {
+      ctx.strokeStyle = CFG.C_SHIELD;
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.5 + 0.3 * Math.sin(this.glowPhase * 4);
+      ctx.beginPath();
+      ctx.arc(0, 0, CFG.PLAYER_RADIUS + 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+
+    // Engine jitter (idle life)
+    if (speed < 30) {
+      // tiny jitter handled by glow pulse already
+    }
+  }
+}
+
+// ── 6. ENEMIES ──────────────────────────────────────────────
+class Enemy {
+  constructor(type, x, y) {
+    this.type = type; // 'chaser', 'interceptor', 'drifter'
+    this.x = x; this.y = y;
+    this.vx = 0; this.vy = 0;
+    this.heading = 0;
+    this.drifting = false;
+    this.driftJustStarted = false;
+    this.slipTimer = 0;
+    this.wallHit = false;
+    this.alive = true;
+    this.nearMissCooldown = 0;
+    this.offscreenTimer = 0;
+    this.driftToggleTimer = U.randFloat(2, 5);
+    this.glowExtra = 0;
+
+    if (type === 'chaser') { this.maxSpeed = CFG.CHASER_SPEED; this.turnRate = CFG.ENEMY_TURN_RATE; }
+    else if (type === 'interceptor') { this.maxSpeed = CFG.INTERCEPTOR_SPEED; this.turnRate = CFG.ENEMY_TURN_RATE * 0.85; }
+    else { this.maxSpeed = CFG.DRIFTER_SPEED; this.turnRate = CFG.ENEMY_TURN_RATE * 1.1; }
+  }
+
+  update(dt, player) {
+    if (!this.alive) return;
+
+    // Target
+    let tx = player.x, ty = player.y;
+    if (this.type === 'interceptor') {
+      // Lead the player
+      const lookAhead = 0.5;
+      tx += player.vx * lookAhead;
+      ty += player.vy * lookAhead;
+    }
+
+    // Desired heading
+    const desired = Math.atan2(ty - this.y, tx - this.x);
+    const diff = U.angleDiff(this.heading, desired);
+    let turnInput = U.clamp(diff * 3, -1, 1);
+
+    // Drifter type: periodic drift toggles
+    let wantDrift = false;
+    if (this.type === 'drifter') {
+      this.driftToggleTimer -= dt;
+      if (this.driftToggleTimer <= 0) {
+        this.driftToggleTimer = U.randFloat(1.5, 4);
+        wantDrift = true;
+      }
+      if (this.drifting) wantDrift = true;
+      // Release drift after a while
+      if (this.drifting && this.driftToggleTimer > 2) wantDrift = false;
+    }
+
+    this.wallHit = false;
+    this.driftJustStarted = false;
+    updatePhysics(this, dt, turnInput, true, false, wantDrift, false);
+
+    // Near miss cooldown
+    if (this.nearMissCooldown > 0) this.nearMissCooldown -= dt;
+
+    // Offscreen despawn check
+    if (this.x < -40 || this.x > CFG.W + 40 || this.y < -40 || this.y > CFG.H + 40) {
+      // Outside arena bounds - shouldn't happen due to bounce, but failsafe
+      this.offscreenTimer += dt;
+      if (this.offscreenTimer > 2) this.alive = false;
+    } else {
+      this.offscreenTimer = 0;
+    }
+  }
+
+  render(ctx, time) {
+    if (!this.alive) return;
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.heading);
+
+    // Danger aura
+    ctx.shadowColor = CFG.C_ENEMY;
+    ctx.shadowBlur = 12 + this.glowExtra;
+
+    // Body
+    ctx.fillStyle = CFG.C_ENEMY_DARK;
+    ctx.fillRect(-CFG.ENEMY_W/2, -CFG.ENEMY_H/2, CFG.ENEMY_W, CFG.ENEMY_H);
+    ctx.strokeStyle = CFG.C_ENEMY;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(-CFG.ENEMY_W/2, -CFG.ENEMY_H/2, CFG.ENEMY_W, CFG.ENEMY_H);
+
+    ctx.shadowBlur = 0;
+
+    // Headlight wedge
+    ctx.fillStyle = CFG.C_TEXT;
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    ctx.moveTo(CFG.ENEMY_W/2, -2);
+    ctx.lineTo(CFG.ENEMY_W/2 + 10, -8);
+    ctx.lineTo(CFG.ENEMY_W/2 + 10, 8);
+    ctx.lineTo(CFG.ENEMY_W/2, 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    ctx.restore();
+  }
+}
+
+// ── 7. ARENA / OBSTACLES ────────────────────────────────────
+class Obstacle {
+  constructor(type, x, y, angle) {
+    this.type = type; // 'barrier', 'cones', 'oil'
+    this.x = x; this.y = y;
+    this.angle = angle || 0;
+    this.nearMissCooldown = 0;
+
+    if (type === 'barrier') {
+      this.w = 60; this.h = 20;
+      // Two circle collision points at ends
+      this.circles = [
+        { ox: -20, oy: 0, r: CFG.BARRIER_RADIUS },
+        { ox: 20, oy: 0, r: CFG.BARRIER_RADIUS },
+      ];
+    } else if (type === 'cones') {
+      this.r = CFG.HAZARD_RADIUS;
+      this.circles = [{ ox: 0, oy: 0, r: CFG.HAZARD_RADIUS }];
+    } else {
+      // Oil
+      this.w = 70; this.h = 50;
+      this.circles = []; // no collision, apply slip
+    }
+  }
+
+  getWorldCircles() {
+    if (!this.circles) return [];
+    const cos = Math.cos(this.angle), sin = Math.sin(this.angle);
+    return this.circles.map(c => ({
+      x: this.x + c.ox * cos - c.oy * sin,
+      y: this.y + c.ox * sin + c.oy * cos,
+      r: c.r,
+    }));
+  }
+
+  render(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+
+    if (this.type === 'barrier') {
+      ctx.fillStyle = CFG.C_OBSTACLE;
+      ctx.fillRect(-30, -10, 60, 20);
+      ctx.strokeStyle = CFG.C_PANEL;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-30, -10, 60, 20);
+      // Hazard stripes
+      ctx.fillStyle = '#555';
+      for (let i = -25; i < 25; i += 12) {
+        ctx.fillRect(i, -8, 6, 16);
+      }
+    } else if (this.type === 'cones') {
+      // Three cones in triangle
+      ctx.fillStyle = CFG.C_OBSTACLE;
+      for (const [cx, cy] of [[0, -8], [-7, 6], [7, 6]]) {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - 6);
+        ctx.lineTo(cx - 4, cy + 4);
+        ctx.lineTo(cx + 4, cy + 4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = CFG.C_PICKUP;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    } else {
+      // Oil slick
+      ctx.fillStyle = '#0B0F19';
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 35, 25, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Glossy highlight
+      ctx.fillStyle = '#1A2233';
+      ctx.globalAlpha = 0.4;
+      ctx.beginPath();
+      ctx.ellipse(-5, -5, 15, 10, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+  }
+
+  checkOilOverlap(px, py, pr) {
+    if (this.type !== 'oil') return false;
+    // Simple ellipse approximation
+    const dx = px - this.x, dy = py - this.y;
+    const cos = Math.cos(-this.angle), sin = Math.sin(-this.angle);
+    const lx = dx * cos - dy * sin, ly = dx * sin + dy * cos;
+    return (lx * lx) / (35 * 35) + (ly * ly) / (25 * 25) < 1.2;
+  }
+}
+
+// ── 8. PARTICLES / FX ──────────────────────────────────────
+const Particles = {
+  list: [],
+  skidMarks: [],  // ring buffer
+  MAX_SKIDS: 600,
+  floatingTexts: [],
+  rings: [],
+
+  clear() {
+    this.list = [];
+    this.skidMarks = [];
+    this.floatingTexts = [];
+    this.rings = [];
+  },
+
+  spawn(x, y, color, count, opts = {}) {
+    for (let i = 0; i < count; i++) {
+      this.list.push({
+        x, y, color,
+        vx: U.randFloat(opts.vxMin || -100, opts.vxMax || 100),
+        vy: U.randFloat(opts.vyMin || -100, opts.vyMax || 100),
+        life: U.randFloat(opts.lifeMin || 0.3, opts.lifeMax || 0.8),
+        maxLife: U.randFloat(opts.lifeMin || 0.3, opts.lifeMax || 0.8),
+        size: U.randFloat(opts.sizeMin || 2, opts.sizeMax || 5),
+        type: opts.type || 'spark',
+      });
+    }
+  },
+
+  addSkid(x, y, color, alpha) {
+    this.skidMarks.push({ x, y, color, alpha, age: 0 });
+    if (this.skidMarks.length > this.MAX_SKIDS) this.skidMarks.shift();
+  },
+
+  addFloat(x, y, text, color, size) {
+    this.floatingTexts.push({ x, y, text, color, size: size || 16, life: 0.6, vy: -45 });
+  },
+
+  addRing(x, y, color) {
+    this.rings.push({ x, y, color, radius: 0, maxRadius: 80, life: 0.3 });
+  },
+
+  update(dt) {
+    // Particles
+    for (let i = this.list.length - 1; i >= 0; i--) {
+      const p = this.list[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (p.type === 'smoke') {
+        p.vx *= 0.95; p.vy *= 0.95;
+        p.size += dt * 8;
+      }
+      p.life -= dt;
+      if (p.life <= 0) this.list.splice(i, 1);
+    }
+
+    // Skid marks fade
+    for (let i = this.skidMarks.length - 1; i >= 0; i--) {
+      this.skidMarks[i].age += dt;
+      if (this.skidMarks[i].age > 6) this.skidMarks.splice(i, 1);
+    }
+
+    // Floating texts
+    for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+      const ft = this.floatingTexts[i];
+      ft.y += ft.vy * dt;
+      ft.life -= dt;
+      if (ft.life <= 0) this.floatingTexts.splice(i, 1);
+    }
+
+    // Rings
+    for (let i = this.rings.length - 1; i >= 0; i--) {
+      const r = this.rings[i];
+      r.radius += (r.maxRadius / 0.3) * dt;
+      r.life -= dt;
+      if (r.life <= 0) this.rings.splice(i, 1);
+    }
+  },
+
+  renderSkids(ctx) {
+    for (const s of this.skidMarks) {
+      const alpha = Math.max(0, s.alpha * (1 - s.age / 6));
+      ctx.fillStyle = s.color;
+      ctx.globalAlpha = alpha;
+      ctx.fillRect(s.x - 1.5, s.y - 1.5, 3, 3);
+    }
+    ctx.globalAlpha = 1;
+  },
+
+  renderParticles(ctx) {
+    for (const p of this.list) {
+      const alpha = p.life / p.maxLife;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.color;
+      if (p.type === 'smoke') {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (p.type === 'shard') {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.life * 10);
+        ctx.beginPath();
+        ctx.moveTo(0, -p.size);
+        ctx.lineTo(p.size * 0.7, p.size * 0.5);
+        ctx.lineTo(-p.size * 0.7, p.size * 0.5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      } else {
+        ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
+      }
+    }
+    ctx.globalAlpha = 1;
+  },
+
+  renderFloats(ctx) {
+    for (const ft of this.floatingTexts) {
+      ctx.globalAlpha = U.clamp(ft.life / 0.3, 0, 1);
+      U.text(ctx, ft.text, ft.x, ft.y, { color: ft.color, size: ft.size, align: 'center', bold: true, shadow: true });
+    }
+    ctx.globalAlpha = 1;
+  },
+
+  renderRings(ctx) {
+    for (const r of this.rings) {
+      ctx.globalAlpha = r.life / 0.3;
+      ctx.strokeStyle = r.color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  },
+};
+
+// ── 9. SCREEN FX ────────────────────────────────────────────
+const ScreenFX = {
+  shakeIntensity: 0,
+  shakeDuration: 0,
+  shakeTimer: 0,
+  flashColor: null,
+  flashAlpha: 0,
+  flashTimer: 0,
+  zoomPulse: 1,
+  zoomTarget: 1,
+  zoomTimer: 0,
+  timeDilation: 1,
+  timeTarget: 1,
+  timeTimer: 0,
+  desatAmount: 0,
+  desatTarget: 0,
+  freezeTimer: 0,
+
+  shake(intensity, dur) {
+    this.shakeIntensity = intensity;
+    this.shakeDuration = dur;
+    this.shakeTimer = dur;
+  },
+
+  flash(color, alpha, dur) {
+    this.flashColor = color;
+    this.flashAlpha = alpha;
+    this.flashTimer = dur;
+  },
+
+  zoom(target, dur) {
+    this.zoomTarget = target;
+    this.zoomTimer = dur;
+  },
+
+  slowmo(factor, dur) {
+    this.timeDilation = factor;
+    this.timeTimer = dur;
+  },
+
+  freeze(dur) {
+    this.freezeTimer = dur;
+  },
+
+  desaturate(target) {
+    this.desatTarget = target;
+  },
+
+  reset() {
+    this.shakeTimer = 0; this.flashTimer = 0; this.zoomPulse = 1;
+    this.zoomTarget = 1; this.zoomTimer = 0;
+    this.timeDilation = 1; this.timeTarget = 1; this.timeTimer = 0;
+    this.desatAmount = 0; this.desatTarget = 0;
+    this.freezeTimer = 0;
+  },
+
+  update(rawDt) {
+    if (this.freezeTimer > 0) { this.freezeTimer -= rawDt; return 0; }
+
+    if (this.shakeTimer > 0) this.shakeTimer -= rawDt;
+
+    if (this.flashTimer > 0) this.flashTimer -= rawDt;
+
+    if (this.zoomTimer > 0) {
+      this.zoomPulse = U.lerp(this.zoomPulse, this.zoomTarget, 0.15);
+      this.zoomTimer -= rawDt;
+    } else {
+      this.zoomPulse = U.lerp(this.zoomPulse, 1, 0.15);
+    }
+
+    if (this.timeTimer > 0) {
+      this.timeTimer -= rawDt;
+    } else {
+      this.timeDilation = U.lerp(this.timeDilation, 1, 0.1);
+    }
+
+    this.desatAmount = U.lerp(this.desatAmount, this.desatTarget, 0.05);
+
+    return rawDt * this.timeDilation;
+  },
+
+  applyPre(ctx) {
+    // Shake
+    let ox = 0, oy = 0;
+    if (this.shakeTimer > 0) {
+      const frac = this.shakeTimer / this.shakeDuration;
+      const mag = this.shakeIntensity * frac;
+      ox = U.randFloat(-mag, mag);
+      oy = U.randFloat(-mag, mag);
+    }
+
+    ctx.save();
+    ctx.translate(CFG.W/2, CFG.H/2);
+    ctx.scale(this.zoomPulse, this.zoomPulse);
+    ctx.translate(-CFG.W/2 + ox, -CFG.H/2 + oy);
+  },
+
+  applyPost(ctx) {
+    ctx.restore();
+
+    // Flash overlay
+    if (this.flashTimer > 0 && this.flashColor) {
+      ctx.fillStyle = this.flashColor;
+      ctx.globalAlpha = this.flashAlpha * (this.flashTimer > 0 ? 1 : 0);
+      ctx.fillRect(0, 0, CFG.W, CFG.H);
+      ctx.globalAlpha = 1;
+    }
+
+    // Desaturation overlay
+    if (this.desatAmount > 0.01) {
+      ctx.fillStyle = CFG.C_PANEL;
+      ctx.globalAlpha = this.desatAmount;
+      ctx.fillRect(0, 0, CFG.W, CFG.H);
+      ctx.globalAlpha = 1;
+    }
+  },
+};
+
+// ── 10. WAVE MANAGER ────────────────────────────────────────
+const Waves = {
+  waveIndex: 0,
+  waveTimer: 0,
+  phase: 'combat', // 'combat' | 'break'
+  spawnTimer: 0,
+  burstTimer: 0,
+  breakTimer: 0,
+  enemies: [],
+  obstacles: [],
+  scraps: [],
+  scrapTimer: 0,
+  upgradeCards: [],
+  upgradeChosen: false,
+  cadenceMult: 1,
+
+  reset() {
+    this.waveIndex = 0;
+    this.waveTimer = 0;
+    this.phase = 'combat';
+    this.spawnTimer = CFG.FIRST_SPAWN;
+    this.burstTimer = CFG.BURST_INTERVAL;
+    this.breakTimer = 0;
+    this.enemies = [];
+    this.obstacles = [];
+    this.scraps = [];
+    this.scrapTimer = CFG.SCRAP_INTERVAL;
+    this.upgradeCards = [];
+    this.upgradeChosen = false;
+    this.cadenceMult = 1;
+  },
+
+  startWave(player) {
+    this.waveIndex++;
+    this.waveTimer = 0;
+    this.phase = 'combat';
+    this.spawnTimer = CFG.FIRST_SPAWN;
+    this.burstTimer = CFG.BURST_INTERVAL;
+    this.enemies = [];
+    this.upgradeChosen = false;
+
+    // Spawn hazards
+    this.obstacles = [];
+    const hazCount = Math.min(8, 2 + Math.floor(this.waveIndex / 2));
+    for (let i = 0; i < hazCount; i++) {
+      const angle = U.randFloat(0, Math.PI * 2);
+      const dist = U.randFloat(180, 320);
+      const hx = CFG.W/2 + Math.cos(angle) * dist;
+      const hy = CFG.H/2 + Math.sin(angle) * dist;
+      // Avoid player start zone
+      if (U.dist(hx, hy, player.x, player.y) < 140) continue;
+      const types = ['barrier', 'cones', 'oil'];
+      const hType = U.randChoice(types);
+      const hAngle = [0, Math.PI/2, Math.PI, Math.PI*3/2][U.randInt(0, 3)];
+      this.obstacles.push(new Obstacle(hType, U.clamp(hx, 60, CFG.W-60), U.clamp(hy, 60, CFG.H-60), hAngle));
+    }
+  },
+
+  getEnemyType(score) {
+    const pool = ['chaser'];
+    if (score >= 1000) pool.push('interceptor');
+    if (score >= 1500) pool.push('drifter');
+    return U.randChoice(pool);
+  },
+
+  spawnEnemy(score, speedBonus) {
+    // Spawn at random edge
+    let x, y;
+    const edge = U.randInt(0, 3);
+    if (edge === 0) { x = U.randFloat(0, CFG.W); y = -40; }
+    else if (edge === 1) { x = CFG.W + 40; y = U.randFloat(0, CFG.H); }
+    else if (edge === 2) { x = U.randFloat(0, CFG.W); y = CFG.H + 40; }
+    else { x = -40; y = U.randFloat(0, CFG.H); }
+
+    const type = this.getEnemyType(score);
+    const e = new Enemy(type, x, y);
+    e.heading = Math.atan2(CFG.H/2 - y, CFG.W/2 - x);
+    // Speed scaling at 2000+
+    e.maxSpeed += speedBonus;
+    this.enemies.push(e);
+  },
+
+  update(dt, player, score, game) {
+    if (this.phase === 'combat') {
+      this.waveTimer += dt;
+
+      // Enemy spawning
+      this.spawnTimer -= dt;
+      if (this.spawnTimer <= 0) {
+        this.spawnEnemy(score, game.speedBonus);
+        this.spawnTimer = CFG.SPAWN_INTERVAL * this.cadenceMult;
+      }
+
+      // Burst spawning
+      this.burstTimer -= dt;
+      if (this.burstTimer <= 0) {
+        for (let i = 0; i < CFG.BURST_COUNT; i++) {
+          setTimeout(() => this.spawnEnemy(score, game.speedBonus), i * CFG.BURST_DELAY * 1000);
+        }
+        this.burstTimer = CFG.BURST_INTERVAL;
+      }
+
+      // Wave end
+      if (this.waveTimer >= CFG.WAVE_COMBAT) {
+        this.phase = 'break';
+        this.breakTimer = CFG.WAVE_BREAK;
+        this.enemies = [];
+        // Build upgrade offer
+        this.upgradeCards = game.buildUpgradeOffer();
+        this.upgradeChosen = false;
+      }
+    } else if (this.phase === 'break') {
+      this.breakTimer -= dt;
+      if (this.breakTimer <= 0 || this.upgradeChosen) {
+        if (!this.upgradeChosen && this.upgradeCards.length > 0) {
+          // Auto-pick random
+          game.applyUpgrade(this.upgradeCards[U.randInt(0, this.upgradeCards.length - 1)]);
+          this.upgradeChosen = true;
+        }
+        this.startWave(player);
+      }
+    }
+
+    // Update enemies
+    for (const e of this.enemies) {
+      e.update(dt, player);
+    }
+    this.enemies = this.enemies.filter(e => e.alive);
+
+    // Update obstacle near-miss cooldowns
+    for (const o of this.obstacles) {
+      if (o.nearMissCooldown > 0) o.nearMissCooldown -= dt;
+    }
+
+    // Scrap spawning
+    this.scrapTimer -= dt;
+    if (this.scrapTimer <= 0 && this.phase === 'combat') {
+      const angle = U.randFloat(0, Math.PI * 2);
+      const dist = U.randFloat(220, 340);
+      this.scraps.push({
+        x: U.clamp(CFG.W/2 + Math.cos(angle) * dist, 40, CFG.W - 40),
+        y: U.clamp(CFG.H/2 + Math.sin(angle) * dist, 40, CFG.H - 40),
+        life: 15, bobPhase: U.randFloat(0, Math.PI * 2),
+      });
+      this.scrapTimer = CFG.SCRAP_INTERVAL;
+    }
+
+    // Update scraps
+    for (let i = this.scraps.length - 1; i >= 0; i--) {
+      const s = this.scraps[i];
+      s.life -= dt;
+      s.bobPhase += dt * 3;
+      // Magnet
+      if (player.magnetRange > 0) {
+        const d = U.dist(s.x, s.y, player.x, player.y);
+        if (d < player.magnetRange) {
+          const pull = 200 * dt / Math.max(d, 1);
+          s.x += (player.x - s.x) * pull;
+          s.y += (player.y - s.y) * pull;
+        }
+      }
+      // Collection
+      if (U.dist(s.x, s.y, player.x, player.y) < CFG.SCRAP_RADIUS + player.radius + 10) {
+        this.scraps.splice(i, 1);
+        return 'scrap';
+      }
+      if (s.life <= 0) this.scraps.splice(i, 1);
+    }
+    return null;
+  },
+
+  renderArena(ctx, time) {
+    // Background
+    ctx.fillStyle = CFG.C_BG;
+    ctx.fillRect(0, 0, CFG.W, CFG.H);
+
+    // Diagonal scanlines
+    ctx.strokeStyle = CFG.C_BG2;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.3;
+    for (let i = -CFG.H; i < CFG.W + CFG.H; i += 20) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i + CFG.H, CFG.H);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // Faint lane fragments (ambient)
+    ctx.fillStyle = CFG.C_BG2;
+    ctx.globalAlpha = 0.15;
+    const fragOffset = (time * 15) % 80;
+    for (let i = 0; i < 8; i++) {
+      const fx = 100 + i * 120;
+      const fy = ((fragOffset + i * 60) % (CFG.H + 40)) - 20;
+      ctx.fillRect(fx, fy, 30, 3);
+    }
+    ctx.globalAlpha = 1;
+
+    // Boundary line
+    ctx.strokeStyle = CFG.C_PANEL;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(CFG.ARENA_PAD, CFG.ARENA_PAD, CFG.W - CFG.ARENA_PAD*2, CFG.H - CFG.ARENA_PAD*2);
+
+    // Dust motes
+    ctx.fillStyle = CFG.C_PANEL;
+    ctx.globalAlpha = 0.2;
+    for (let i = 0; i < 6; i++) {
+      const mx = ((time * 20 + i * 173) % CFG.W);
+      const my = ((time * 12 + i * 247) % CFG.H);
+      ctx.beginPath();
+      ctx.arc(mx, my, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Vignette
+    const vig = ctx.createRadialGradient(CFG.W/2, CFG.H/2, CFG.H * 0.3, CFG.W/2, CFG.H/2, CFG.W * 0.7);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.5)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, CFG.W, CFG.H);
+  },
+
+  renderObstacles(ctx) {
+    for (const o of this.obstacles) o.render(ctx);
+  },
+
+  renderEnemies(ctx, time) {
+    for (const e of this.enemies) e.render(ctx, time);
+  },
+
+  renderScraps(ctx) {
+    for (const s of this.scraps) {
+      const bob = Math.sin(s.bobPhase) * 3;
+      ctx.save();
+      ctx.translate(s.x, s.y + bob);
+      // Hex shape
+      ctx.fillStyle = CFG.C_PICKUP;
+      ctx.shadowColor = CFG.C_PICKUP;
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = Math.PI / 3 * i - Math.PI / 6;
+        const px = Math.cos(a) * CFG.SCRAP_RADIUS;
+        const py = Math.sin(a) * CFG.SCRAP_RADIUS;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+  },
+};
+
+// ── 11. UPGRADES ────────────────────────────────────────────
+const ARENA_UPGRADES = [
+  { id: 'turbo', name: 'Turbo Engine', desc: '+15% top speed', icon: 'T',
+    apply(p) { p.maxSpeed *= 1.15; } },
+  { id: 'tight_turns', name: 'Tight Turns', desc: '+25% turn rate', icon: 'R',
+    apply(p) { p.tightTurns = true; } },
+  { id: 'drift_king', name: 'Drift King', desc: 'Drift boost +50%, drift friction reduced', icon: 'D',
+    apply(p) { p.driftKing = true; } },
+  { id: 'shield', name: 'Crash Shield', desc: 'Absorbs one collision', icon: 'S',
+    apply(p) { p.shield = true; } },
+  { id: 'magnet', name: 'Magnetic Field', desc: 'Auto-collect scraps at range', icon: 'M',
+    apply(p) { p.magnetRange = 150; } },
+  { id: 'score_freak', name: 'Score Freak', desc: 'Score multiplier x1.5', icon: 'X',
+    apply(p) { p.scoreMult *= 1.5; } },
+  { id: 'ghost_frame', name: 'Ghost Frame', desc: '0.3s invuln after near-miss', icon: 'G',
+    apply(p) { /* handled in game logic */ } },
+  { id: 'thick_plating', name: 'Thick Plating', desc: 'Collision radius -3px', icon: 'P',
+    apply(p) { /* applied via radius check */ } },
+  { id: 'afterburner', name: 'Afterburner', desc: 'Drift boost doubled', icon: 'A',
+    apply(p) { p.afterburner = true; } },
+  { id: 'combo_master', name: 'Combo Master', desc: 'Combo decays 50% slower', icon: 'C',
+    apply(p) { p.comboMaster = true; } },
+  { id: 'oil_resistant', name: 'Oil Resistant', desc: 'Oil slip duration halved', icon: 'O',
+    apply(p) { p.oilResistant = true; } },
+  { id: 'speed_demon', name: 'Speed Demon', desc: '+20% speed, enemies +10% speed', icon: '!',
+    apply(p) { p.speedDemon = true; p.maxSpeed *= 1.20; } },
+];
+
+// ── 12. HUD / UI ────────────────────────────────────────────
+function renderHUD(ctx, game) {
+  const { score, player, waveTimer, waveIndex, driftCombo, phase, breakTimer, highScore, newBest } = game;
+
+  // Sandbox label
+  if (game.sandbox) {
+    U.text(ctx, 'SANDBOX', CFG.W/2, 24, { align: 'center', color: CFG.C_ACCENT, size: 18, bold: true, shadow: true });
+    U.text(ctx, 'Just drive. No enemies. Press P to pause, ESC to menu.', CFG.W/2, 44, { align: 'center', color: '#555', size: 11 });
+    return;
+  }
+
+  // Score (top-left)
+  const scoreStr = Math.floor(score).toLocaleString();
+  U.text(ctx, 'SCORE', 20, 22, { color: '#888', size: 12, bold: true });
+  U.text(ctx, scoreStr, 20, 42, { color: newBest ? CFG.C_PICKUP : CFG.C_TEXT, size: 22, bold: true, shadow: true });
+  if (newBest) {
+    U.text(ctx, 'NEW BEST!', 20, 60, { color: CFG.C_PICKUP, size: 10, bold: true });
+  }
+
+  // Wave timer (top-center)
+  if (phase === 'combat') {
+    const frac = U.clamp(waveTimer / CFG.WAVE_COMBAT, 0, 1);
+    const barW = 200, barH = 8;
+    const bx = CFG.W/2 - barW/2, by = 14;
+    ctx.fillStyle = CFG.C_PANEL;
+    ctx.fillRect(bx, by, barW, barH);
+    ctx.fillStyle = CFG.C_ACCENT;
+    ctx.fillRect(bx, by, barW * frac, barH);
+    U.text(ctx, `WAVE ${waveIndex}`, CFG.W/2, by + barH + 14, { align: 'center', color: '#666', size: 11 });
+  }
+
+  // Drift combo (bottom-left)
+  if (player.drifting || player.comboLevel > 0.5) {
+    const comboInt = Math.floor(player.comboLevel);
+    const barW = 120, barH = 6;
+    const bx = 20, by = CFG.H - 30;
+    ctx.fillStyle = CFG.C_PANEL;
+    ctx.fillRect(bx, by, barW, barH);
+    const comboPct = U.clamp(player.driftTime % CFG.DRIFT_COMBO_INTERVAL / CFG.DRIFT_COMBO_INTERVAL, 0, 1);
+    ctx.fillStyle = CFG.C_ACCENT;
+    ctx.fillRect(bx, by, barW * comboPct, barH);
+    U.text(ctx, `DRIFT x${comboInt}`, bx, by - 8, { color: CFG.C_ACCENT, size: 13, bold: true });
+  }
+
+  // Drift available pulse
+  if (player.speed >= CFG.DRIFT_THRESHOLD && !player.drifting) {
+    const pulse = 0.4 + 0.3 * Math.sin(game.time * 6);
+    ctx.globalAlpha = pulse;
+    U.text(ctx, 'SPACE TO DRIFT', CFG.W/2, CFG.H - 20, { align: 'center', color: CFG.C_ACCENT, size: 11 });
+    ctx.globalAlpha = 1;
+  }
+
+  // Controls hint (bottom-right)
+  U.text(ctx, 'WASD + SPACE', CFG.W - 20, CFG.H - 20, { align: 'right', color: '#444', size: 10 });
+
+  // Upgrades taken
+  const ups = player.upgrades;
+  if (ups.length > 0) {
+    for (let i = 0; i < ups.length; i++) {
+      const upg = ARENA_UPGRADES.find(u => u.id === ups[i]);
+      if (upg) {
+        ctx.fillStyle = CFG.C_PANEL;
+        ctx.fillRect(CFG.W - 26 - i * 22, 14, 20, 20);
+        U.text(ctx, upg.icon, CFG.W - 16 - i * 22, 24, { align: 'center', color: CFG.C_ACCENT, size: 12, bold: true });
+      }
+    }
+  }
+
+  // Shield indicator
+  if (player.shield) {
+    U.text(ctx, 'SHIELD', CFG.W - 20, 50, { align: 'right', color: CFG.C_SHIELD, size: 11, bold: true });
+  }
+}
+
+function renderUpgradeBreak(ctx, cards, breakTimer, selectedIndex) {
+  // Dim
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(0, 0, CFG.W, CFG.H);
+
+  U.text(ctx, 'CHOOSE UPGRADE', CFG.W/2, 60, { align: 'center', color: CFG.C_ACCENT, size: 28, bold: true, shadow: true });
+
+  // Timer
+  const secs = Math.ceil(breakTimer);
+  U.text(ctx, `${secs}s`, CFG.W/2, 90, { align: 'center', color: '#888', size: 16 });
+
+  // Cards
+  const cardW = 180, cardH = 200, gap = 20;
+  const total = cards.length * cardW + (cards.length - 1) * gap;
+  let cx = (CFG.W - total) / 2;
+
+  for (let i = 0; i < cards.length; i++) {
+    const card = cards[i];
+    const y = 120;
+
+    // Slide-up animation (staggered)
+    const slideOffset = Math.max(0, 24 - breakTimer * 120 + i * 7);
+
+    ctx.save();
+    ctx.translate(0, slideOffset);
+    ctx.globalAlpha = Math.min(1, breakTimer * 5 - i * 0.3);
+
+    // Card bg
+    ctx.fillStyle = selectedIndex === i ? '#2A3344' : CFG.C_PANEL;
+    U.roundRect(ctx, cx, y, cardW, cardH, 8);
+    ctx.fill();
+
+    // Border
+    ctx.strokeStyle = selectedIndex === i ? CFG.C_ACCENT : '#444';
+    ctx.lineWidth = selectedIndex === i ? 3 : 1.5;
+    U.roundRect(ctx, cx, y, cardW, cardH, 8);
+    ctx.stroke();
+
+    // Key hint
+    U.text(ctx, `[${i + 1}]`, cx + cardW/2, y + 20, { align: 'center', color: CFG.C_ACCENT, size: 14, bold: true });
+
+    // Icon
+    U.text(ctx, card.icon, cx + cardW/2, y + 55, { align: 'center', color: CFG.C_TEXT, size: 36, bold: true });
+
+    // Name
+    U.text(ctx, card.name, cx + cardW/2, y + 90, { align: 'center', color: CFG.C_TEXT, size: 14, bold: true });
+
+    // Desc
+    ctx.textBaseline = 'top';
+    U.wrapText(ctx, card.desc, cx + 12, y + 110, cardW - 24, 16, { size: 12, color: '#aaa' });
+
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    cx += cardW + gap;
+  }
+
+  U.text(ctx, 'Press 1 / 2 / 3 to choose', CFG.W/2, CFG.H - 40, { align: 'center', color: '#666', size: 13 });
+}
+
+// ── 13. GAME STATE MACHINE ─────────────────────────────────
+const STATE = { MENU: 0, PLAYING: 1, PAUSED: 2, UPGRADE: 3, DYING: 4, GAME_OVER: 5 };
+
+const Game = {
+  state: STATE.MENU,
+  player: new Player(),
+  score: 0,
+  highScore: parseInt(localStorage.getItem('oversteer_highscore_v1') || '0'),
+  newBest: false,
+  time: 0,
+  waveTimer: 0,
+  waveIndex: 0,
+  phase: 'combat',
+  breakTimer: 0,
+  speedBonus: 0,
+  menuAnim: 0,
+  gameOverTimer: 0,
+  deathTimer: 0,
+  deathPhase: 0,
+  milestoneScore: 250,
+  milestoneTimer: 0,
+  milestoneText: '',
+  lastDriftComboTick: 0,
+  upgradeSelectedIndex: -1,
+  // Touch UI
+  sandbox: false,
+  touchDriftBtn: { x: CFG.W - 70, y: CFG.H - 80, r: 40 },
+
+  init() {
+    Input.init();
+    this.state = STATE.MENU;
+  },
+
+  reset() {
+    this.player.reset();
+    this.score = 0;
+    this.newBest = false;
+    this.time = 0;
+    this.waveTimer = 0;
+    this.waveIndex = 0;
+    this.phase = 'combat';
+    this.breakTimer = 0;
+    this.speedBonus = 0;
+    this.gameOverTimer = 0;
+    this.deathTimer = 0;
+    this.deathPhase = 0;
+    this.milestoneScore = 250;
+    this.milestoneTimer = 0;
+    this.lastDriftComboTick = 0;
+    this.upgradeSelectedIndex = -1;
+    Particles.clear();
+    ScreenFX.reset();
+    Waves.reset();
+    if (!this.sandbox) {
+      Waves.startWave(this.player);
+    }
+  },
+
+  buildUpgradeOffer() {
+    const stackable = ['shield'];
+    const pool = ARENA_UPGRADES.filter(u =>
+      !this.player.upgrades.includes(u.id) || stackable.includes(u.id)
+    );
+    return U.randSample(pool, CFG.UPGRADES_TO_OFFER);
+  },
+
+  applyUpgrade(upg) {
+    if (!upg) return;
+    upg.apply(this.player);
+    this.player.upgrades.push(upg.id);
+    if (upg.id === 'speed_demon') {
+      // Enemies get +10% speed bonus
+      this.speedBonus += 40;
+    }
+  },
+
+  update(rawDt) {
+    Input.poll();
+    this.menuAnim += rawDt;
+
+    if (this.state === STATE.MENU) {
+      if (Input.enter || Input.keys['Space']) {
+        this.sandbox = false;
+        this.reset();
+        this.state = STATE.PLAYING;
+        Input.keys['Space'] = false;
+      }
+      if (Input.keys['KeyS']) {
+        this.sandbox = true;
+        this.reset();
+        this.state = STATE.PLAYING;
+        Input.keys['KeyS'] = false;
+      }
+      return;
+    }
+
+    if (this.state === STATE.PAUSED) {
+      if (Input.pause) this.state = STATE.PLAYING;
+      return;
+    }
+
+    if (this.state === STATE.GAME_OVER) {
+      this.gameOverTimer -= rawDt;
+      if (this.gameOverTimer <= 0 && (Input.enter || Input.keys['Space'])) {
+        this.state = STATE.MENU;
+        Input.keys['Space'] = false;
+      }
+      return;
+    }
+
+    if (this.state === STATE.DYING) {
+      this.deathTimer -= rawDt;
+      const dt = ScreenFX.update(rawDt);
+      Particles.update(dt || rawDt);
+
+      if (this.deathPhase === 0 && this.deathTimer <= 0) {
+        // Freeze done → slow-mo + shatter
+        this.deathPhase = 1;
+        this.deathTimer = CFG.DEATH_SLOWMO_DUR;
+        ScreenFX.slowmo(CFG.DEATH_SLOWMO, CFG.DEATH_SLOWMO_DUR);
+        ScreenFX.shake(10, 0.35);
+        // Shatter
+        const shardCount = U.randInt(CFG.SHARD_COUNT_MIN, CFG.SHARD_COUNT_MAX);
+        Particles.spawn(this.player.x, this.player.y, CFG.C_TEXT, shardCount, {
+          vxMin: -300, vxMax: 300, vyMin: -300, vyMax: 300,
+          lifeMin: 0.4, lifeMax: 0.8, sizeMin: 4, sizeMax: 10, type: 'shard',
+        });
+        // Red ring
+        Particles.addRing(this.player.x, this.player.y, CFG.C_ENEMY);
+        ScreenFX.flash('#FF3B6B', 0.15, 0.1);
+      }
+      if (this.deathPhase === 1 && this.deathTimer <= 0) {
+        // Slow-mo done → desaturate + game over
+        this.deathPhase = 2;
+        this.deathTimer = 0.5;
+        ScreenFX.desaturate(0.7);
+      }
+      if (this.deathPhase === 2 && this.deathTimer <= 0) {
+        // Save high score
+        if (this.score > this.highScore) {
+          this.highScore = Math.floor(this.score);
+          localStorage.setItem('oversteer_highscore_v1', this.highScore);
+          this.newBest = true;
+        }
+        this.state = STATE.GAME_OVER;
+        this.gameOverTimer = 1.5;
+      }
+      return;
+    }
+
+    // UPGRADE break
+    if (this.state === STATE.UPGRADE) {
+      this.breakTimer -= rawDt;
+
+      // Card selection
+      if (Input.keys['Digit1'] || Input.keys['Numpad1']) {
+        this.selectUpgradeCard(0); Input.keys['Digit1'] = false; Input.keys['Numpad1'] = false;
+      }
+      if (Input.keys['Digit2'] || Input.keys['Numpad2']) {
+        this.selectUpgradeCard(1); Input.keys['Digit2'] = false; Input.keys['Numpad2'] = false;
+      }
+      if (Input.keys['Digit3'] || Input.keys['Numpad3']) {
+        this.selectUpgradeCard(2); Input.keys['Digit3'] = false; Input.keys['Numpad3'] = false;
+      }
+
+      if (this.breakTimer <= 0) {
+        // Auto-pick if not chosen
+        if (!Waves.upgradeChosen && Waves.upgradeCards.length > 0) {
+          this.applyUpgrade(Waves.upgradeCards[U.randInt(0, Waves.upgradeCards.length - 1)]);
+          Waves.upgradeChosen = true;
+        }
+        Waves.startWave(this.player);
+        this.state = STATE.PLAYING;
+      }
+      // Player can still move slowly
+      const dt = ScreenFX.update(rawDt);
+      this.player.update(dt);
+      Particles.update(dt);
+      return;
+    }
+
+    // PLAYING
+    if (Input.pause) { this.state = STATE.PAUSED; return; }
+
+    const dt = ScreenFX.update(rawDt);
+    this.time += dt;
+
+    // Player
+    this.player.update(dt);
+
+    // Drift FX
+    if (this.player.drifting) {
+      // Skid marks at rear wheels
+      const cos = Math.cos(this.player.heading), sin = Math.sin(this.player.heading);
+      const rearX = this.player.x - cos * CFG.PLAYER_W/2;
+      const rearY = this.player.y - sin * CFG.PLAYER_W/2;
+      const perpX = -sin, perpY = cos;
+      const color = this.player.slipTimer > 0 ? CFG.C_RARE : '#555';
+      Particles.addSkid(rearX + perpX * 6, rearY + perpY * 6, color, 0.6);
+      Particles.addSkid(rearX - perpX * 6, rearY - perpY * 6, color, 0.6);
+
+      // Smoke
+      if (Math.random() < 0.4) {
+        Particles.spawn(rearX, rearY, '#999', 1, {
+          vxMin: -30, vxMax: 30, vyMin: -30, vyMax: 30,
+          lifeMin: 0.3, lifeMax: 0.6, sizeMin: 3, sizeMax: 6, type: 'smoke',
+        });
+      }
+
+      // Drift just started FX
+      if (this.player.driftJustStarted) {
+        Particles.spawn(rearX, rearY, '#fff', 6, {
+          vxMin: -80, vxMax: 80, vyMin: -80, vyMax: 80,
+          lifeMin: 0.15, lifeMax: 0.3, sizeMin: 2, sizeMax: 4, type: 'smoke',
+        });
+        ScreenFX.zoom(1.03, 0.1);
+        // Tire chirp visual: white ticks
+        Particles.spawn(rearX + perpX * 6, rearY + perpY * 6, '#fff', 2, {
+          vxMin: -20, vxMax: 20, vyMin: -20, vyMax: 20,
+          lifeMin: 0.1, lifeMax: 0.15, sizeMin: 2, sizeMax: 3, type: 'spark',
+        });
+      }
+    }
+
+    // Drift denied text
+    if (this.player.driftDeniedTimer > 0 && this.player.driftDeniedTimer > 0.1) {
+      Particles.addFloat(this.player.x, this.player.y - 30, 'NEED SPEED', CFG.C_PICKUP, 12);
+      this.player.driftDeniedTimer = 0; // only once
+    }
+
+    // Wall hit sparks
+    if (this.player.wallHit) {
+      Particles.spawn(this.player.x, this.player.y, CFG.C_PICKUP, 5, {
+        vxMin: -100, vxMax: 100, vyMin: -100, vyMax: 100,
+        lifeMin: 0.2, lifeMax: 0.4, sizeMin: 2, sizeMax: 4, type: 'spark',
+      });
+    }
+
+    // Brake rear lights streak
+    if (this.player.braking && this.player.speed > 50) {
+      const cos = Math.cos(this.player.heading), sin = Math.sin(this.player.heading);
+      const rearX = this.player.x - cos * CFG.PLAYER_W/2;
+      const rearY = this.player.y - sin * CFG.PLAYER_W/2;
+      Particles.spawn(rearX, rearY, '#F44', 1, {
+        vxMin: -cos * 20, vxMax: -cos * 40, vyMin: -sin * 20, vyMax: -sin * 40,
+        lifeMin: 0.08, lifeMax: 0.12, sizeMin: 2, sizeMax: 3, type: 'spark',
+      });
+    }
+
+    // Sandbox mode: skip waves, scoring, collisions
+    if (!this.sandbox) {
+
+    // Waves
+    this.waveTimer = Waves.waveTimer;
+    this.waveIndex = Waves.waveIndex;
+    this.phase = Waves.phase;
+    this.breakTimer = Waves.breakTimer;
+
+    const scrapResult = Waves.update(dt, this.player, this.score, this);
+    if (scrapResult === 'scrap') {
+      Particles.spawn(this.player.x, this.player.y, CFG.C_PICKUP, 8, {
+        vxMin: -60, vxMax: 60, vyMin: -60, vyMax: 60,
+        lifeMin: 0.2, lifeMax: 0.5, sizeMin: 2, sizeMax: 4, type: 'spark',
+      });
+      Particles.addFloat(this.player.x, this.player.y - 20, '+SCRAP', CFG.C_PICKUP, 14);
+    }
+
+    // Check for upgrade break transition
+    if (Waves.phase === 'break' && this.state === STATE.PLAYING) {
+      this.state = STATE.UPGRADE;
+      this.breakTimer = CFG.WAVE_BREAK;
+    }
+
+    // Scoring
+    this.score += CFG.SCORE_PER_SEC * dt * this.player.scoreMult;
+
+    // Drift combo scoring
+    if (this.player.drifting) {
+      const ticks = Math.floor(this.player.driftTime / CFG.DRIFT_COMBO_INTERVAL);
+      if (ticks > this.lastDriftComboTick) {
+        const pts = CFG.DRIFT_COMBO_BASE * Math.floor(this.player.comboLevel + 1);
+        this.score += pts;
+        this.lastDriftComboTick = ticks;
+        Particles.addFloat(this.player.x, this.player.y - 25, `+${pts}`, CFG.C_ACCENT, 14);
+      }
+    } else {
+      this.lastDriftComboTick = 0;
+    }
+
+    // Collision: enemies
+    const pRadius = this.player.radius - (this.player.upgrades.includes('thick_plating') ? 3 : 0);
+    for (const e of Waves.enemies) {
+      if (!e.alive) continue;
+      const d = U.dist(this.player.x, this.player.y, e.x, e.y);
+      const collDist = pRadius + CFG.ENEMY_RADIUS;
+      const nearDist = pRadius + CFG.ENEMY_RADIUS + CFG.NEAR_MISS_ENEMY;
+
+      if (d < collDist) {
+        if (this.player.invulnTimer > 0 || this.player.ghostFrameTimer > 0) continue;
+        // Collision!
+        if (this.player.shield) {
+          this.shieldBreak(e);
+        } else {
+          this.die();
+          return;
+        }
+      } else if (d < nearDist && this.player.drifting && e.nearMissCooldown <= 0) {
+        // Near miss!
+        this.nearMiss(e, 'enemy');
+        e.nearMissCooldown = CFG.NEAR_MISS_COOLDOWN;
+      }
+    }
+
+    // Collision: obstacles
+    for (const o of Waves.obstacles) {
+      // Oil check
+      if (o.type === 'oil') {
+        if (o.checkOilOverlap(this.player.x, this.player.y, pRadius)) {
+          const dur = this.player.oilResistant ? CFG.OIL_SLIP_DURATION / 2 : CFG.OIL_SLIP_DURATION;
+          this.player.slipTimer = Math.max(this.player.slipTimer, dur);
+        }
+        continue;
+      }
+
+      const circles = o.getWorldCircles();
+      for (const c of circles) {
+        const d = U.dist(this.player.x, this.player.y, c.x, c.y);
+        const collDist = pRadius + c.r;
+        const nearDist = pRadius + c.r + CFG.NEAR_MISS_HAZARD;
+
+        if (d < collDist) {
+          if (this.player.invulnTimer > 0 || this.player.ghostFrameTimer > 0) continue;
+          if (this.player.shield) {
+            this.shieldBreak(o);
+          } else {
+            this.die();
+            return;
+          }
+        } else if (d < nearDist && this.player.drifting && o.nearMissCooldown <= 0) {
+          this.nearMiss(o, 'hazard');
+          o.nearMissCooldown = CFG.NEAR_MISS_COOLDOWN;
+        }
+      }
+    }
+
+    // Enemy-obstacle collisions (bounce)
+    for (const e of Waves.enemies) {
+      for (const o of Waves.obstacles) {
+        if (o.type === 'oil') {
+          if (o.checkOilOverlap(e.x, e.y, CFG.ENEMY_RADIUS)) {
+            e.slipTimer = Math.max(e.slipTimer, 0.6);
+          }
+          continue;
+        }
+        const circles = o.getWorldCircles();
+        for (const c of circles) {
+          const d = U.dist(e.x, e.y, c.x, c.y);
+          if (d < CFG.ENEMY_RADIUS + c.r) {
+            // Bounce enemy away
+            const nx = (e.x - c.x) / (d || 1);
+            const ny = (e.y - c.y) / (d || 1);
+            e.x = c.x + nx * (CFG.ENEMY_RADIUS + c.r + 1);
+            e.y = c.y + ny * (CFG.ENEMY_RADIUS + c.r + 1);
+            const dotN = e.vx * nx + e.vy * ny;
+            e.vx -= 1.5 * dotN * nx;
+            e.vy -= 1.5 * dotN * ny;
+          }
+        }
+      }
+    }
+
+    // Enemy wall hit sparks
+    for (const e of Waves.enemies) {
+      if (e.wallHit) {
+        Particles.spawn(e.x, e.y, CFG.C_ENEMY, 3, {
+          vxMin: -60, vxMax: 60, vyMin: -60, vyMax: 60,
+          lifeMin: 0.15, lifeMax: 0.3, sizeMin: 2, sizeMax: 3, type: 'spark',
+        });
+      }
+      // Enemy drift FX
+      if (e.drifting) {
+        const cos = Math.cos(e.heading), sin = Math.sin(e.heading);
+        const rearX = e.x - cos * CFG.ENEMY_W/2;
+        const rearY = e.y - sin * CFG.ENEMY_W/2;
+        Particles.addSkid(rearX, rearY, '#522', 0.4);
+      }
+    }
+
+    // Progressive intensity
+    if (this.score >= 500 && Waves.cadenceMult === 1) Waves.cadenceMult = 0.9;
+    this.speedBonus = Math.min(120, Math.max(0, Math.floor((this.score - 2000) / 500) * 12));
+    // Enemy glow increase
+    const glowBonus = Math.min(20, Math.floor(this.score / 500) * 3);
+    for (const e of Waves.enemies) e.glowExtra = glowBonus;
+
+    // Milestone
+    if (this.score >= this.milestoneScore) {
+      this.milestoneTimer = 0.57;
+      this.milestoneText = `MILESTONE ${this.milestoneScore}`;
+      ScreenFX.flash(CFG.C_RARE, 0.18, 0.18);
+      ScreenFX.zoom(1.04, 0.12);
+      this.milestoneScore += 250;
+    }
+    if (this.milestoneTimer > 0) this.milestoneTimer -= dt;
+
+    // New best detection
+    if (this.score > this.highScore) this.newBest = true;
+
+    } // end sandbox skip
+
+    // Particles
+    Particles.update(dt);
+  },
+
+  nearMiss(target, type) {
+    const pts = type === 'enemy' ? CFG.NEAR_MISS_ENEMY_PTS : CFG.NEAR_MISS_HAZARD_PTS;
+    this.score += pts * this.player.scoreMult;
+    this.player.comboLevel = Math.min(CFG.MAX_COMBO, this.player.comboLevel + 1);
+
+    // FX
+    ScreenFX.slowmo(0.85, 0.15);
+    const ringColor = type === 'enemy' ? CFG.C_ENEMY : CFG.C_PICKUP;
+    Particles.addRing(this.player.x, this.player.y, ringColor);
+    ScreenFX.flash('#fff', 0.1, 0.08);
+    Particles.addFloat(this.player.x, this.player.y - 30,
+      `+${pts} CLOSE!`, ringColor, 16);
+
+    // Ghost frame upgrade
+    if (this.player.upgrades.includes('ghost_frame')) {
+      this.player.ghostFrameTimer = 0.3;
+    }
+
+    // Scrap bonus chance
+    if (Math.random() < CFG.SCRAP_NEAR_MISS_CHANCE) {
+      Waves.scraps.push({
+        x: this.player.x + U.randFloat(-40, 40),
+        y: this.player.y + U.randFloat(-40, 40),
+        life: 10, bobPhase: 0,
+      });
+    }
+  },
+
+  shieldBreak(source) {
+    this.player.shield = false;
+    this.player.invulnTimer = CFG.SHIELD_INVULN;
+
+    // Knockback
+    const dx = this.player.x - (source.x || source.x);
+    const dy = this.player.y - (source.y || source.y);
+    const d = Math.hypot(dx, dy) || 1;
+    this.player.vx += (dx / d) * CFG.SHIELD_KNOCKBACK;
+    this.player.vy += (dy / d) * CFG.SHIELD_KNOCKBACK;
+
+    // FX
+    ScreenFX.flash(CFG.C_SHIELD, 0.2, 0.15);
+    ScreenFX.shake(6, 0.22);
+    Particles.spawn(this.player.x, this.player.y, CFG.C_SHIELD, 12, {
+      vxMin: -150, vxMax: 150, vyMin: -150, vyMax: 150,
+      lifeMin: 0.3, lifeMax: 0.6, sizeMin: 3, sizeMax: 6, type: 'spark',
+    });
+    Particles.addFloat(this.player.x, this.player.y - 30, 'SHIELD BREAK!', CFG.C_SHIELD, 18);
+  },
+
+  die() {
+    this.state = STATE.DYING;
+    this.deathPhase = 0;
+    this.deathTimer = CFG.FREEZE_TIME;
+    ScreenFX.freeze(CFG.FREEZE_TIME);
+  },
+
+  selectUpgradeCard(index) {
+    if (index < 0 || index >= Waves.upgradeCards.length) return;
+    if (Waves.upgradeChosen) return;
+    this.applyUpgrade(Waves.upgradeCards[index]);
+    Waves.upgradeChosen = true;
+    this.upgradeSelectedIndex = index;
+  },
+
+  render(ctx) {
+    if (this.state === STATE.MENU) {
+      this.renderMenu(ctx);
+      return;
+    }
+
+    ScreenFX.applyPre(ctx);
+
+    // Arena
+    Waves.renderArena(ctx, this.time);
+
+    // Skid marks (layer under entities)
+    Particles.renderSkids(ctx);
+
+    // Obstacles
+    Waves.renderObstacles(ctx);
+
+    // Scraps
+    Waves.renderScraps(ctx);
+
+    // Enemies
+    Waves.renderEnemies(ctx, this.time);
+
+    // Player (unless dying phase 1+)
+    if (this.state !== STATE.DYING || this.deathPhase === 0) {
+      this.player.render(ctx);
+    }
+
+    // Particles
+    Particles.renderParticles(ctx);
+    Particles.renderRings(ctx);
+    Particles.renderFloats(ctx);
+
+    ScreenFX.applyPost(ctx);
+
+    // HUD
+    if (this.state !== STATE.DYING) {
+      renderHUD(ctx, this);
+    }
+
+    // Milestone banner
+    if (this.milestoneTimer > 0) {
+      ctx.globalAlpha = U.clamp(this.milestoneTimer / 0.35, 0, 1);
+      U.text(ctx, this.milestoneText, CFG.W/2, 100, {
+        align: 'center', color: CFG.C_RARE, size: 28, bold: true, shadow: true
+      });
+      ctx.globalAlpha = 1;
+    }
+
+    // Upgrade break overlay
+    if (this.state === STATE.UPGRADE) {
+      renderUpgradeBreak(ctx, Waves.upgradeCards, this.breakTimer, this.upgradeSelectedIndex);
+    }
+
+    // Paused overlay
+    if (this.state === STATE.PAUSED) {
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(0, 0, CFG.W, CFG.H);
+      U.text(ctx, 'PAUSED', CFG.W/2, CFG.H/2 - 20, { align: 'center', color: CFG.C_TEXT, size: 40, bold: true, shadow: true });
+      U.text(ctx, 'P / Esc to resume', CFG.W/2, CFG.H/2 + 30, { align: 'center', color: '#888', size: 16 });
+      // Controls reminder
+      U.text(ctx, 'WASD: Drive  |  SPACE: Drift  |  1/2/3: Upgrades', CFG.W/2, CFG.H/2 + 60, {
+        align: 'center', color: '#555', size: 12
+      });
+    }
+
+    // Game over
+    if (this.state === STATE.GAME_OVER && this.gameOverTimer <= 0) {
+      ctx.fillStyle = 'rgba(0,0,0,0.75)';
+      ctx.fillRect(0, 0, CFG.W, CFG.H);
+
+      U.text(ctx, 'GAME OVER', CFG.W/2, CFG.H * 0.25, { align: 'center', color: CFG.C_ENEMY, size: 48, bold: true, shadow: true });
+
+      const sy = CFG.H * 0.4;
+      U.text(ctx, 'SCORE', CFG.W/2 - 60, sy, { align: 'right', color: '#888', size: 16 });
+      U.text(ctx, Math.floor(this.score).toLocaleString(), CFG.W/2, sy, { align: 'left', color: CFG.C_TEXT, size: 20, bold: true });
+
+      U.text(ctx, 'BEST', CFG.W/2 - 60, sy + 30, { align: 'right', color: '#888', size: 16 });
+      U.text(ctx, this.highScore.toLocaleString(), CFG.W/2, sy + 30, { align: 'left', color: this.newBest ? CFG.C_PICKUP : CFG.C_TEXT, size: 20, bold: true });
+
+      U.text(ctx, 'WAVE', CFG.W/2 - 60, sy + 60, { align: 'right', color: '#888', size: 16 });
+      U.text(ctx, `${this.waveIndex}`, CFG.W/2, sy + 60, { align: 'left', color: CFG.C_TEXT, size: 20, bold: true });
+
+      if (this.newBest) {
+        U.text(ctx, 'NEW BEST!', CFG.W/2, sy + 100, { align: 'center', color: CFG.C_PICKUP, size: 22, bold: true, shadow: true });
+      }
+
+      // Upgrades taken
+      const ups = this.player.upgrades;
+      if (ups.length > 0) {
+        U.text(ctx, 'UPGRADES:', CFG.W/2, sy + 130, { align: 'center', color: '#666', size: 12 });
+        const upStr = ups.map(id => {
+          const u = ARENA_UPGRADES.find(a => a.id === id);
+          return u ? u.icon : '?';
+        }).join('  ');
+        U.text(ctx, upStr, CFG.W/2, sy + 150, { align: 'center', color: CFG.C_ACCENT, size: 20, bold: true });
+      }
+
+      if (Math.floor(this.menuAnim * 2) % 2 === 0) {
+        U.text(ctx, 'Press ENTER to retry', CFG.W/2, CFG.H - 50, { align: 'center', color: CFG.C_ACCENT, size: 18, bold: true, shadow: true });
+      }
+    }
+
+    // Touch controls overlay
+    this.renderTouchUI(ctx);
+  },
+
+  renderMenu(ctx) {
+    // BG
+    const g = ctx.createLinearGradient(0, 0, 0, CFG.H);
+    g.addColorStop(0, '#020308');
+    g.addColorStop(0.5, '#07080B');
+    g.addColorStop(1, '#0E1118');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, CFG.W, CFG.H);
+
+    // Decorative drift trails
+    ctx.strokeStyle = CFG.C_ACCENT;
+    ctx.globalAlpha = 0.08;
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 5; i++) {
+      ctx.beginPath();
+      const sx = 100 + i * 200;
+      const sy = CFG.H * 0.8;
+      for (let t = 0; t < 60; t++) {
+        const x = sx + t * 3 + Math.sin(t * 0.3 + this.menuAnim + i) * 40;
+        const y = sy - t * 3;
+        if (t === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // Title
+    const pulse = 1 + 0.03 * Math.sin(this.menuAnim * 3);
+    ctx.save();
+    ctx.translate(CFG.W/2, CFG.H * 0.25);
+    ctx.scale(pulse, pulse);
+    U.text(ctx, 'OVERSTEER', 0, 0, { align: 'center', size: 56, bold: true, color: CFG.C_ACCENT, shadow: true });
+    ctx.restore();
+
+    U.text(ctx, 'Drift to survive. Chain near-misses. Build a broken car.', CFG.W/2, CFG.H * 0.38, {
+      align: 'center', size: 14, color: '#888',
+    });
+
+    // Controls
+    const cy = CFG.H * 0.50;
+    U.text(ctx, 'CONTROLS', CFG.W/2, cy, { align: 'center', size: 16, bold: true, color: CFG.C_TEXT });
+    const controls = [
+      ['W/A/S/D or Arrows', 'Drive & Steer'],
+      ['SPACE (hold)', 'Drift (speed >= 180)'],
+      ['P / Escape', 'Pause'],
+      ['1 / 2 / 3', 'Select upgrade'],
+      ['Enter', 'Start / Confirm'],
+    ];
+    for (let i = 0; i < controls.length; i++) {
+      U.text(ctx, controls[i][0], CFG.W/2 - 10, cy + 22 + i * 20, { align: 'right', size: 12, color: CFG.C_ACCENT });
+      U.text(ctx, controls[i][1], CFG.W/2 + 10, cy + 22 + i * 20, { align: 'left', size: 12, color: '#aaa' });
+    }
+
+    // Mobile
+    U.text(ctx, 'TOUCH: Left stick + Right DRIFT button + 2-finger pause', CFG.W/2, cy + 130, {
+      align: 'center', size: 11, color: '#555',
+    });
+
+    // Best score
+    if (this.highScore > 0) {
+      U.text(ctx, `BEST: ${this.highScore.toLocaleString()}`, CFG.W/2, CFG.H * 0.88, {
+        align: 'center', size: 16, color: '#666',
+      });
+    }
+
+    // Start prompt
+    if (Math.floor(this.menuAnim * 2) % 2 === 0) {
+      U.text(ctx, '[ ENTER ] TO START', CFG.W/2, CFG.H * 0.92, {
+        align: 'center', size: 20, bold: true, color: CFG.C_ACCENT, shadow: true,
+      });
+    }
+    U.text(ctx, '[ S ] SANDBOX — free drive, no enemies', CFG.W/2, CFG.H * 0.97, {
+      align: 'center', size: 13, color: '#555',
+    });
+  },
+
+  renderTouchUI(ctx) {
+    // Only render if touch has been used
+    if (!Input.touch.active && Input.touch.driftId === null) return;
+
+    // Drift button
+    const btn = this.touchDriftBtn;
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = Input.touch.driftId !== null ? CFG.C_ACCENT : '#444';
+    ctx.beginPath();
+    ctx.arc(btn.x, btn.y, btn.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.7;
+    U.text(ctx, 'DRIFT', btn.x, btn.y, { align: 'center', color: '#fff', size: 14, bold: true });
+    ctx.globalAlpha = 1;
+
+    // Virtual stick
+    if (Input.touch.stickOrigin) {
+      const o = Input.touch.stickOrigin;
+      const p = Input.touch.stickPos;
+      ctx.globalAlpha = 0.2;
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(o.x, o.y, 50, 0, Math.PI * 2);
+      ctx.stroke();
+      if (p) {
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        const dx = U.clamp(p.x - o.x, -40, 40);
+        const dy = U.clamp(p.y - o.y, -40, 40);
+        ctx.arc(o.x + dx, o.y + dy, 18, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+  },
+};
+
+// ── 14. BOOTSTRAP ───────────────────────────────────────────
+(function() {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  canvas.width = CFG.W;
+  canvas.height = CFG.H;
+
+  function resize() {
+    const scaleX = window.innerWidth / CFG.W;
+    const scaleY = window.innerHeight / CFG.H;
+    const scale = Math.min(scaleX, scaleY);
+    canvas.style.width = (CFG.W * scale) + 'px';
+    canvas.style.height = (CFG.H * scale) + 'px';
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  Game.init();
+
+  let lastTime = performance.now();
+  function loop(timestamp) {
+    const rawDt = Math.min((timestamp - lastTime) / 1000, 0.05);
+    lastTime = timestamp;
+
+    Game.update(rawDt);
+
+    ctx.clearRect(0, 0, CFG.W, CFG.H);
+    Game.render(ctx);
+
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
