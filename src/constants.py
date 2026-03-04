@@ -48,8 +48,6 @@ PLAYER_TURN      = 3.0    # Degrees/frame steering
 PLAYER_GRIP      = 0.82   # Velocity→heading blend per frame
 
 # ── Drift / handbrake ─────────────────────────────────────────────────────────
-DRIFT_TRIGGER         = 0.5    # Minimum speed for drift to activate
-DRIFT_STEER_MULT      = 1.4    # Extra slip multiplier
 PLAYER_HANDBRAKE_GRIP = 0.18   # Grip while SPACE held (very slippery)
 
 # ── Enemies ───────────────────────────────────────────────────────────────────

@@ -210,6 +210,9 @@ class Game:
     # ── Offer upgrade ─────────────────────────────────────────────────────
 
     def _offer_upgrade(self):
+        self.player.speed = 0.0
+        self.player.vx = 0.0
+        self.player.vy = 0.0
         owned_ids = {u.id for u in self.active_upgrades}
         pool = [u for u in ALL_UPGRADES if u.id not in owned_ids]
         if len(pool) < UPGRADE_CHOICES:
@@ -259,8 +262,9 @@ class Game:
 
         # ── Pickups ───────────────────────────────────────────────────────
         self.pickups.update(self.player.x, self.player.y, self.player.has_magnet)
-        if self.pickups.check_collection(self.player):
-            gain = FUEL_PICKUP_AMT * self.fuel_siphon
+        collected = self.pickups.check_collection(self.player)
+        if collected > 0:
+            gain = FUEL_PICKUP_AMT * self.fuel_siphon * collected
             self.fuel = min(self.fuel + gain, self.fuel_max)
 
         # ── Spawn fuel canister ───────────────────────────────────────────
@@ -287,12 +291,10 @@ class Game:
     def _draw(self):
         if self.state == MENU:
             draw_menu(self.screen)
-            pygame.display.flip()
             return
 
         if self.state == MODIFIER_SELECT:
             draw_modifier_select(self.screen, self.modifier_pool)
-            pygame.display.flip()
             return
 
         # ── Game world ────────────────────────────────────────────────────
@@ -313,6 +315,7 @@ class Game:
                 upgrades=self.active_upgrades,
                 modifier=self.active_modifier,
                 player=self.player,
+                max_speed=self.player.max_speed,
             )
             if self.active_modifier and self.active_modifier.id == "fog":
                 draw_fog(self.screen)

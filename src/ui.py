@@ -152,9 +152,10 @@ def _wrap(text: str, max_width: int, font_size: int) -> list[str]:
 
 def draw_hud(surface: pygame.Surface, fuel: float, fuel_max: float,
              time_alive: float, distance: float, speed: float,
-             upgrades: list, modifier, player):
+             upgrades: list, modifier, player,
+             max_speed: float = PLAYER_MAX_SPEED):
     _draw_fuel_bar(surface, fuel, fuel_max)
-    _draw_speed_bar(surface, speed)
+    _draw_speed_bar(surface, speed, max_speed)
     _draw_time(surface, time_alive)
     _draw_upgrade_icons(surface, upgrades)
     if modifier:
@@ -179,9 +180,9 @@ def _draw_fuel_bar(surface, fuel, fuel_max):
     _text(surface, f"FUEL  {int(fuel)}", 17, WHITE, (bx + bw + 8, by + 1))
 
 
-def _draw_speed_bar(surface, speed: float):
+def _draw_speed_bar(surface, speed: float, max_speed: float = PLAYER_MAX_SPEED):
     bx, by, bw, bh = 14, 40, 160, 12
-    pct = max(0.0, min(1.0, speed / PLAYER_MAX_SPEED))
+    pct = max(0.0, min(1.0, speed / max_speed))
     pygame.draw.rect(surface, (40, 40, 50), (bx, by, bw, bh), border_radius=3)
     pygame.draw.rect(surface, UI_ACCENT, (bx, by, int(bw * pct), bh), border_radius=3)
     pygame.draw.rect(surface, WHITE, (bx, by, bw, bh), 1, border_radius=3)
@@ -207,13 +208,17 @@ def _draw_upgrade_icons(surface, upgrades):
 
 # ── Fog overlay ───────────────────────────────────────────────────────────────
 
+_FOG_SURF = None
+
 def draw_fog(surface: pygame.Surface):
-    fog_h = int(HEIGHT * 0.55)
-    fog   = pygame.Surface((WIDTH, fog_h), pygame.SRCALPHA)
-    for row in range(fog_h):
-        alpha = int(200 * (1 - row / fog_h) ** 1.5)
-        fog.fill((20, 20, 30, alpha), (0, row, WIDTH, 1))
-    surface.blit(fog, (0, 0))
+    global _FOG_SURF
+    if _FOG_SURF is None:
+        fog_h = int(HEIGHT * 0.55)
+        _FOG_SURF = pygame.Surface((WIDTH, fog_h), pygame.SRCALPHA)
+        for row in range(fog_h):
+            alpha = int(200 * (1 - row / fog_h) ** 1.5)
+            _FOG_SURF.fill((20, 20, 30, alpha), (0, row, WIDTH, 1))
+    surface.blit(_FOG_SURF, (0, 0))
 
 
 # ── Game over ─────────────────────────────────────────────────────────────────

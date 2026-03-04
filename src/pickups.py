@@ -7,6 +7,14 @@ from .constants import WIDTH, HEIGHT, FUEL_R, YELLOW
 
 _MAGNET_RADIUS  = 160
 _DESPAWN_DIST   = 1400
+_FUEL_FONT      = None
+
+
+def _get_fuel_font():
+    global _FUEL_FONT
+    if _FUEL_FONT is None:
+        _FUEL_FONT = pygame.font.SysFont("consolas", 14, bold=True)
+    return _FUEL_FONT
 
 
 class FuelPickup:
@@ -36,7 +44,7 @@ class FuelPickup:
         pygame.draw.circle(surface, (200, 180, 0),   (sx, sy), self.r + 4)
         pygame.draw.circle(surface, YELLOW,           (sx, sy), self.r)
         pygame.draw.circle(surface, (255, 255, 160),  (sx - 3, sy - 3), self.r // 2)
-        font = pygame.font.SysFont("consolas", 14, bold=True)
+        font = _get_fuel_font()
         txt  = font.render("F", True, (80, 60, 0))
         surface.blit(txt, txt.get_rect(center=(sx, sy)))
 
@@ -59,17 +67,17 @@ class PickupManager:
         self.pickups = [p for p in self.pickups
                         if not p.is_far_from_player(player_x, player_y)]
 
-    def check_collection(self, player) -> bool:
-        """Return True if any pickup was collected; removes collected pickups."""
-        to_keep   = []
-        collected = False
+    def check_collection(self, player) -> int:
+        """Return count of collected pickups; removes collected pickups."""
+        to_keep = []
+        count   = 0
         for p in self.pickups:
             if math.hypot(player.x - p.x, player.y - p.y) < p.r + player.width // 2:
-                collected = True
+                count += 1
             else:
                 to_keep.append(p)
         self.pickups = to_keep
-        return collected
+        return count
 
     def draw(self, surface: pygame.Surface, cam_x: float, cam_y: float):
         for p in self.pickups:

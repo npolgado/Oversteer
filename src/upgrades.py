@@ -37,7 +37,7 @@ ALL_UPGRADES: list[Upgrade] = [
     # ── Uncommon ──────────────────────────────────────────────────────────
     Upgrade(
         "nitro", "Nitro Boost",
-        "+1 nitro charge. Press SPACE to burn it for a burst of speed.",
+        "+1 nitro charge. Press N to burn it for a burst of speed.",
         "uncommon",
     ),
     Upgrade(
