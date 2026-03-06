@@ -26,7 +26,7 @@ canvas {
 
 // ── 1. CONFIG ───────────────────────────────────────────────
 const CFG = {
-  W: 1280, H: 720,
+  W: 1920, H: 1080,
   // UI scale factor (reference: 1280x720)
   get S() { return Math.min(this.W / 1280, this.H / 720); },
   // Physics
@@ -45,7 +45,7 @@ const CFG = {
   ARENA_PAD: 24,
   BOUNCE_RETAIN: 0.35,
   // Player
-  PLAYER_W: 34, PLAYER_H: 18,
+  PLAYER_W: 34, PLAYER_H: 18, PLAYER_SPRITE_S: 56,
   PLAYER_RADIUS: 10,
   PLAYER_DRIFT_SHRINK: 2,
   // Enemies
@@ -53,7 +53,7 @@ const CFG = {
   INTERCEPTOR_SPEED: 460,
   DRIFTER_SPEED: 440,
   ENEMY_RADIUS: 9,
-  ENEMY_W: 32, ENEMY_H: 16,
+  ENEMY_W: 32, ENEMY_H: 16, ENEMY_SPRITE_S: 50,
   ENEMY_ACCEL: 700,
   ENEMY_TURN_RATE: 200 * Math.PI / 180,
   // Near-miss
@@ -76,10 +76,6 @@ const CFG = {
   BURST_COUNT: 2,
   BURST_DELAY: 0.3,
   // Hazards
-  HAZARD_RADIUS: 14,
-  BARRIER_RADIUS: 10,
-  OIL_SLIP_DURATION: 1.2,
-  OIL_SLIP_FRICTION: 2.2,
   // Scrap
   SCRAP_INTERVAL: 6,
   SCRAP_RADIUS: 7,
@@ -99,7 +95,6 @@ const CFG = {
   C_PICKUP: '#FFB000',
   C_RARE: '#7C5CFF',
   C_SHIELD: '#5BFF4A',
-  C_OBSTACLE: '#6B7280',
   // Death
   FREEZE_TIME: 0.10,
   DEATH_SLOWMO: 0.35,
@@ -138,6 +133,20 @@ const CFG = {
   FIRST_SPAWN_MIN: 0.6,
   SPAWN_INTERVAL_MIN: 1.5,
   WAVE_COMBAT_WAVE1: 30,
+  // Props
+  PROP_CHUNK_SIZE: 500,
+  PROP_DENSITY: 0.00001,
+  PROP_MIN_DIST: 100,
+  PROP_POOL: [
+    { image: 'props/tree_1.png', radius: 20, weight: 3, type: 'solid' },
+    { image: 'props/rock_1.png', radius: 16, weight: 2, type: 'solid' },
+    { image: 'props/mud_1.png',  radius: 25, weight: 2, type: 'slow', duration: 2.0, strength: 0.5 },
+    { image: 'props/puddle_1.png', radius: 22, weight: 2, type: 'slip', duration: 1.5, strength: 0.6 },
+    { image: 'props/bush_1.png', radius: 10, weight: 5, type: 'decoration' },
+  ],
+  // Sprite paths (for future PNG support)
+  PLAYER_SPRITE: 'cars/player.png',
+  ENEMY_SPRITES: ['cars/enemy_red.png', 'cars/enemy_orange.png'],
 };
 
 // Scale helper: converts reference-resolution pixels to current resolution
@@ -228,6 +237,44 @@ const U = {
     if (line) ctx.fillText(line, x, ly);
   },
 };
+
+// ── 2b. ASSET MANAGER ───────────────────────────────────────
+const Assets = {
+  _cache: {},
+  _basePath: 'assets/',
+
+  load(path) {
+    if (this._cache[path]) return this._cache[path];
+    const img = new Image();
+    img.src = this._basePath + path;
+    img._loaded = false;
+    img.onload = () => { img._loaded = true; };
+    img.onerror = () => { img._loaded = false; };
+    this._cache[path] = img;
+    return img;
+  },
+
+  drawOrFallback(ctx, path, x, y, w, h, fallbackFn) {
+    const img = this._cache[path];
+    if (img && img._loaded) {
+      ctx.drawImage(img, x - w / 2, y - h / 2, w, h);
+      return true;
+    }
+    fallbackFn(ctx);
+    return false;
+  },
+
+  preload(paths) {
+    for (const p of paths) this.load(p);
+  },
+};
+
+// Preload configured sprites
+Assets.preload([
+  CFG.PLAYER_SPRITE,
+  ...CFG.ENEMY_SPRITES,
+  ...CFG.PROP_POOL.map(p => p.image),
+]);
 
 // ── 3. INPUT ────────────────────────────────────────────────
 const Input = {
@@ -413,7 +460,7 @@ function updatePhysics(ent, dt, turnInput, throttle, braking, wantDrift, isPlaye
   const fwdDrag = ent.drifting ? CFG.DRIFT_DRAG : CFG.FORWARD_DRAG;
 
   // Oil slip override
-  const effectiveLatFric = (ent.slipTimer > 0) ? Math.min(latFric, CFG.OIL_SLIP_FRICTION) : latFric;
+  const effectiveLatFric = latFric;
 
   const latDecay = Math.exp(-effectiveLatFric * dt);
   const fwdDecay = Math.exp(-fwdDrag * dt);
@@ -423,7 +470,8 @@ function updatePhysics(ent, dt, turnInput, throttle, braking, wantDrift, isPlaye
 
   // Clamp speed
   const newSpeed = Math.hypot(ent.vx, ent.vy);
-  const maxSpd = braking && !throttle ? CFG.REVERSE_MAX : (ent.maxSpeed || CFG.MAX_SPEED);
+  let maxSpd = braking && !throttle ? CFG.REVERSE_MAX : (ent.maxSpeed || CFG.MAX_SPEED);
+  if (ent.slowTimer > 0) maxSpd *= ent.slowStrength;
   if (newSpeed > maxSpd) {
     const s = maxSpd / newSpeed;
     ent.vx *= s; ent.vy *= s;
@@ -460,6 +508,8 @@ class Player {
     this.shield = false;
     this.invulnTimer = 0;
     this.slipTimer = 0;
+    this.slowTimer = 0;
+    this.slowStrength = 1;
     this.wallHit = false;
     this.upgrades = [];
     this.comboLevel = 0;
@@ -479,7 +529,6 @@ class Player {
     this.thickPlating = false;
     this.afterburner = false;
     this.comboMaster = false;
-    this.oilResistant = false;
     this.speedDemon = false;
     this.encircleScoreBonus = 1;
     // Handbrake
@@ -494,12 +543,15 @@ class Player {
     // Near-miss streak
     this.consecutiveNearMisses = 0;
     this.nearMissStreakTimer = 0;
+    this.frozen = false;
   }
 
   get speed() { return Math.hypot(this.vx, this.vy); }
   get radius() { return CFG.PLAYER_RADIUS - (this.drifting ? CFG.PLAYER_DRIFT_SHRINK : 0); }
 
   update(dt) {
+    this.glowPhase += dt;
+    if (this.frozen) return;
     // Turn input
     let turnInput = 0;
     if (Input.left) turnInput -= 1;
@@ -599,9 +651,8 @@ class Player {
     // Invulnerability
     if (this.invulnTimer > 0) this.invulnTimer -= dt;
     if (this.ghostFrameTimer > 0) this.ghostFrameTimer -= dt;
+    if (this.slowTimer > 0) this.slowTimer -= dt;
 
-    // Glow
-    this.glowPhase += dt;
   }
 
   render(ctx) {
@@ -624,6 +675,21 @@ class Player {
     }
     ctx.scale(sx, sy);
 
+    // Try sprite first (PNGs point UP, so rotate -90° to face RIGHT)
+    const _sprImg = Assets._cache[CFG.PLAYER_SPRITE];
+    if (_sprImg && _sprImg._loaded) {
+      // Underglow (still applies with sprite)
+      const glowPulse = 0.3 + 0.15 * Math.sin(this.glowPhase * 2 * Math.PI / 1.2);
+      ctx.shadowColor = CFG.C_ACCENT;
+      ctx.shadowBlur = drifting ? 18 : 10;
+      ctx.globalAlpha *= (0.6 + glowPulse);
+      ctx.rotate(Math.PI / 2); // PNG points UP → rotate to face RIGHT
+      const sprS = CFG.PLAYER_SPRITE_S;
+      ctx.drawImage(_sprImg, -sprS/2, -sprS/2, sprS, sprS);
+      ctx.rotate(-Math.PI / 2); // restore rotation
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    } else {
     // Underglow
     const glowPulse = 0.3 + 0.15 * Math.sin(this.glowPhase * 2 * Math.PI / 1.2);
     ctx.shadowColor = CFG.C_ACCENT;
@@ -672,6 +738,7 @@ class Player {
       ctx.fill();
       ctx.globalAlpha = 1;
     }
+    } // end procedural fallback
 
     // Drift denied flash
     if (this.driftDeniedTimer > 0) {
@@ -724,6 +791,7 @@ class Enemy {
     this.baseMaxSpeed = 0; // set after maxSpeed is assigned
     this.health = 1;
     this.armored = false;
+    this.sprite = CFG.ENEMY_SPRITES.length > 0 ? U.randChoice(CFG.ENEMY_SPRITES) : null;
 
     this.radius = CFG.ENEMY_RADIUS;
     if (type === 'elite') {
@@ -837,6 +905,15 @@ class Enemy {
     ctx.shadowColor = isElite ? (this.armored ? CFG.C_RARE : CFG.C_ENEMY) : CFG.C_ENEMY;
     ctx.shadowBlur = 12 + this.glowExtra;
 
+    // Try sprite first (PNGs point UP → rotate +90° to face RIGHT)
+    const _eImg = this.sprite ? Assets._cache[this.sprite] : null;
+    if (_eImg && _eImg._loaded) {
+      ctx.rotate(Math.PI / 2);
+      const eSprS = isElite ? CFG.ENEMY_SPRITE_S * 1.25 : CFG.ENEMY_SPRITE_S;
+      ctx.drawImage(_eImg, -eSprS/2, -eSprS/2, eSprS, eSprS);
+      ctx.rotate(-Math.PI / 2);
+      ctx.shadowBlur = 0;
+    } else {
     // Body
     ctx.fillStyle = isElite ? (this.armored ? '#2A1A4A' : CFG.C_ENEMY_DARK) : CFG.C_ENEMY_DARK;
     ctx.fillRect(-ew/2, -eh/2, ew, eh);
@@ -866,104 +943,194 @@ class Enemy {
     ctx.closePath();
     ctx.fill();
     ctx.globalAlpha = 1;
+    } // end procedural fallback
 
     ctx.restore();
   }
 }
 
-// ── 7. ARENA / OBSTACLES ────────────────────────────────────
-class Obstacle {
-  constructor(type, x, y, angle) {
-    this.type = type; // 'barrier', 'cones', 'oil'
-    this.x = x; this.y = y;
-    this.angle = angle || 0;
-    this.nearMissCooldown = 0;
+// ── 7. PROPS SYSTEM ────────────────────────────────────────
+const Props = {
+  chunks: {},   // key: 'cx,cy' -> array of prop objects
+  allProps: [], // flat list for collision checks
+  weightedPool: [],
 
-    if (type === 'barrier') {
-      this.w = 60; this.h = 20;
-      // Two circle collision points at ends
-      this.circles = [
-        { ox: -20, oy: 0, r: CFG.BARRIER_RADIUS },
-        { ox: 20, oy: 0, r: CFG.BARRIER_RADIUS },
-      ];
-    } else if (type === 'cones') {
-      this.r = CFG.HAZARD_RADIUS;
-      this.circles = [{ ox: 0, oy: 0, r: CFG.HAZARD_RADIUS }];
-    } else {
-      // Oil
-      this.w = 70; this.h = 50;
-      this.circles = []; // no collision, apply slip
+  _seededRandom(seed) {
+    // mulberry32
+    return function() {
+      seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+      let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  },
+
+  reset() {
+    this.chunks = {};
+    this.allProps = [];
+    // Build weighted pool
+    this.weightedPool = [];
+    for (const p of CFG.PROP_POOL) {
+      for (let i = 0; i < p.weight; i++) this.weightedPool.push(p);
     }
-  }
+  },
 
-  getWorldCircles() {
-    if (!this.circles) return [];
-    const cos = Math.cos(this.angle), sin = Math.sin(this.angle);
-    return this.circles.map(c => ({
-      x: this.x + c.ox * cos - c.oy * sin,
-      y: this.y + c.ox * sin + c.oy * cos,
-      r: c.r,
-    }));
-  }
+  generate() {
+    const cs = CFG.PROP_CHUNK_SIZE;
+    const chunksX = Math.ceil(CFG.WORLD_W / cs);
+    const chunksY = Math.ceil(CFG.WORLD_H / cs);
+    const centerX = CFG.WORLD_W / 2, centerY = CFG.WORLD_H / 2;
+
+    for (let cx = 0; cx < chunksX; cx++) {
+      for (let cy = 0; cy < chunksY; cy++) {
+        this._generateChunk(cx, cy, centerX, centerY);
+      }
+    }
+  },
+
+  _generateChunk(cx, cy, centerX, centerY) {
+    const cs = CFG.PROP_CHUNK_SIZE;
+    const seed = cx * 7919 + cy * 104729;
+    const rng = this._seededRandom(seed);
+    const area = cs * cs;
+    const count = Math.floor(area * CFG.PROP_DENSITY);
+    const key = cx + ',' + cy;
+    const props = [];
+
+    for (let i = 0; i < count; i++) {
+      const x = cx * cs + rng() * cs;
+      const y = cy * cs + rng() * cs;
+
+      // Skip props too close to center spawn
+      const dx = x - centerX, dy = y - centerY;
+      if (dx * dx + dy * dy < CFG.PROP_MIN_DIST * CFG.PROP_MIN_DIST) continue;
+
+      // Skip props outside world bounds (with padding)
+      if (x < 40 || x > CFG.WORLD_W - 40 || y < 40 || y > CFG.WORLD_H - 40) continue;
+
+      const template = this.weightedPool[Math.floor(rng() * this.weightedPool.length)];
+      const prop = {
+        x, y,
+        radius: template.radius,
+        type: template.type,
+        image: template.image,
+        duration: template.duration || 0,
+        strength: template.strength || 0,
+        alive: true,
+      };
+      props.push(prop);
+      this.allProps.push(prop);
+    }
+    this.chunks[key] = props;
+  },
+
+  checkPlayerCollision(player) {
+    const hits = [];
+    const pr = player.radius;
+    for (const prop of this.allProps) {
+      if (!prop.alive || prop.type === 'decoration') continue;
+      const dx = player.x - prop.x, dy = player.y - prop.y;
+      const dist = dx * dx + dy * dy;
+      const minDist = pr + prop.radius;
+      if (dist < minDist * minDist) {
+        hits.push(prop);
+      }
+    }
+    return hits;
+  },
+
+  handleCollisions(player, hits) {
+    for (const prop of hits) {
+      if (prop.type === 'solid') {
+        // Push player out and bounce
+        const dx = player.x - prop.x, dy = player.y - prop.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        const overlap = player.radius + prop.radius - dist;
+        const nx = dx / dist, ny = dy / dist;
+        player.x += nx * overlap;
+        player.y += ny * overlap;
+        // Reflect velocity
+        const dot = player.vx * nx + player.vy * ny;
+        if (dot < 0) {
+          player.vx -= dot * nx;
+          player.vy -= dot * ny;
+          player.vx *= 0.3;
+          player.vy *= 0.3;
+        }
+        // Spark FX
+        Particles.spawn(prop.x + nx * prop.radius, prop.y + ny * prop.radius, CFG.C_PICKUP, 4, {
+          vxMin: -60, vxMax: 60, vyMin: -60, vyMax: 60,
+          lifeMin: 0.15, lifeMax: 0.3, sizeMin: 2, sizeMax: 4, type: 'spark',
+        });
+      } else if (prop.type === 'slow') {
+        player.slowTimer = prop.duration;
+        player.slowStrength = prop.strength;
+      } else if (prop.type === 'slip') {
+        player.slipTimer = prop.duration;
+      }
+    }
+  },
+
+  checkEnemyCollision(enemies) {
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      const er = e.radius || CFG.ENEMY_RADIUS;
+      for (const prop of this.allProps) {
+        if (!prop.alive || prop.type !== 'solid') continue;
+        const dx = e.x - prop.x, dy = e.y - prop.y;
+        const dist2 = dx * dx + dy * dy;
+        const minDist = er + prop.radius;
+        if (dist2 < minDist * minDist) {
+          const dist = Math.sqrt(dist2) || 1;
+          const overlap = minDist - dist;
+          const nx = dx / dist, ny = dy / dist;
+          e.x += nx * overlap;
+          e.y += ny * overlap;
+          const dot = e.vx * nx + e.vy * ny;
+          if (dot < 0) {
+            e.vx -= dot * nx;
+            e.vy -= dot * ny;
+            e.vx *= 0.4;
+            e.vy *= 0.4;
+          }
+        }
+      }
+    }
+  },
 
   render(ctx) {
-    ctx.save();
-    ctx.translate(this.x, this.y);
-    ctx.rotate(this.angle);
+    for (const prop of this.allProps) {
+      if (!prop.alive) continue;
+      if (!Camera.isVisible(prop.x, prop.y, prop.radius + 10)) continue;
 
-    if (this.type === 'barrier') {
-      ctx.fillStyle = CFG.C_OBSTACLE;
-      ctx.fillRect(-30, -10, 60, 20);
-      ctx.strokeStyle = CFG.C_PANEL;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(-30, -10, 60, 20);
-      // Hazard stripes
-      ctx.fillStyle = '#555';
-      for (let i = -25; i < 25; i += 12) {
-        ctx.fillRect(i, -8, 6, 16);
-      }
-    } else if (this.type === 'cones') {
-      // Three cones in triangle
-      ctx.fillStyle = CFG.C_OBSTACLE;
-      for (const [cx, cy] of [[0, -8], [-7, 6], [7, 6]]) {
+      const drawn = Assets.drawOrFallback(ctx, prop.image, prop.x, prop.y, prop.radius * 2, prop.radius * 2, () => {
         ctx.beginPath();
-        ctx.moveTo(cx, cy - 6);
-        ctx.lineTo(cx - 4, cy + 4);
-        ctx.lineTo(cx + 4, cy + 4);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = CFG.C_PICKUP;
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      }
-    } else {
-      // Oil slick
-      ctx.fillStyle = '#0B0F19';
-      ctx.globalAlpha = 0.8;
-      ctx.beginPath();
-      ctx.ellipse(0, 0, 35, 25, 0, 0, Math.PI * 2);
-      ctx.fill();
-      // Glossy highlight
-      ctx.fillStyle = '#1A2233';
-      ctx.globalAlpha = 0.4;
-      ctx.beginPath();
-      ctx.ellipse(-5, -5, 15, 10, -0.3, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
+        ctx.arc(prop.x, prop.y, prop.radius, 0, Math.PI * 2);
+
+        if (prop.type === 'solid') {
+          ctx.fillStyle = '#1A3322';
+          ctx.fill();
+          ctx.strokeStyle = '#0F2218';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        } else if (prop.type === 'slow') {
+          ctx.fillStyle = '#3D2810';
+          ctx.fill();
+          ctx.strokeStyle = '#2A1A08';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        } else if (prop.type === 'slip') {
+          ctx.fillStyle = 'rgba(30,60,100,0.5)';
+          ctx.fill();
+        } else {
+          // decoration
+          ctx.fillStyle = 'rgba(26,58,26,0.4)';
+          ctx.fill();
+        }
+      });
     }
-
-    ctx.restore();
-  }
-
-  checkOilOverlap(px, py, pr) {
-    if (this.type !== 'oil') return false;
-    // Simple ellipse approximation
-    const dx = px - this.x, dy = py - this.y;
-    const cos = Math.cos(-this.angle), sin = Math.sin(-this.angle);
-    const lx = dx * cos - dy * sin, ly = dx * sin + dy * cos;
-    return (lx * lx) / (35 * 35) + (ly * ly) / (25 * 25) < 1.2;
-  }
-}
+  },
+};
 
 // ── 8. PARTICLES / FX ──────────────────────────────────────
 const Particles = {
@@ -1520,7 +1687,6 @@ const Waves = {
   burstTimer: 0,
   breakTimer: 0,
   enemies: [],
-  obstacles: [],
   scraps: [],
   scrapTimer: 0,
   boostZones: [],
@@ -1537,7 +1703,6 @@ const Waves = {
     this.burstTimer = CFG.BURST_INTERVAL;
     this.breakTimer = 0;
     this.enemies = [];
-    this.obstacles = [];
     this.scraps = [];
     this.scrapTimer = CFG.SCRAP_INTERVAL;
     this.boostZones = [];
@@ -1569,23 +1734,6 @@ const Waves = {
     this.spawnTimer = this.currentFirstSpawn;
     this.burstTimer = CFG.BURST_INTERVAL;
 
-    // Spawn hazards around player
-    this.obstacles = [];
-    const hazCount = Math.min(8, 2 + Math.floor(this.waveIndex / 2));
-    for (let i = 0; i < hazCount; i++) {
-      const angle = U.randFloat(0, Math.PI * 2);
-      const dist = U.randFloat(180, 320);
-      const hx = player.x + Math.cos(angle) * dist;
-      const hy = player.y + Math.sin(angle) * dist;
-      // Avoid player zone
-      if (U.dist(hx, hy, player.x, player.y) < 140) continue;
-      const types = ['barrier', 'cones', 'oil'];
-      const hType = U.randChoice(types);
-      const hAngle = [0, Math.PI/2, Math.PI, Math.PI*3/2][U.randInt(0, 3)];
-      this.obstacles.push(new Obstacle(hType,
-        U.clamp(hx, 60, CFG.WORLD_W - 60),
-        U.clamp(hy, 60, CFG.WORLD_H - 60), hAngle));
-    }
   },
 
   getEnemyType(score) {
@@ -1673,11 +1821,6 @@ const Waves = {
       e.update(dt, player);
     }
     this.enemies = this.enemies.filter(e => e.alive);
-
-    // Update obstacle near-miss cooldowns
-    for (const o of this.obstacles) {
-      if (o.nearMissCooldown > 0) o.nearMissCooldown -= dt;
-    }
 
     // Scrap spawning
     this.scrapTimer -= dt;
@@ -1841,10 +1984,6 @@ const Waves = {
     // Vignette is rendered in screen space (after applyPost)
   },
 
-  renderObstacles(ctx) {
-    for (const o of this.obstacles) o.render(ctx);
-  },
-
   renderEnemies(ctx, time) {
     for (const e of this.enemies) e.render(ctx, time);
   },
@@ -1956,8 +2095,6 @@ const ARENA_UPGRADES = [
     apply(p) { p.afterburner = true; } },
   { id: 'combo_master', name: 'Combo Master', desc: 'Combo decays 50% slower', icon: 'C',
     apply(p) { p.comboMaster = true; } },
-  { id: 'oil_resistant', name: 'Oil Resistant', desc: 'Oil slip duration halved', icon: 'O',
-    apply(p) { p.oilResistant = true; } },
   { id: 'speed_demon', name: 'Speed Demon', desc: '+20% speed, enemies +10% speed', icon: '!',
     apply(p) { p.speedDemon = true; p.maxSpeed *= 1.20; } },
   { id: 'wider_trail', name: 'Wider Trail', desc: 'Loop detection radius +50%', icon: 'W',
@@ -2195,6 +2332,8 @@ const Game = {
     ScreenFX.reset();
     Trail.reset();
     Waves.reset();
+    Props.reset();
+    Props.generate();
     Camera.reset(this.player.x, this.player.y);
     if (!this.sandbox) {
       Waves.startWave(this.player);
@@ -2326,14 +2465,14 @@ const Game = {
           Waves.upgradeChosen = true;
         }
         Waves.startWave(this.player);
+        this.player.frozen = false;
         this.waveAnnounceTimer = 2.0;
         this.waveAnnounceNum = Waves.waveIndex;
         this.state = STATE.PLAYING;
       }
-      // Player can still move slowly
       const dt = ScreenFX.update(rawDt);
-      this.player.update(dt);
       Particles.update(dt);
+      Camera.update(dt, this.player.x, this.player.y, this.player.vx, this.player.vy, this.player.speed);
       return;
     }
 
@@ -2345,6 +2484,11 @@ const Game = {
 
     // Player
     this.player.update(dt);
+
+    // Props collision
+    const propHits = Props.checkPlayerCollision(this.player);
+    if (propHits.length > 0) Props.handleCollisions(this.player, propHits);
+    Props.checkEnemyCollision(Waves.enemies);
 
     // Camera
     Camera.update(dt, this.player.x, this.player.y, this.player.vx, this.player.vy, this.player.speed);
@@ -2524,6 +2668,16 @@ const Game = {
     if (Waves.phase === 'break' && this.state === STATE.PLAYING) {
       this.state = STATE.UPGRADE;
       this.breakTimer = CFG.WAVE_BREAK;
+      this.player.frozen = true;
+      this.player.vx = 0;
+      this.player.vy = 0;
+      this.player.drifting = false;
+      this.player.handbrakeTimer = 0;
+      this.player.driftTime = 0;
+      this.player.leanTimer = 0;
+      this.player.exhaustTimer = 0;
+      this.player.wallRiding = false;
+      this.player.driftChain = 0;
     }
 
     // Scoring
@@ -2565,65 +2719,6 @@ const Game = {
         // Near miss!
         this.nearMiss(e, 'enemy');
         e.nearMissCooldown = CFG.NEAR_MISS_COOLDOWN;
-      }
-    }
-
-    // Collision: obstacles
-    for (const o of Waves.obstacles) {
-      // Oil check
-      if (o.type === 'oil') {
-        if (o.checkOilOverlap(this.player.x, this.player.y, pRadius)) {
-          const dur = this.player.oilResistant ? CFG.OIL_SLIP_DURATION / 2 : CFG.OIL_SLIP_DURATION;
-          this.player.slipTimer = Math.max(this.player.slipTimer, dur);
-        }
-        continue;
-      }
-
-      const circles = o.getWorldCircles();
-      for (const c of circles) {
-        const d = U.dist(this.player.x, this.player.y, c.x, c.y);
-        const collDist = pRadius + c.r;
-        const nearDist = pRadius + c.r + CFG.NEAR_MISS_HAZARD;
-
-        if (d < collDist) {
-          if (this.player.invulnTimer > 0 || this.player.ghostFrameTimer > 0) continue;
-          if (this.player.shield) {
-            this.shieldBreak(o);
-          } else {
-            this.deathCause = `HIT ${o.type.toUpperCase()}`;
-            this.die();
-            return;
-          }
-        } else if (d < nearDist && this.player.drifting && o.nearMissCooldown <= 0) {
-          this.nearMiss(o, 'hazard');
-          o.nearMissCooldown = CFG.NEAR_MISS_COOLDOWN;
-        }
-      }
-    }
-
-    // Enemy-obstacle collisions (bounce)
-    for (const e of Waves.enemies) {
-      for (const o of Waves.obstacles) {
-        if (o.type === 'oil') {
-          if (o.checkOilOverlap(e.x, e.y, CFG.ENEMY_RADIUS)) {
-            e.slipTimer = Math.max(e.slipTimer, 0.6);
-          }
-          continue;
-        }
-        const circles = o.getWorldCircles();
-        for (const c of circles) {
-          const d = U.dist(e.x, e.y, c.x, c.y);
-          if (d < CFG.ENEMY_RADIUS + c.r) {
-            // Bounce enemy away
-            const nx = (e.x - c.x) / (d || 1);
-            const ny = (e.y - c.y) / (d || 1);
-            e.x = c.x + nx * (CFG.ENEMY_RADIUS + c.r + 1);
-            e.y = c.y + ny * (CFG.ENEMY_RADIUS + c.r + 1);
-            const dotN = e.vx * nx + e.vy * ny;
-            e.vx -= 1.5 * dotN * nx;
-            e.vy -= 1.5 * dotN * ny;
-          }
-        }
       }
     }
 
@@ -2784,14 +2879,14 @@ const Game = {
     // Arena
     Waves.renderArena(ctx, this.time);
 
+    // Props (under skid marks and entities)
+    Props.render(ctx);
+
     // Skid marks (layer under entities)
     Particles.renderSkids(ctx);
 
     // Trail (encirclement line)
     Trail.render(ctx);
-
-    // Obstacles
-    Waves.renderObstacles(ctx);
 
     // Scraps
     Waves.renderScraps(ctx);
