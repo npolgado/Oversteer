@@ -138,19 +138,72 @@ const CFG = {
   PROP_DENSITY: 0.00001,
   PROP_MIN_DIST: 100,
   PROP_POOL: [
-    { image: 'props/tree_1.png', radius: 20, weight: 3, type: 'solid' },
-    { image: 'props/rock_1.png', radius: 16, weight: 2, type: 'solid' },
-    { image: 'props/mud_1.png',  radius: 25, weight: 2, type: 'slow', duration: 2.0, strength: 0.5 },
-    { image: 'props/puddle_1.png', radius: 22, weight: 2, type: 'slip', duration: 1.5, strength: 0.6 },
-    { image: 'props/bush_1.png', radius: 10, weight: 5, type: 'decoration' },
+    { image: 'props/tree_1.png', radius: 50, weight: 3, type: 'solid' },
+    { image: 'props/rock_1.png', radius: 40, weight: 2, type: 'solid' },
+    { image: 'props/mud_1.png',  radius: 62, weight: 2, type: 'slow', duration: 2.0, strength: 0.5 },
+    { image: 'props/puddle_1.png', radius: 55, weight: 2, type: 'slip', duration: 1.5, strength: 0.6 },
+    { image: 'props/bush_1.png', radius: 25, weight: 5, type: 'decoration' },
   ],
   // Sprite paths (for future PNG support)
   PLAYER_SPRITE: 'cars/player.png',
   ENEMY_SPRITES: ['cars/enemy_red.png', 'cars/enemy_orange.png'],
+  BACKGROUND_SPRITE: 'background.png',
 };
 
 // Scale helper: converts reference-resolution pixels to current resolution
 function S(px) { return Math.round(px * CFG.S); }
+
+// ── PRE-RENDERED FX CACHES ──────────────────────────────────
+const FXCache = {
+  vignetteCanvas: null,
+  propGlow: {},  // keyed by "radius_type"
+
+  initVignette() {
+    const c = document.createElement('canvas');
+    c.width = CFG.W; c.height = CFG.H;
+    const cx = c.getContext('2d');
+    const vig = cx.createRadialGradient(CFG.W/2, CFG.H/2, CFG.H * 0.3, CFG.W/2, CFG.H/2, CFG.W * 0.7);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.5)');
+    cx.fillStyle = vig;
+    cx.fillRect(0, 0, CFG.W, CFG.H);
+    this.vignetteCanvas = c;
+  },
+
+  initPropGlow() {
+    const glowColors = {
+      solid:      { c0: 'rgba(255,50,30,0.6)',  c1: 'rgba(255,30,10,0.25)', c2: 'rgba(255,0,0,0)' },
+      slow:       { c0: 'rgba(180,120,40,0.5)', c1: 'rgba(140,80,20,0.2)',  c2: 'rgba(100,50,0,0)' },
+      slip:       { c0: 'rgba(60,120,220,0.5)', c1: 'rgba(40,80,180,0.2)',  c2: 'rgba(20,40,140,0)' },
+      decoration: { c0: 'rgba(40,140,40,0.3)',  c1: 'rgba(30,100,30,0.1)',  c2: 'rgba(20,60,20,0)' },
+    };
+    for (const def of CFG.PROP_POOL) {
+      const key = def.radius + '_' + def.type;
+      if (this.propGlow[key]) continue;
+      const glowR = def.radius * 2;
+      const size = Math.ceil(glowR * 2) + 2;
+      const c = document.createElement('canvas');
+      c.width = size; c.height = size;
+      const cx = c.getContext('2d');
+      const center = size / 2;
+      const colors = glowColors[def.type] || glowColors.solid;
+      const g = cx.createRadialGradient(center, center, def.radius * 0.2, center, center, glowR);
+      g.addColorStop(0, colors.c0);
+      g.addColorStop(0.5, colors.c1);
+      g.addColorStop(1, colors.c2);
+      cx.fillStyle = g;
+      cx.beginPath();
+      cx.arc(center, center, glowR, 0, Math.PI * 2);
+      cx.fill();
+      this.propGlow[key] = { canvas: c, size };
+    }
+  },
+
+  init() {
+    this.initVignette();
+    this.initPropGlow();
+  },
+};
 
 // ── 2. UTILS ────────────────────────────────────────────────
 const U = {
@@ -274,6 +327,7 @@ Assets.preload([
   CFG.PLAYER_SPRITE,
   ...CFG.ENEMY_SPRITES,
   ...CFG.PROP_POOL.map(p => p.image),
+  CFG.BACKGROUND_SPRITE,
 ]);
 
 // ── 3. INPUT ────────────────────────────────────────────────
@@ -678,29 +732,35 @@ class Player {
     // Try sprite first (PNGs point UP, so rotate -90° to face RIGHT)
     const _sprImg = Assets._cache[CFG.PLAYER_SPRITE];
     if (_sprImg && _sprImg._loaded) {
-      // Underglow (still applies with sprite)
+      // Underglow glow ring (no shadowBlur)
       const glowPulse = 0.3 + 0.15 * Math.sin(this.glowPhase * 2 * Math.PI / 1.2);
-      ctx.shadowColor = CFG.C_ACCENT;
-      ctx.shadowBlur = drifting ? 18 : 10;
+      ctx.fillStyle = CFG.C_ACCENT;
+      ctx.globalAlpha *= (0.12 + glowPulse * 0.08) * (drifting ? 1.6 : 1);
+      ctx.beginPath();
+      ctx.arc(0, 0, (drifting ? 28 : 22), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = this.invulnTimer > 0 && Math.floor(this.invulnTimer * 10) % 2 === 0 ? 0.4 : 1;
       ctx.globalAlpha *= (0.6 + glowPulse);
       ctx.rotate(Math.PI / 2); // PNG points UP → rotate to face RIGHT
       const sprS = CFG.PLAYER_SPRITE_S;
       ctx.drawImage(_sprImg, -sprS/2, -sprS/2, sprS, sprS);
       ctx.rotate(-Math.PI / 2); // restore rotation
-      ctx.shadowBlur = 0;
       ctx.globalAlpha = 1;
     } else {
-    // Underglow
+    // Underglow glow ring (no shadowBlur)
     const glowPulse = 0.3 + 0.15 * Math.sin(this.glowPhase * 2 * Math.PI / 1.2);
-    ctx.shadowColor = CFG.C_ACCENT;
-    ctx.shadowBlur = drifting ? 18 : 10;
+    ctx.fillStyle = CFG.C_ACCENT;
+    ctx.globalAlpha *= (0.12 + glowPulse * 0.08) * (drifting ? 1.6 : 1);
+    ctx.beginPath();
+    ctx.arc(0, 0, (drifting ? 28 : 22), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = this.invulnTimer > 0 && Math.floor(this.invulnTimer * 10) % 2 === 0 ? 0.4 : 1;
     ctx.globalAlpha *= (0.6 + glowPulse);
 
     // Body
     ctx.fillStyle = CFG.C_PLAYER;
     ctx.fillRect(-CFG.PLAYER_W/2, -CFG.PLAYER_H/2, CFG.PLAYER_W, CFG.PLAYER_H);
 
-    ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
 
     // Outline
@@ -887,23 +947,26 @@ class Enemy {
       ctx.globalAlpha = Math.max(0.15, this.fadeAlpha);
     }
 
-    // Elite: pulsing purple aura
+    // Elite: pulsing aura (no shadowBlur)
     if (isElite) {
       const auraPulse = 0.3 + 0.2 * Math.sin((time || 0) * 4);
-      ctx.shadowColor = this.armored ? CFG.C_RARE : CFG.C_ENEMY;
-      ctx.shadowBlur = 20 + this.glowExtra + auraPulse * 10;
+      const auraColor = this.armored ? CFG.C_RARE : CFG.C_ENEMY;
       // Outer aura circle
       ctx.globalAlpha *= (0.15 + auraPulse * 0.1);
-      ctx.fillStyle = this.armored ? CFG.C_RARE : CFG.C_ENEMY;
+      ctx.fillStyle = auraColor;
       ctx.beginPath();
       ctx.arc(0, 0, 28, 0, Math.PI * 2);
+      ctx.fill();
+      // Softer glow ring
+      ctx.globalAlpha = (0.08 + auraPulse * 0.06);
+      ctx.beginPath();
+      ctx.arc(0, 0, 34 + this.glowExtra * 0.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.globalAlpha = this.fadeAlpha !== undefined ? Math.max(0.15, this.fadeAlpha) : 1;
     }
 
-    // Danger aura
-    ctx.shadowColor = isElite ? (this.armored ? CFG.C_RARE : CFG.C_ENEMY) : CFG.C_ENEMY;
-    ctx.shadowBlur = 12 + this.glowExtra;
+    // Danger aura (colored outline instead of shadowBlur)
+    const auraColor = isElite ? (this.armored ? CFG.C_RARE : CFG.C_ENEMY) : CFG.C_ENEMY;
 
     // Try sprite first (PNGs point UP → rotate +90° to face RIGHT)
     const _eImg = this.sprite ? Assets._cache[this.sprite] : null;
@@ -912,7 +975,12 @@ class Enemy {
       const eSprS = isElite ? CFG.ENEMY_SPRITE_S * 1.25 : CFG.ENEMY_SPRITE_S;
       ctx.drawImage(_eImg, -eSprS/2, -eSprS/2, eSprS, eSprS);
       ctx.rotate(-Math.PI / 2);
-      ctx.shadowBlur = 0;
+      // Colored outline glow (replaces shadowBlur)
+      ctx.strokeStyle = auraColor;
+      ctx.lineWidth = 2;
+      ctx.globalAlpha *= 0.4;
+      ctx.strokeRect(-ew/2 - 2, -eh/2 - 2, ew + 4, eh + 4);
+      ctx.globalAlpha = this.fadeAlpha !== undefined ? Math.max(0.15, this.fadeAlpha) : 1;
     } else {
     // Body
     ctx.fillStyle = isElite ? (this.armored ? '#2A1A4A' : CFG.C_ENEMY_DARK) : CFG.C_ENEMY_DARK;
@@ -920,8 +988,6 @@ class Enemy {
     ctx.strokeStyle = isElite ? (this.armored ? CFG.C_RARE : CFG.C_ENEMY) : CFG.C_ENEMY;
     ctx.lineWidth = isElite ? 2.5 : 1.5;
     ctx.strokeRect(-ew/2, -eh/2, ew, eh);
-
-    ctx.shadowBlur = 0;
 
     // Armor indicator on elite
     if (isElite && this.armored) {
@@ -1101,7 +1167,15 @@ const Props = {
   render(ctx) {
     for (const prop of this.allProps) {
       if (!prop.alive) continue;
-      if (!Camera.isVisible(prop.x, prop.y, prop.radius + 10)) continue;
+      if (!Camera.isVisible(prop.x, prop.y, prop.radius * 2 + 10)) continue;
+
+      // Glow highlight behind prop (pre-rendered)
+      const glowKey = prop.radius + '_' + prop.type;
+      const glowData = FXCache.propGlow[glowKey];
+      if (glowData) {
+        const half = glowData.size / 2;
+        ctx.drawImage(glowData.canvas, prop.x - half, prop.y - half);
+      }
 
       const drawn = Assets.drawOrFallback(ctx, prop.image, prop.x, prop.y, prop.radius * 2, prop.radius * 2, () => {
         ctx.beginPath();
@@ -1135,7 +1209,8 @@ const Props = {
 // ── 8. PARTICLES / FX ──────────────────────────────────────
 const Particles = {
   list: [],
-  skidMarks: [],  // ring buffer
+  skidMarks: [],
+  _skidHead: 0,  // ring buffer write index
   MAX_SKIDS: 600,
   floatingTexts: [],
   rings: [],
@@ -1143,6 +1218,7 @@ const Particles = {
   clear() {
     this.list = [];
     this.skidMarks = [];
+    this._skidHead = 0;
     this.floatingTexts = [];
     this.rings = [];
   },
@@ -1162,8 +1238,13 @@ const Particles = {
   },
 
   addSkid(x, y, color, alpha) {
-    this.skidMarks.push({ x, y, color, alpha, age: 0 });
-    if (this.skidMarks.length > this.MAX_SKIDS) this.skidMarks.shift();
+    const entry = { x, y, color, alpha, age: 0 };
+    if (this.skidMarks.length < this.MAX_SKIDS) {
+      this.skidMarks.push(entry);
+    } else {
+      this.skidMarks[this._skidHead] = entry;
+      this._skidHead = (this._skidHead + 1) % this.MAX_SKIDS;
+    }
   },
 
   addFloat(x, y, text, color, size) {
@@ -1175,7 +1256,7 @@ const Particles = {
   },
 
   update(dt) {
-    // Particles
+    // Particles (swap-and-pop)
     for (let i = this.list.length - 1; i >= 0; i--) {
       const p = this.list[i];
       p.x += p.vx * dt;
@@ -1185,35 +1266,37 @@ const Particles = {
         p.size += dt * 8;
       }
       p.life -= dt;
-      if (p.life <= 0) this.list.splice(i, 1);
+      if (p.life <= 0) { this.list[i] = this.list[this.list.length - 1]; this.list.pop(); }
     }
 
-    // Skid marks fade
+    // Skid marks fade (ring buffer — old marks overwritten automatically)
     for (let i = this.skidMarks.length - 1; i >= 0; i--) {
       this.skidMarks[i].age += dt;
-      if (this.skidMarks[i].age > 6) this.skidMarks.splice(i, 1);
     }
 
-    // Floating texts
+    // Floating texts (swap-and-pop)
     for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
       const ft = this.floatingTexts[i];
       ft.y += ft.vy * dt;
       ft.life -= dt;
-      if (ft.life <= 0) this.floatingTexts.splice(i, 1);
+      if (ft.life <= 0) { this.floatingTexts[i] = this.floatingTexts[this.floatingTexts.length - 1]; this.floatingTexts.pop(); }
     }
 
-    // Rings
+    // Rings (swap-and-pop)
     for (let i = this.rings.length - 1; i >= 0; i--) {
       const r = this.rings[i];
       r.radius += (r.maxRadius / 0.3) * dt;
       r.life -= dt;
-      if (r.life <= 0) this.rings.splice(i, 1);
+      if (r.life <= 0) { this.rings[i] = this.rings[this.rings.length - 1]; this.rings.pop(); }
     }
   },
 
   renderSkids(ctx) {
     for (const s of this.skidMarks) {
+      if (s.age > 6) continue;
+      if (!Camera.isVisible(s.x, s.y, 3)) continue;
       const alpha = Math.max(0, s.alpha * (1 - s.age / 6));
+      if (alpha < 0.01) continue;
       ctx.fillStyle = s.color;
       ctx.globalAlpha = alpha;
       ctx.fillRect(s.x - 1.5, s.y - 1.5, 3, 3);
@@ -1611,15 +1694,29 @@ const Trail = {
 
     // Trail with color gradient: dim oldest -> bright cyan newest
     ctx.save();
-    ctx.shadowColor = CFG.C_ACCENT;
-    const glowPulse = nearLoop ? 10 + 6 * Math.sin(performance.now() / 150) : 6;
-    ctx.shadowBlur = glowPulse;
-    ctx.lineWidth = nearLoop ? 3.5 : 2.5;
     ctx.lineCap = 'round';
+    const trailW = nearLoop ? 3.5 : 2.5;
+
+    // Glow underlay: thicker, semi-transparent pass (no shadowBlur)
+    ctx.lineWidth = trailW + (nearLoop ? 8 : 5);
     for (let i = 1; i < this.count; i++) {
-      const frac = i / this.count; // 0=oldest, 1=newest
+      const frac = i / this.count;
+      const glowAlpha = (0.02 + frac * 0.08) * (nearLoop ? 1.4 : 1);
+      ctx.strokeStyle = `rgba(53,242,208,${glowAlpha})`;
+      ctx.beginPath();
+      const p0 = this.getPoint(i - 1);
+      const p1 = this.getPoint(i);
+      ctx.moveTo(p0.x, p0.y);
+      ctx.lineTo(p1.x, p1.y);
+      ctx.stroke();
+    }
+
+    // Sharp trail on top
+    ctx.lineWidth = trailW;
+    for (let i = 1; i < this.count; i++) {
+      const frac = i / this.count;
       const alphaBoost = nearLoop ? 0.15 : 0;
-      const alpha = 0.08 + frac * 0.30 + alphaBoost; // 0.08 -> 0.38 (+ boost)
+      const alpha = 0.08 + frac * 0.30 + alphaBoost;
       const r = Math.round(53 + frac * (53 - 53));
       const g = Math.round(100 + frac * (242 - 100));
       const b = Math.round(140 + frac * (208 - 140));
@@ -1893,93 +1990,111 @@ const Waves = {
   },
 
   renderArena(ctx, time) {
-    // Background - fill visible area in world space
-    ctx.fillStyle = CFG.C_BG;
-    ctx.fillRect(Camera.x - CFG.W / 2, Camera.y - CFG.H / 2, CFG.W, CFG.H);
+    const bgImg = Assets._cache[CFG.BACKGROUND_SPRITE];
+    const hasBg = bgImg && bgImg._loaded;
 
-    // Diagonal scanlines tiled relative to camera
-    const vx = Camera.x - CFG.W / 2;
-    const vy = Camera.y - CFG.H / 2;
-    ctx.strokeStyle = CFG.C_BG2;
-    ctx.lineWidth = 1;
-    ctx.globalAlpha = 0.3;
-    const startI = Math.floor((vx - CFG.H) / 20) * 20;
-    const endI = vx + CFG.W + CFG.H;
-    for (let i = startI; i < endI; i += 20) {
-      ctx.beginPath();
-      ctx.moveTo(i, vy);
-      ctx.lineTo(i + CFG.H, vy + CFG.H);
-      ctx.stroke();
+    if (hasBg) {
+      // Draw only the visible slice of the background (viewport-clipped)
+      const invZoom = 1 / Camera.zoom;
+      const vx = Math.max(0, Math.floor(Camera.x - (CFG.W / 2) * invZoom));
+      const vy = Math.max(0, Math.floor(Camera.y - (CFG.H / 2) * invZoom));
+      const vw = Math.min(Math.ceil(CFG.W * invZoom), CFG.WORLD_W - vx);
+      const vh = Math.min(Math.ceil(CFG.H * invZoom), CFG.WORLD_H - vy);
+      // Map world coords to image coords (scale image to fill world)
+      const sx = vx / CFG.WORLD_W * bgImg.naturalWidth;
+      const sy = vy / CFG.WORLD_H * bgImg.naturalHeight;
+      const sw = vw / CFG.WORLD_W * bgImg.naturalWidth;
+      const sh = vh / CFG.WORLD_H * bgImg.naturalHeight;
+      ctx.drawImage(bgImg, sx, sy, sw, sh, vx, vy, vw, vh);
+    } else {
+      // Fallback: dark fill while image loads or if missing
+      ctx.fillStyle = CFG.C_BG;
+      ctx.fillRect(Camera.x - CFG.W / 2, Camera.y - CFG.H / 2, CFG.W, CFG.H);
     }
-    ctx.globalAlpha = 1;
 
-    // Faint lane fragments
-    ctx.fillStyle = CFG.C_BG2;
-    ctx.globalAlpha = 0.15;
-    const fragOffset = (time * 15) % 80;
-    for (let i = 0; i < 8; i++) {
-      const fx = vx + 100 + i * 120;
-      const fy = vy + ((fragOffset + i * 60) % (CFG.H + 40)) - 20;
-      ctx.fillRect(fx, fy, 30, 3);
+    // Abstract effects only when no background image (designed for dark bg)
+    if (!hasBg) {
+      const vx = Camera.x - CFG.W / 2;
+      const vy = Camera.y - CFG.H / 2;
+
+      // Diagonal scanlines tiled relative to camera
+      ctx.strokeStyle = CFG.C_BG2;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.3;
+      const startI = Math.floor((vx - CFG.H) / 20) * 20;
+      const endI = vx + CFG.W + CFG.H;
+      for (let i = startI; i < endI; i += 20) {
+        ctx.beginPath();
+        ctx.moveTo(i, vy);
+        ctx.lineTo(i + CFG.H, vy + CFG.H);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+
+      // Faint lane fragments
+      ctx.fillStyle = CFG.C_BG2;
+      ctx.globalAlpha = 0.15;
+      const fragOffset = (time * 15) % 80;
+      for (let i = 0; i < 8; i++) {
+        const fx = vx + 100 + i * 120;
+        const fy = vy + ((fragOffset + i * 60) % (CFG.H + 40)) - 20;
+        ctx.fillRect(fx, fy, 30, 3);
+      }
+      ctx.globalAlpha = 1;
+
+      // Dynamic background: slow-moving geometric shapes
+      const waveProgress = Math.min(1, (Waves.waveIndex || 1) / 8);
+      const bgR = Math.round(20 + waveProgress * 30);
+      const bgG = Math.round(30 + (1 - waveProgress) * 20);
+      const bgB = Math.round(50 + (1 - waveProgress) * 30);
+      ctx.strokeStyle = `rgb(${bgR},${bgG},${bgB})`;
+      ctx.globalAlpha = 0.06;
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 8; i++) {
+        const gx = vx + ((time * 8 + i * 371) % (CFG.W + 200)) - 100;
+        const gy = vy + ((time * 5 + i * 523) % (CFG.H + 200)) - 100;
+        const rot = time * 0.1 + i * 1.3;
+        ctx.save();
+        ctx.translate(gx, gy);
+        ctx.rotate(rot);
+        if (i % 3 === 0) {
+          ctx.beginPath();
+          ctx.moveTo(0, -20); ctx.lineTo(17, 10); ctx.lineTo(-17, 10);
+          ctx.closePath(); ctx.stroke();
+        } else if (i % 3 === 1) {
+          ctx.beginPath();
+          ctx.moveTo(0, -15); ctx.lineTo(12, 0); ctx.lineTo(0, 15); ctx.lineTo(-12, 0);
+          ctx.closePath(); ctx.stroke();
+        } else {
+          ctx.beginPath();
+          for (let j = 0; j < 6; j++) {
+            const a = Math.PI / 3 * j;
+            const hx = Math.cos(a) * 14, hy = Math.sin(a) * 14;
+            if (j === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
+          }
+          ctx.closePath(); ctx.stroke();
+        }
+        ctx.restore();
+      }
+      ctx.globalAlpha = 1;
+
+      // Dust motes (camera-relative)
+      ctx.fillStyle = CFG.C_PANEL;
+      ctx.globalAlpha = 0.2;
+      for (let i = 0; i < 6; i++) {
+        const mx = vx + ((time * 20 + i * 173) % CFG.W);
+        const my = vy + ((time * 12 + i * 247) % CFG.H);
+        ctx.beginPath();
+        ctx.arc(mx, my, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
     }
-    ctx.globalAlpha = 1;
 
-    // World boundary line
+    // World boundary line (always drawn)
     ctx.strokeStyle = CFG.C_PANEL;
     ctx.lineWidth = 2;
     ctx.strokeRect(CFG.ARENA_PAD, CFG.ARENA_PAD, CFG.WORLD_W - CFG.ARENA_PAD*2, CFG.WORLD_H - CFG.ARENA_PAD*2);
-
-    // Dynamic background: slow-moving geometric shapes
-    // Color temperature shifts with wave progress (cool blue early -> warm red late)
-    const waveProgress = Math.min(1, (Waves.waveIndex || 1) / 8);
-    const bgR = Math.round(20 + waveProgress * 30);
-    const bgG = Math.round(30 + (1 - waveProgress) * 20);
-    const bgB = Math.round(50 + (1 - waveProgress) * 30);
-    ctx.strokeStyle = `rgb(${bgR},${bgG},${bgB})`;
-    ctx.globalAlpha = 0.06;
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 8; i++) {
-      const gx = vx + ((time * 8 + i * 371) % (CFG.W + 200)) - 100;
-      const gy = vy + ((time * 5 + i * 523) % (CFG.H + 200)) - 100;
-      const rot = time * 0.1 + i * 1.3;
-      ctx.save();
-      ctx.translate(gx, gy);
-      ctx.rotate(rot);
-      if (i % 3 === 0) {
-        // Triangle
-        ctx.beginPath();
-        ctx.moveTo(0, -20); ctx.lineTo(17, 10); ctx.lineTo(-17, 10);
-        ctx.closePath(); ctx.stroke();
-      } else if (i % 3 === 1) {
-        // Diamond
-        ctx.beginPath();
-        ctx.moveTo(0, -15); ctx.lineTo(12, 0); ctx.lineTo(0, 15); ctx.lineTo(-12, 0);
-        ctx.closePath(); ctx.stroke();
-      } else {
-        // Hexagon
-        ctx.beginPath();
-        for (let j = 0; j < 6; j++) {
-          const a = Math.PI / 3 * j;
-          const hx = Math.cos(a) * 14, hy = Math.sin(a) * 14;
-          if (j === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
-        }
-        ctx.closePath(); ctx.stroke();
-      }
-      ctx.restore();
-    }
-    ctx.globalAlpha = 1;
-
-    // Dust motes (camera-relative)
-    ctx.fillStyle = CFG.C_PANEL;
-    ctx.globalAlpha = 0.2;
-    for (let i = 0; i < 6; i++) {
-      const mx = vx + ((time * 20 + i * 173) % CFG.W);
-      const my = vy + ((time * 12 + i * 247) % CFG.H);
-      ctx.beginPath();
-      ctx.arc(mx, my, 1.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
 
     // Vignette is rendered in screen space (after applyPost)
   },
@@ -2911,12 +3026,10 @@ const Game = {
 
     ScreenFX.applyPost(ctx);
 
-    // Vignette (screen space)
-    const vig = ctx.createRadialGradient(CFG.W/2, CFG.H/2, CFG.H * 0.3, CFG.W/2, CFG.H/2, CFG.W * 0.7);
-    vig.addColorStop(0, 'rgba(0,0,0,0)');
-    vig.addColorStop(1, 'rgba(0,0,0,0.5)');
-    ctx.fillStyle = vig;
-    ctx.fillRect(0, 0, CFG.W, CFG.H);
+    // Vignette (screen space, pre-rendered)
+    if (FXCache.vignetteCanvas) {
+      ctx.drawImage(FXCache.vignetteCanvas, 0, 0);
+    }
 
     // Speed lines (screen space, at >70% max speed)
     {
@@ -3326,6 +3439,7 @@ const Game = {
   window.addEventListener('resize', resize);
   resize();
 
+  FXCache.init();
   Game.init();
 
   let lastTime = performance.now();
