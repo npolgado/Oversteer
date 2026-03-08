@@ -513,8 +513,8 @@ function updatePhysics(ent, dt, turnInput, throttle, braking, wantDrift, isPlaye
   if (ent.drifting && ent.driftKing) latFric *= 0.75; // Drift King: reduced drift lateral friction
   const fwdDrag = ent.drifting ? CFG.DRIFT_DRAG : CFG.FORWARD_DRAG;
 
-  // Oil slip override
-  const effectiveLatFric = latFric;
+  // Oil slip override — reduce lateral friction when on puddle
+  const effectiveLatFric = ent.slipTimer > 0 ? latFric * (ent.slipStrength || 0.6) : latFric;
 
   const latDecay = Math.exp(-effectiveLatFric * dt);
   const fwdDecay = Math.exp(-fwdDrag * dt);
@@ -1133,7 +1133,31 @@ const Props = {
         player.slowStrength = prop.strength;
       } else if (prop.type === 'slip') {
         player.slipTimer = prop.duration;
+        player.slipStrength = prop.strength;
       }
+    }
+  },
+
+  checkNearMiss(player, game) {
+    if (!player.drifting) return;
+    const pr = player.radius;
+    for (const prop of this.allProps) {
+      if (!prop.alive || prop.type !== 'solid') continue;
+      if ((prop.nearMissCooldown || 0) > 0) continue;
+      const dx = player.x - prop.x, dy = player.y - prop.y;
+      const dist2 = dx * dx + dy * dy;
+      const collDist = pr + prop.radius;
+      const nearDist = collDist + CFG.NEAR_MISS_HAZARD;
+      if (dist2 > collDist * collDist && dist2 < nearDist * nearDist) {
+        game.nearMiss(prop, 'hazard');
+        prop.nearMissCooldown = CFG.NEAR_MISS_COOLDOWN;
+      }
+    }
+  },
+
+  updatePropCooldowns(dt) {
+    for (const prop of this.allProps) {
+      if (prop.nearMissCooldown > 0) prop.nearMissCooldown -= dt;
     }
   },
 
@@ -2603,6 +2627,8 @@ const Game = {
     // Props collision
     const propHits = Props.checkPlayerCollision(this.player);
     if (propHits.length > 0) Props.handleCollisions(this.player, propHits);
+    Props.updatePropCooldowns(dt);
+    Props.checkNearMiss(this.player, this);
     Props.checkEnemyCollision(Waves.enemies);
 
     // Camera
