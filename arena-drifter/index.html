@@ -104,6 +104,16 @@ const CFG = {
   // Shield
   SHIELD_KNOCKBACK: 140,
   SHIELD_INVULN: 1.0,
+  // Health
+  PLAYER_HP: 100,
+  PLAYER_HP_MAX: 100,
+  HP_REGEN: 0,
+  HIT_INVULN: 0.8,
+  HIT_KNOCKBACK: 120,
+  DMG_CHASER: 15,
+  DMG_INTERCEPTOR: 18,
+  DMG_DRIFTER: 15,
+  DMG_ELITE: 25,
   // Open World
   WORLD_W: 3000, WORLD_H: 3000,
   // Enemy lifespan
@@ -564,6 +574,10 @@ class Player {
     this.driftJustStarted = false;
     this.maxSpeed = CFG.MAX_SPEED;
     this.turnRate = CFG.TURN_RATE;
+    this.hp = CFG.PLAYER_HP;
+    this.maxHp = CFG.PLAYER_HP_MAX;
+    this.hpRegen = CFG.HP_REGEN;
+    this.lastHitTimer = 99;
     this.shield = false;
     this.invulnTimer = 0;
     this.slipTimer = 0;
@@ -590,6 +604,7 @@ class Player {
     this.comboMaster = false;
     this.speedDemon = false;
     this.encircleScoreBonus = 1;
+    this.damageResist = 0;
     // Handbrake
     this.handbrakeTimer = 0;
     // Speed boost
@@ -643,6 +658,12 @@ class Player {
     if (this.nearMissStreakTimer > 0) {
       this.nearMissStreakTimer -= dt;
       if (this.nearMissStreakTimer <= 0) this.consecutiveNearMisses = 0;
+    }
+
+    // HP regen (only if has regen, and after 3s since last hit)
+    this.lastHitTimer += dt;
+    if (this.hpRegen > 0 && this.lastHitTimer > 3.0) {
+      this.hp = Math.min(this.hp + this.hpRegen * dt, this.maxHp);
     }
 
     // Drift denied FX
@@ -1738,10 +1759,10 @@ const Trail = {
     // Trail with color gradient: dim oldest -> bright cyan newest
     ctx.save();
     ctx.lineCap = 'round';
-    const trailW = nearLoop ? 3.5 : 2.5;
+    const trailW = nearLoop ? 5 : 4;
 
     // Glow underlay: thicker, semi-transparent pass (no shadowBlur)
-    ctx.lineWidth = trailW + (nearLoop ? 8 : 5);
+    ctx.lineWidth = trailW + (nearLoop ? 10 : 7);
     for (let i = 1; i < this.count; i++) {
       const frac = i / this.count;
       const glowAlpha = (0.02 + frac * 0.08) * (nearLoop ? 1.4 : 1);
@@ -1940,6 +1961,7 @@ const Waves = {
         this.phase = 'break';
         this.breakTimer = CFG.WAVE_BREAK;
         this.enemies = [];
+        Trail.reset();
         // Build upgrade offer
         this.upgradeCards = game.buildUpgradeOffer();
         this.upgradeChosen = false;
@@ -2261,84 +2283,132 @@ const ARENA_UPGRADES = [
     apply(p) { Trail.MAX_POINTS = 600; } },
   { id: 'encircle_bonus', name: 'Encircle Bonus', desc: '+50% score from encirclement', icon: 'B',
     apply(p) { p.encircleScoreBonus = (p.encircleScoreBonus || 1) * 1.5; } },
+  { id: 'hp_regen', name: 'Auto Repair', desc: 'Regenerate 3 HP/sec after 3s', icon: '+',
+    apply(p) { p.hpRegen += 3; } },
+  { id: 'max_hp', name: 'Reinforced Frame', desc: '+30 max HP (heals +30)', icon: 'H',
+    apply(p) { p.maxHp += 30; p.hp += 30; } },
+  { id: 'damage_resist', name: 'Armor Plating', desc: 'Take 25% less damage', icon: 'V',
+    apply(p) { p.damageResist = 1 - (1 - p.damageResist) * 0.75; } },
 ];
 
 // ── 12. HUD / UI ────────────────────────────────────────────
 function renderHUD(ctx, game) {
   const { score, player, waveTimer, waveIndex, driftCombo, phase, breakTimer, highScore, newBest } = game;
 
+  // Helper: draw dark backdrop panel
+  function panel(x, y, w, h, r) {
+    r = r || S(4);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+    ctx.fill();
+  }
+
   // Sandbox label
   if (game.sandbox) {
+    panel(CFG.W/2 - S(160), S(8), S(320), S(46), S(6));
     U.text(ctx, 'SANDBOX', CFG.W/2, S(24), { align: 'center', color: CFG.C_ACCENT, size: 18, bold: true, shadow: true });
-    U.text(ctx, 'Just drive. No enemies. Press P to pause, ESC to menu.', CFG.W/2, S(44), { align: 'center', color: '#555', size: 11 });
+    U.text(ctx, 'Just drive. No enemies. Press P to pause, ESC to menu.', CFG.W/2, S(44), { align: 'center', color: '#999', size: 11, shadow: true });
     return;
   }
 
-  // Score (top-left)
+  // Score (top-left) — backdrop
+  const scoreH = newBest ? S(56) : S(42);
+  panel(S(12), S(8), S(110), scoreH, S(4));
   const scoreStr = Math.floor(score).toLocaleString();
-  U.text(ctx, 'SCORE', S(20), S(22), { color: '#888', size: 12, bold: true });
+  U.text(ctx, 'SCORE', S(20), S(22), { color: '#BBB', size: 12, bold: true, shadow: true });
   U.text(ctx, scoreStr, S(20), S(42), { color: newBest ? CFG.C_PICKUP : CFG.C_TEXT, size: 22, bold: true, shadow: true });
   if (newBest) {
-    U.text(ctx, 'NEW BEST!', S(20), S(60), { color: CFG.C_PICKUP, size: 10, bold: true });
+    U.text(ctx, 'NEW BEST!', S(20), S(60), { color: CFG.C_PICKUP, size: 10, bold: true, shadow: true });
+  }
+
+  // HP bar (below score panel)
+  {
+    const hpX = S(12), hpY = scoreH + S(12);
+    panel(hpX, hpY, S(110), S(20), S(4));
+    U.text(ctx, 'HP', hpX + S(6), hpY + S(12), { color: '#BBB', size: 10, shadow: true });
+    const barX = hpX + S(24), barY = hpY + S(6), barW = S(54), barH = S(8);
+    ctx.fillStyle = CFG.C_PANEL;
+    ctx.fillRect(barX, barY, barW, barH);
+    const hpFrac = U.clamp(player.hp / player.maxHp, 0, 1);
+    const hpColor = hpFrac > 0.6 ? CFG.C_SHIELD : hpFrac > 0.3 ? '#FFD93D' : CFG.C_ENEMY;
+    ctx.fillStyle = player.lastHitTimer < 0.2 ? '#FF0000' : hpColor;
+    ctx.fillRect(barX, barY, barW * hpFrac, barH);
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
+    U.text(ctx, `${Math.ceil(player.hp)}/${player.maxHp}`, barX + barW + S(4), hpY + S(12), { color: CFG.C_TEXT, size: 9, shadow: true });
   }
 
   // Wave timer (top-center)
   if (phase === 'combat') {
     const frac = U.clamp(waveTimer / (Waves.currentCombatDuration || CFG.WAVE_COMBAT), 0, 1);
-    const barW = S(200), barH = S(8);
+    const barW = S(200), barH = S(10);
     const bx = CFG.W/2 - barW/2, by = S(14);
+    panel(bx - S(6), by - S(4), barW + S(12), barH + S(24), S(4));
     ctx.fillStyle = CFG.C_PANEL;
     ctx.fillRect(bx, by, barW, barH);
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx, by, barW, barH);
     ctx.fillStyle = CFG.C_ACCENT;
     ctx.fillRect(bx, by, barW * frac, barH);
-    U.text(ctx, `WAVE ${waveIndex}`, CFG.W/2, by + barH + S(14), { align: 'center', color: '#666', size: 11 });
+    U.text(ctx, `WAVE ${waveIndex}`, CFG.W/2, by + barH + S(14), { align: 'center', color: '#AAA', size: 11, shadow: true });
   }
 
   // Drift combo (bottom-left)
   if (player.drifting || player.comboLevel > 0.5) {
     const comboInt = Math.floor(player.comboLevel);
-    const barW = S(120), barH = S(6);
+    const barW = S(120), barH = S(8);
     const bx = S(20), by = CFG.H - S(30);
+    panel(bx - S(6), by - S(20), barW + S(12), S(34), S(4));
     ctx.fillStyle = CFG.C_PANEL;
     ctx.fillRect(bx, by, barW, barH);
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx, by, barW, barH);
     const comboPct = U.clamp(player.driftTime % CFG.DRIFT_COMBO_INTERVAL / CFG.DRIFT_COMBO_INTERVAL, 0, 1);
     ctx.fillStyle = CFG.C_ACCENT;
     ctx.fillRect(bx, by, barW * comboPct, barH);
-    U.text(ctx, `DRIFT x${comboInt}`, bx, by - S(8), { color: CFG.C_ACCENT, size: 13, bold: true });
+    U.text(ctx, `DRIFT x${comboInt}`, bx, by - S(8), { color: CFG.C_ACCENT, size: 13, bold: true, shadow: true });
   }
 
   // Drift available pulse
   if (player.speed >= CFG.DRIFT_THRESHOLD && !player.drifting) {
     const pulse = 0.4 + 0.3 * Math.sin(game.time * 6);
     ctx.globalAlpha = pulse;
-    U.text(ctx, 'SPACE TO DRIFT', CFG.W/2, CFG.H - S(20), { align: 'center', color: CFG.C_ACCENT, size: 11 });
+    U.text(ctx, 'SPACE TO DRIFT', CFG.W/2, CFG.H - S(20), { align: 'center', color: CFG.C_ACCENT, size: 11, shadow: true });
     ctx.globalAlpha = 1;
   }
 
   // Enemy count (top-right area, below upgrades)
   if (phase === 'combat') {
     const aliveCount = Waves.enemies.filter(e => e.alive).length;
-    U.text(ctx, `ENEMIES: ${aliveCount}`, CFG.W - S(20), S(46), { align: 'right', color: '#666', size: 11 });
+    U.text(ctx, `ENEMIES: ${aliveCount}`, CFG.W - S(20), S(46), { align: 'right', color: '#AAA', size: 11, shadow: true });
   }
 
   // Speed indicator bar (bottom-right)
   {
-    const barW = S(60), barH = S(4);
+    const barW = S(60), barH = S(6);
     const bx = CFG.W - S(20) - barW, by = CFG.H - S(34);
+    panel(bx - S(30), by - S(6), barW + S(38), barH + S(12), S(4));
     const speedFrac = U.clamp(player.speed / (player.maxSpeed || CFG.MAX_SPEED), 0, 1);
     const driftFrac = CFG.DRIFT_THRESHOLD / (player.maxSpeed || CFG.MAX_SPEED);
     ctx.fillStyle = CFG.C_PANEL;
     ctx.fillRect(bx, by, barW, barH);
-    ctx.fillStyle = speedFrac >= driftFrac ? CFG.C_ACCENT : '#555';
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx, by, barW, barH);
+    ctx.fillStyle = speedFrac >= driftFrac ? CFG.C_ACCENT : '#999';
     ctx.fillRect(bx, by, barW * speedFrac, barH);
     // Drift threshold marker
-    ctx.fillStyle = '#888';
+    ctx.fillStyle = '#AAA';
     ctx.fillRect(bx + barW * driftFrac - S(1), by - S(1), S(2), barH + S(2));
-    U.text(ctx, 'SPD', bx - S(6), by + S(2), { align: 'right', color: '#555', size: 9 });
+    U.text(ctx, 'SPD', bx - S(6), by + S(2), { align: 'right', color: '#999', size: 9, shadow: true });
   }
 
   // Controls hint (bottom-right)
-  U.text(ctx, 'WASD + SPACE', CFG.W - S(20), CFG.H - S(20), { align: 'right', color: '#444', size: 10 });
+  U.text(ctx, 'WASD + SPACE', CFG.W - S(20), CFG.H - S(20), { align: 'right', color: '#888', size: 10, shadow: true });
 
   // Upgrades taken
   const ups = player.upgrades;
@@ -2348,15 +2418,11 @@ function renderHUD(ctx, game) {
       if (upg) {
         ctx.fillStyle = CFG.C_PANEL;
         ctx.fillRect(CFG.W - S(26) - i * S(22), S(14), S(20), S(20));
-        U.text(ctx, upg.icon, CFG.W - S(16) - i * S(22), S(24), { align: 'center', color: CFG.C_ACCENT, size: 12, bold: true });
+        U.text(ctx, upg.icon, CFG.W - S(16) - i * S(22), S(24), { align: 'center', color: CFG.C_ACCENT, size: 12, bold: true, shadow: true });
       }
     }
   }
 
-  // Shield indicator
-  if (player.shield) {
-    U.text(ctx, 'SHIELD', CFG.W - S(20), S(50), { align: 'right', color: CFG.C_SHIELD, size: 11, bold: true });
-  }
 }
 
 function renderUpgradeBreak(ctx, cards, breakTimer, selectedIndex) {
@@ -2501,9 +2567,11 @@ const Game = {
   },
 
   buildUpgradeOffer() {
-    const stackable = ['shield'];
+    const stackable = ['shield', 'hp_regen', 'max_hp', 'damage_resist'];
+    const regenCount = this.player.upgrades.filter(u => u === 'hp_regen').length;
     const pool = ARENA_UPGRADES.filter(u =>
-      !this.player.upgrades.includes(u.id) || stackable.includes(u.id)
+      (!this.player.upgrades.includes(u.id) || stackable.includes(u.id))
+      && !(u.id === 'hp_regen' && regenCount >= 2)
     );
     return U.randSample(pool, CFG.UPGRADES_TO_OFFER);
   },
@@ -2867,14 +2935,21 @@ const Game = {
 
       if (d < collDist) {
         if (this.player.invulnTimer > 0 || this.player.ghostFrameTimer > 0) continue;
-        // Collision!
+
+        // Determine damage
+        const dmgMap = { chaser: CFG.DMG_CHASER, interceptor: CFG.DMG_INTERCEPTOR,
+                         drifter: CFG.DMG_DRIFTER, elite: CFG.DMG_ELITE };
+        let dmg = dmgMap[e.type] || CFG.DMG_CHASER;
+
+        // Shield absorbs hit completely
         if (this.player.shield) {
           this.shieldBreak(e);
-        } else {
-          this.deathCause = `HIT BY ${e.type.toUpperCase()}`;
-          this.die();
-          return;
+          continue;
         }
+
+        // Apply damage
+        this.playerHit(e, dmg);
+        if (this.state === STATE.DYING) return;
       } else if (d < nearDist && this.player.drifting && e.nearMissCooldown <= 0) {
         // Near miss!
         this.nearMiss(e, 'enemy');
@@ -3002,6 +3077,40 @@ const Game = {
       lifeMin: 0.3, lifeMax: 0.6, sizeMin: 3, sizeMax: 6, type: 'spark',
     });
     Particles.addFloat(this.player.x, this.player.y - 30, 'SHIELD BREAK!', CFG.C_SHIELD, 18);
+  },
+
+  playerHit(source, dmg) {
+    // Apply damage resistance
+    dmg = Math.round(dmg * (1 - (this.player.damageResist || 0)));
+    dmg = Math.max(dmg, 1);
+
+    this.player.hp -= dmg;
+    this.player.invulnTimer = CFG.HIT_INVULN;
+    this.player.lastHitTimer = 0;
+
+    // Knockback
+    const dx = this.player.x - source.x;
+    const dy = this.player.y - source.y;
+    const d = Math.hypot(dx, dy) || 1;
+    this.player.vx += (dx / d) * CFG.HIT_KNOCKBACK;
+    this.player.vy += (dy / d) * CFG.HIT_KNOCKBACK;
+
+    // FX
+    ScreenFX.flash(CFG.C_ENEMY, 0.15, 0.12);
+    ScreenFX.shake(7, 0.18);
+    ScreenFX.slowmo(0.9, 0.1);
+    Particles.spawn(this.player.x, this.player.y, CFG.C_ENEMY, 6, {
+      vxMin: -100, vxMax: 100, vyMin: -100, vyMax: 100,
+      lifeMin: 0.2, lifeMax: 0.5, sizeMin: 2, sizeMax: 5, type: 'spark',
+    });
+    Particles.addFloat(this.player.x, this.player.y - 30, `-${dmg}`, CFG.C_ENEMY, 16);
+
+    // Check death
+    if (this.player.hp <= 0) {
+      this.player.hp = 0;
+      this.deathCause = `HIT BY ${source.type.toUpperCase()}`;
+      this.die();
+    }
   },
 
   die() {
@@ -3273,47 +3382,37 @@ const Game = {
   },
 
   renderOffscreenIndicators(ctx) {
-    const margin = S(20);
+    // Collect which screen edges have offscreen enemies
+    const sides = { left: false, right: false, top: false, bottom: false };
     for (const e of Waves.enemies) {
       if (!e.alive) continue;
       if (Camera.isVisible(e.x, e.y, 0)) continue;
-      // Convert enemy world pos to screen pos
       const sx = e.x - Camera.x + CFG.W / 2;
       const sy = e.y - Camera.y + CFG.H / 2;
-      // Clamp to screen edge
-      const cx = CFG.W / 2, cy = CFG.H / 2;
-      const dx = sx - cx, dy = sy - cy;
-      const angle = Math.atan2(dy, dx);
-      // Find edge intersection
-      const absCos = Math.abs(Math.cos(angle));
-      const absSin = Math.abs(Math.sin(angle));
-      let edgeX, edgeY;
-      if (absCos * (CFG.H / 2 - margin) > absSin * (CFG.W / 2 - margin)) {
-        // Hit left/right edge
-        edgeX = Math.sign(dx) * (CFG.W / 2 - margin) + cx;
-        edgeY = Math.sign(dx) * (CFG.W / 2 - margin) * Math.tan(angle) + cy;
-      } else {
-        // Hit top/bottom edge
-        edgeY = Math.sign(dy) * (CFG.H / 2 - margin) + cy;
-        edgeX = Math.sign(dy) * (CFG.H / 2 - margin) / Math.tan(angle) + cx;
-      }
-      edgeX = U.clamp(edgeX, margin, CFG.W - margin);
-      edgeY = U.clamp(edgeY, margin, CFG.H - margin);
-      // Draw arrow triangle
-      ctx.save();
-      ctx.translate(edgeX, edgeY);
-      ctx.rotate(angle);
-      ctx.fillStyle = CFG.C_ENEMY;
-      ctx.globalAlpha = 0.7;
-      ctx.beginPath();
-      ctx.moveTo(S(8), 0);
-      ctx.lineTo(S(-5), S(-5));
-      ctx.lineTo(S(-5), S(5));
-      ctx.closePath();
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.restore();
+      if (sx < 0) sides.left = true;
+      if (sx > CFG.W) sides.right = true;
+      if (sy < 0) sides.top = true;
+      if (sy > CFG.H) sides.bottom = true;
     }
+    // Flash red bar on each active edge (dark border + red fill for contrast)
+    const flash = 0.55 + 0.15 * Math.sin(performance.now() * 0.008);
+    const barW = S(32);
+    const borderW = barW + S(4);
+    // Dark border behind bars
+    ctx.fillStyle = '#000';
+    ctx.globalAlpha = flash * 0.6;
+    if (sides.left)   ctx.fillRect(0, 0, borderW, CFG.H);
+    if (sides.right)  ctx.fillRect(CFG.W - borderW, 0, borderW, CFG.H);
+    if (sides.top)    ctx.fillRect(0, 0, CFG.W, borderW);
+    if (sides.bottom) ctx.fillRect(0, CFG.H - borderW, CFG.W, borderW);
+    // Red bars
+    ctx.fillStyle = CFG.C_ENEMY;
+    ctx.globalAlpha = flash;
+    if (sides.left)   ctx.fillRect(0, 0, barW, CFG.H);
+    if (sides.right)  ctx.fillRect(CFG.W - barW, 0, barW, CFG.H);
+    if (sides.top)    ctx.fillRect(0, 0, CFG.W, barW);
+    if (sides.bottom) ctx.fillRect(0, CFG.H - barW, CFG.W, barW);
+    ctx.globalAlpha = 1;
   },
 
   renderMinimap(ctx) {
