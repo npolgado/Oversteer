@@ -82,7 +82,8 @@ const CFG = {
   SCRAP_NEAR_MISS_CHANCE: 0.35,
   // Upgrades
   UPGRADES_TO_OFFER: 3,
-  UPGRADE_BREAK_TIME: 8,
+  REROLL_MAX: 3,
+  UPGRADE_CONFIRM_TIME: 3,
   // Colors
   C_BG: '#07080B',
   C_BG2: '#0E1118',
@@ -104,6 +105,25 @@ const CFG = {
   // Shield
   SHIELD_KNOCKBACK: 140,
   SHIELD_INVULN: 1.0,
+  // Health
+  PLAYER_HP: 100,
+  PLAYER_HP_MAX: 100,
+  HP_REGEN: 0,
+  HIT_INVULN: 0.8,
+  HIT_KNOCKBACK: 120,
+  DMG_CHASER: 15,
+  DMG_INTERCEPTOR: 18,
+  DMG_DRIFTER: 15,
+  DMG_ELITE: 25,
+  DMG_SCALE_PER_WAVE: 0.12,
+  DMG_SCALE_MAX: 3.0,
+  // Horde
+  HORDE_TRIGGER: 0.75,
+  HORDE_DELAY: 1.5,
+  HORDE_BASE_COUNT: 4,
+  HORDE_WAVE_GROWTH: 0.5,
+  HORDE_MAX_COUNT: 15,
+  HORDE_SPAWN_DIST: 950,
   // Open World
   WORLD_W: 3000, WORLD_H: 3000,
   // Enemy lifespan
@@ -133,6 +153,8 @@ const CFG = {
   FIRST_SPAWN_MIN: 0.6,
   SPAWN_INTERVAL_MIN: 1.5,
   WAVE_COMBAT_WAVE1: 30,
+  WAVE_TIME_GROWTH: 10,
+  WAVE_COMBAT_MAX: 120,
   // Props
   PROP_CHUNK_SIZE: 500,
   PROP_DENSITY: 0.00001,
@@ -564,6 +586,10 @@ class Player {
     this.driftJustStarted = false;
     this.maxSpeed = CFG.MAX_SPEED;
     this.turnRate = CFG.TURN_RATE;
+    this.hp = CFG.PLAYER_HP;
+    this.maxHp = CFG.PLAYER_HP_MAX;
+    this.hpRegen = CFG.HP_REGEN;
+    this.lastHitTimer = 99;
     this.shield = false;
     this.invulnTimer = 0;
     this.slipTimer = 0;
@@ -590,6 +616,7 @@ class Player {
     this.comboMaster = false;
     this.speedDemon = false;
     this.encircleScoreBonus = 1;
+    this.damageResist = 0;
     // Handbrake
     this.handbrakeTimer = 0;
     // Speed boost
@@ -643,6 +670,12 @@ class Player {
     if (this.nearMissStreakTimer > 0) {
       this.nearMissStreakTimer -= dt;
       if (this.nearMissStreakTimer <= 0) this.consecutiveNearMisses = 0;
+    }
+
+    // HP regen (only if has regen, and after 3s since last hit)
+    this.lastHitTimer += dt;
+    if (this.hpRegen > 0 && this.lastHitTimer > 3.0) {
+      this.hp = Math.min(this.hp + this.hpRegen * dt, this.maxHp);
     }
 
     // Drift denied FX
@@ -1601,6 +1634,18 @@ const Trail = {
     this._lastDt = dt;
     this._lastPlayerX = player.x;
     this._lastPlayerY = player.y;
+    // Trail color matches drift particle combo colors
+    const comboInt = Math.floor(player.comboLevel || 0);
+    if (comboInt >= 5) {
+      // Purple (CFG.C_RARE #7C5CFF)
+      this._trailR = 124; this._trailG = 92; this._trailB = 255;
+    } else if (comboInt >= 3) {
+      // Cyan (CFG.C_ACCENT #35F2D0)
+      this._trailR = 53; this._trailG = 242; this._trailB = 208;
+    } else {
+      // Default cyan
+      this._trailR = 53; this._trailG = 242; this._trailB = 208;
+    }
     this.recordTimer -= dt;
     if (this.recordTimer <= 0) {
       this.push(player.x, player.y);
@@ -1738,14 +1783,14 @@ const Trail = {
     // Trail with color gradient: dim oldest -> bright cyan newest
     ctx.save();
     ctx.lineCap = 'round';
-    const trailW = nearLoop ? 3.5 : 2.5;
+    const trailW = nearLoop ? 5 : 4;
 
     // Glow underlay: thicker, semi-transparent pass (no shadowBlur)
-    ctx.lineWidth = trailW + (nearLoop ? 8 : 5);
+    ctx.lineWidth = trailW + (nearLoop ? 10 : 7);
     for (let i = 1; i < this.count; i++) {
       const frac = i / this.count;
       const glowAlpha = (0.02 + frac * 0.08) * (nearLoop ? 1.4 : 1);
-      ctx.strokeStyle = `rgba(53,242,208,${glowAlpha})`;
+      ctx.strokeStyle = `rgba(${this._trailR||53},${this._trailG||242},${this._trailB||208},${glowAlpha})`;
       ctx.beginPath();
       const p0 = this.getPoint(i - 1);
       const p1 = this.getPoint(i);
@@ -1760,9 +1805,10 @@ const Trail = {
       const frac = i / this.count;
       const alphaBoost = nearLoop ? 0.15 : 0;
       const alpha = 0.08 + frac * 0.30 + alphaBoost;
-      const r = Math.round(53 + frac * (53 - 53));
-      const g = Math.round(100 + frac * (242 - 100));
-      const b = Math.round(140 + frac * (208 - 140));
+      const tr = this._trailR || 53, tg = this._trailG || 242, tb = this._trailB || 208;
+      const r = Math.round(tr * 0.4 + frac * tr * 0.6);
+      const g = Math.round(tg * 0.4 + frac * tg * 0.6);
+      const b = Math.round(tb * 0.55 + frac * tb * 0.45);
       ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
       ctx.beginPath();
       const p0 = this.getPoint(i - 1);
@@ -1777,7 +1823,7 @@ const Trail = {
     if (this._flashPoly && this._flashPolyTimer > 0) {
       ctx.save();
       ctx.globalAlpha = (this._flashPolyTimer / 0.3) * 0.25;
-      ctx.fillStyle = CFG.C_ACCENT;
+      ctx.fillStyle = `rgb(${this._trailR||53},${this._trailG||242},${this._trailB||208})`;
       ctx.beginPath();
       ctx.moveTo(this._flashPoly[0].x, this._flashPoly[0].y);
       for (let i = 1; i < this._flashPoly.length; i++) {
@@ -1800,7 +1846,7 @@ const Trail = {
           if (d < previewDist) {
             const closeness = 1 - d / previewDist; // 1=very close, 0=at edge
             ctx.save();
-            ctx.strokeStyle = CFG.C_ACCENT;
+            ctx.strokeStyle = `rgb(${this._trailR||53},${this._trailG||242},${this._trailB||208})`;
             ctx.globalAlpha = 0.3 + closeness * 0.4;
             ctx.lineWidth = 2;
             ctx.setLineDash([6, 4]);
@@ -1834,6 +1880,8 @@ const Waves = {
   upgradeCards: [],
   upgradeChosen: false,
   cadenceMult: 1,
+  hordeTriggered: false,
+  hordeSpawnTimer: -1,
 
   reset() {
     this.waveIndex = 0;
@@ -1855,6 +1903,8 @@ const Waves = {
     this.currentSpawnInterval = CFG.SPAWN_INTERVAL_INITIAL;
     this.currentCombatDuration = CFG.WAVE_COMBAT;
     this.noBursts = false;
+    this.hordeTriggered = false;
+    this.hordeSpawnTimer = -1;
   },
 
   startWave(player) {
@@ -1868,12 +1918,14 @@ const Waves = {
     const ramp = Math.min(1, (this.waveIndex - 1) / 4);
     this.currentFirstSpawn = U.lerp(CFG.FIRST_SPAWN_INITIAL, CFG.FIRST_SPAWN_MIN, ramp);
     this.currentSpawnInterval = U.lerp(CFG.SPAWN_INTERVAL_INITIAL, CFG.SPAWN_INTERVAL_MIN, ramp);
-    this.currentCombatDuration = this.waveIndex === 1 ? CFG.WAVE_COMBAT_WAVE1 : CFG.WAVE_COMBAT;
+    this.currentCombatDuration = Math.min(CFG.WAVE_COMBAT_MAX,
+      CFG.WAVE_COMBAT_WAVE1 + CFG.WAVE_TIME_GROWTH * (this.waveIndex - 1));
     this.noBursts = this.waveIndex === 1;
 
     this.spawnTimer = this.currentFirstSpawn;
     this.burstTimer = CFG.BURST_INTERVAL;
-
+    this.hordeTriggered = false;
+    this.hordeSpawnTimer = -1;
   },
 
   getEnemyType(score) {
@@ -1902,6 +1954,25 @@ const Waves = {
     e.maxSpeed += speedBonus;
     e.baseMaxSpeed = e.maxSpeed;
     this.enemies.push(e);
+  },
+
+  spawnHorde(score, speedBonus, player) {
+    const count = Math.min(CFG.HORDE_MAX_COUNT,
+      CFG.HORDE_BASE_COUNT + Math.floor(this.waveIndex * CFG.HORDE_WAVE_GROWTH));
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count;
+      let x = player.x + Math.cos(angle) * CFG.HORDE_SPAWN_DIST;
+      let y = player.y + Math.sin(angle) * CFG.HORDE_SPAWN_DIST;
+      x = U.clamp(x, 50, CFG.WORLD_W - 50);
+      y = U.clamp(y, 50, CFG.WORLD_H - 50);
+
+      const type = this.getEnemyType(score);
+      const e = new Enemy(type, x, y);
+      e.heading = Math.atan2(player.y - y, player.x - x);
+      e.maxSpeed += speedBonus;
+      e.baseMaxSpeed = e.maxSpeed;
+      this.enemies.push(e);
+    }
   },
 
   update(dt, player, score, game) {
@@ -1935,25 +2006,34 @@ const Waves = {
         }
       }
 
+      // Horde event at 75% of combat phase (skip wave 1)
+      if (!this.hordeTriggered && this.waveIndex >= 1 &&
+          this.waveTimer >= this.currentCombatDuration * CFG.HORDE_TRIGGER) {
+        this.hordeTriggered = true;
+        this.hordeSpawnTimer = CFG.HORDE_DELAY;
+        game.hordeAnnounceTimer = CFG.HORDE_DELAY + 0.5;
+      }
+      // Horde spawn countdown
+      if (this.hordeSpawnTimer > 0) {
+        this.hordeSpawnTimer -= dt;
+        if (this.hordeSpawnTimer <= 0) {
+          this.spawnHorde(score, game.speedBonus, player);
+          ScreenFX.shake(5, 0.3);
+        }
+      }
+
       // Wave end
       if (this.waveTimer >= this.currentCombatDuration) {
         this.phase = 'break';
         this.breakTimer = CFG.WAVE_BREAK;
         this.enemies = [];
+        Trail.reset();
         // Build upgrade offer
         this.upgradeCards = game.buildUpgradeOffer();
         this.upgradeChosen = false;
       }
     } else if (this.phase === 'break') {
-      this.breakTimer -= dt;
-      if (this.breakTimer <= 0 || this.upgradeChosen) {
-        if (!this.upgradeChosen && this.upgradeCards.length > 0) {
-          // Auto-pick random
-          game.applyUpgrade(this.upgradeCards[U.randInt(0, this.upgradeCards.length - 1)]);
-          this.upgradeChosen = true;
-        }
-        this.startWave(player);
-      }
+      // Selection handled in UPGRADE state
     }
 
     // Update enemies
@@ -2261,84 +2341,135 @@ const ARENA_UPGRADES = [
     apply(p) { Trail.MAX_POINTS = 600; } },
   { id: 'encircle_bonus', name: 'Encircle Bonus', desc: '+50% score from encirclement', icon: 'B',
     apply(p) { p.encircleScoreBonus = (p.encircleScoreBonus || 1) * 1.5; } },
+  { id: 'hp_regen', name: 'Auto Repair', desc: 'Regenerate 3 HP/sec after 3s', icon: '+',
+    apply(p) { p.hpRegen += 3; } },
+  { id: 'max_hp', name: 'Reinforced Frame', desc: '+30 max HP (heals +30)', icon: 'H',
+    apply(p) { p.maxHp += 30; p.hp += 30; } },
+  { id: 'damage_resist', name: 'Armor Plating', desc: 'Take 25% less damage', icon: 'V',
+    apply(p) { p.damageResist = 1 - (1 - p.damageResist) * 0.75; } },
+  // Future: { id: 'extra_rerolls', name: 'Lucky Draw', icon: 'R',
+  //   desc: '+2 upgrade rerolls per break', apply(p) {} },
+  // Implementation: break transition adds player.upgrades.filter(u => u === 'extra_rerolls').length * 2 to rerollsLeft
 ];
 
 // ── 12. HUD / UI ────────────────────────────────────────────
 function renderHUD(ctx, game) {
-  const { score, player, waveTimer, waveIndex, driftCombo, phase, breakTimer, highScore, newBest } = game;
+  const { score, player, waveTimer, waveIndex, driftCombo, phase, highScore, newBest } = game;
+
+  // Helper: draw dark backdrop panel
+  function panel(x, y, w, h, r) {
+    r = r || S(4);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+    ctx.fill();
+  }
 
   // Sandbox label
   if (game.sandbox) {
+    panel(CFG.W/2 - S(160), S(8), S(320), S(46), S(6));
     U.text(ctx, 'SANDBOX', CFG.W/2, S(24), { align: 'center', color: CFG.C_ACCENT, size: 18, bold: true, shadow: true });
-    U.text(ctx, 'Just drive. No enemies. Press P to pause, ESC to menu.', CFG.W/2, S(44), { align: 'center', color: '#555', size: 11 });
+    U.text(ctx, 'Just drive. No enemies. Press P to pause, ESC to menu.', CFG.W/2, S(44), { align: 'center', color: '#999', size: 11, shadow: true });
     return;
   }
 
-  // Score (top-left)
+  // Score (top-left) — backdrop
+  const scoreH = newBest ? S(56) : S(42);
+  panel(S(12), S(8), S(110), scoreH, S(4));
   const scoreStr = Math.floor(score).toLocaleString();
-  U.text(ctx, 'SCORE', S(20), S(22), { color: '#888', size: 12, bold: true });
+  U.text(ctx, 'SCORE', S(20), S(22), { color: '#BBB', size: 12, bold: true, shadow: true });
   U.text(ctx, scoreStr, S(20), S(42), { color: newBest ? CFG.C_PICKUP : CFG.C_TEXT, size: 22, bold: true, shadow: true });
   if (newBest) {
-    U.text(ctx, 'NEW BEST!', S(20), S(60), { color: CFG.C_PICKUP, size: 10, bold: true });
+    U.text(ctx, 'NEW BEST!', S(20), S(60), { color: CFG.C_PICKUP, size: 10, bold: true, shadow: true });
+  }
+
+  // HP bar (below score panel)
+  {
+    const hpX = S(12), hpY = scoreH + S(12);
+    panel(hpX, hpY, S(110), S(20), S(4));
+    U.text(ctx, 'HP', hpX + S(6), hpY + S(12), { color: '#BBB', size: 10, shadow: true });
+    const barX = hpX + S(24), barY = hpY + S(6), barW = S(54), barH = S(8);
+    ctx.fillStyle = CFG.C_PANEL;
+    ctx.fillRect(barX, barY, barW, barH);
+    const hpFrac = U.clamp(player.hp / player.maxHp, 0, 1);
+    const hpColor = hpFrac > 0.6 ? CFG.C_SHIELD : hpFrac > 0.3 ? '#FFD93D' : CFG.C_ENEMY;
+    ctx.fillStyle = player.lastHitTimer < 0.2 ? '#FF0000' : hpColor;
+    ctx.fillRect(barX, barY, barW * hpFrac, barH);
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
+    U.text(ctx, `${Math.ceil(player.hp)}/${player.maxHp}`, barX + barW + S(4), hpY + S(12), { color: CFG.C_TEXT, size: 9, shadow: true });
   }
 
   // Wave timer (top-center)
   if (phase === 'combat') {
     const frac = U.clamp(waveTimer / (Waves.currentCombatDuration || CFG.WAVE_COMBAT), 0, 1);
-    const barW = S(200), barH = S(8);
+    const barW = S(200), barH = S(10);
     const bx = CFG.W/2 - barW/2, by = S(14);
+    panel(bx - S(6), by - S(4), barW + S(12), barH + S(24), S(4));
     ctx.fillStyle = CFG.C_PANEL;
     ctx.fillRect(bx, by, barW, barH);
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx, by, barW, barH);
     ctx.fillStyle = CFG.C_ACCENT;
     ctx.fillRect(bx, by, barW * frac, barH);
-    U.text(ctx, `WAVE ${waveIndex}`, CFG.W/2, by + barH + S(14), { align: 'center', color: '#666', size: 11 });
+    U.text(ctx, `WAVE ${waveIndex}`, CFG.W/2, by + barH + S(14), { align: 'center', color: '#AAA', size: 11, shadow: true });
   }
 
   // Drift combo (bottom-left)
   if (player.drifting || player.comboLevel > 0.5) {
     const comboInt = Math.floor(player.comboLevel);
-    const barW = S(120), barH = S(6);
+    const barW = S(120), barH = S(8);
     const bx = S(20), by = CFG.H - S(30);
+    panel(bx - S(6), by - S(20), barW + S(12), S(34), S(4));
     ctx.fillStyle = CFG.C_PANEL;
     ctx.fillRect(bx, by, barW, barH);
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx, by, barW, barH);
     const comboPct = U.clamp(player.driftTime % CFG.DRIFT_COMBO_INTERVAL / CFG.DRIFT_COMBO_INTERVAL, 0, 1);
     ctx.fillStyle = CFG.C_ACCENT;
     ctx.fillRect(bx, by, barW * comboPct, barH);
-    U.text(ctx, `DRIFT x${comboInt}`, bx, by - S(8), { color: CFG.C_ACCENT, size: 13, bold: true });
+    U.text(ctx, `DRIFT x${comboInt}`, bx, by - S(8), { color: CFG.C_ACCENT, size: 13, bold: true, shadow: true });
   }
 
   // Drift available pulse
   if (player.speed >= CFG.DRIFT_THRESHOLD && !player.drifting) {
     const pulse = 0.4 + 0.3 * Math.sin(game.time * 6);
     ctx.globalAlpha = pulse;
-    U.text(ctx, 'SPACE TO DRIFT', CFG.W/2, CFG.H - S(20), { align: 'center', color: CFG.C_ACCENT, size: 11 });
+    U.text(ctx, 'SPACE TO DRIFT', CFG.W/2, CFG.H - S(20), { align: 'center', color: CFG.C_ACCENT, size: 11, shadow: true });
     ctx.globalAlpha = 1;
   }
 
   // Enemy count (top-right area, below upgrades)
   if (phase === 'combat') {
     const aliveCount = Waves.enemies.filter(e => e.alive).length;
-    U.text(ctx, `ENEMIES: ${aliveCount}`, CFG.W - S(20), S(46), { align: 'right', color: '#666', size: 11 });
+    U.text(ctx, `ENEMIES: ${aliveCount}`, CFG.W - S(20), S(46), { align: 'right', color: '#AAA', size: 11, shadow: true });
   }
 
   // Speed indicator bar (bottom-right)
   {
-    const barW = S(60), barH = S(4);
+    const barW = S(60), barH = S(6);
     const bx = CFG.W - S(20) - barW, by = CFG.H - S(34);
+    panel(bx - S(30), by - S(6), barW + S(38), barH + S(12), S(4));
     const speedFrac = U.clamp(player.speed / (player.maxSpeed || CFG.MAX_SPEED), 0, 1);
     const driftFrac = CFG.DRIFT_THRESHOLD / (player.maxSpeed || CFG.MAX_SPEED);
     ctx.fillStyle = CFG.C_PANEL;
     ctx.fillRect(bx, by, barW, barH);
-    ctx.fillStyle = speedFrac >= driftFrac ? CFG.C_ACCENT : '#555';
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx, by, barW, barH);
+    ctx.fillStyle = speedFrac >= driftFrac ? CFG.C_ACCENT : '#999';
     ctx.fillRect(bx, by, barW * speedFrac, barH);
     // Drift threshold marker
-    ctx.fillStyle = '#888';
+    ctx.fillStyle = '#AAA';
     ctx.fillRect(bx + barW * driftFrac - S(1), by - S(1), S(2), barH + S(2));
-    U.text(ctx, 'SPD', bx - S(6), by + S(2), { align: 'right', color: '#555', size: 9 });
+    U.text(ctx, 'SPD', bx - S(6), by + S(2), { align: 'right', color: '#999', size: 9, shadow: true });
   }
 
   // Controls hint (bottom-right)
-  U.text(ctx, 'WASD + SPACE', CFG.W - S(20), CFG.H - S(20), { align: 'right', color: '#444', size: 10 });
+  U.text(ctx, 'WASD + SPACE', CFG.W - S(20), CFG.H - S(20), { align: 'right', color: '#888', size: 10, shadow: true });
 
   // Upgrades taken
   const ups = player.upgrades;
@@ -2348,27 +2479,38 @@ function renderHUD(ctx, game) {
       if (upg) {
         ctx.fillStyle = CFG.C_PANEL;
         ctx.fillRect(CFG.W - S(26) - i * S(22), S(14), S(20), S(20));
-        U.text(ctx, upg.icon, CFG.W - S(16) - i * S(22), S(24), { align: 'center', color: CFG.C_ACCENT, size: 12, bold: true });
+        U.text(ctx, upg.icon, CFG.W - S(16) - i * S(22), S(24), { align: 'center', color: CFG.C_ACCENT, size: 12, bold: true, shadow: true });
       }
     }
   }
 
-  // Shield indicator
-  if (player.shield) {
-    U.text(ctx, 'SHIELD', CFG.W - S(20), S(50), { align: 'right', color: CFG.C_SHIELD, size: 11, bold: true });
-  }
 }
 
-function renderUpgradeBreak(ctx, cards, breakTimer, selectedIndex) {
+function renderUpgradeBreak(ctx, cards, cardAnimTimer, selectedIndex, rerollsLeft, upgradeChosen, upgradeConfirmTimer, waveIndex) {
   // Dim
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
   ctx.fillRect(0, 0, CFG.W, CFG.H);
 
-  U.text(ctx, 'CHOOSE UPGRADE', CFG.W/2, S(60), { align: 'center', color: CFG.C_ACCENT, size: 28, bold: true, shadow: true });
+  if (upgradeChosen) {
+    // Post-selection: show chosen upgrade + countdown
+    const chosen = cards[selectedIndex];
+    if (chosen) {
+      U.text(ctx, chosen.icon, CFG.W/2, CFG.H/2 - S(60), { align: 'center', color: CFG.C_ACCENT, size: 48, bold: true, shadow: true });
+      U.text(ctx, chosen.name, CFG.W/2, CFG.H/2 - S(15), { align: 'center', color: CFG.C_TEXT, size: 22, bold: true, shadow: true });
+    }
+    const secs = Math.ceil(Math.max(0, upgradeConfirmTimer));
+    U.text(ctx, `${secs}`, CFG.W/2, CFG.H/2 + S(40), { align: 'center', color: CFG.C_ACCENT, size: 48, bold: true, shadow: true });
+    U.text(ctx, `Wave ${waveIndex + 1} incoming...`, CFG.W/2, CFG.H/2 + S(80), { align: 'center', color: '#888', size: 16, shadow: true });
+    return;
+  }
 
-  // Timer
-  const secs = Math.ceil(breakTimer);
-  U.text(ctx, `${secs}s`, CFG.W/2, S(90), { align: 'center', color: '#888', size: 16 });
+  // No upgrades available edge case
+  if (cards.length === 0) {
+    U.text(ctx, 'No upgrades available', CFG.W/2, CFG.H/2, { align: 'center', color: '#888', size: 20, shadow: true });
+    return;
+  }
+
+  U.text(ctx, 'CHOOSE UPGRADE', CFG.W/2, S(60), { align: 'center', color: CFG.C_ACCENT, size: 28, bold: true, shadow: true });
 
   // Cards
   const cardW = S(180), cardH = S(200), gap = S(20);
@@ -2380,11 +2522,11 @@ function renderUpgradeBreak(ctx, cards, breakTimer, selectedIndex) {
     const y = S(120);
 
     // Slide-up animation (staggered)
-    const slideOffset = Math.max(0, S(24) - breakTimer * S(120) + i * S(7));
+    const slideOffset = Math.max(0, S(24) - cardAnimTimer * S(120) + i * S(7));
 
     ctx.save();
     ctx.translate(0, slideOffset);
-    ctx.globalAlpha = Math.min(1, breakTimer * 5 - i * 0.3);
+    ctx.globalAlpha = Math.min(1, cardAnimTimer * 5 - i * 0.3);
 
     // Card bg
     ctx.fillStyle = selectedIndex === i ? '#2A3344' : CFG.C_PANEL;
@@ -2416,7 +2558,9 @@ function renderUpgradeBreak(ctx, cards, breakTimer, selectedIndex) {
     cx += cardW + gap;
   }
 
-  U.text(ctx, 'Press 1 / 2 / 3 to choose', CFG.W/2, CFG.H - S(40), { align: 'center', color: '#666', size: 13 });
+  U.text(ctx, 'Press 1 / 2 / 3 to choose', CFG.W/2, CFG.H - S(60), { align: 'center', color: '#666', size: 13 });
+  const rerollColor = rerollsLeft > 0 ? '#888' : '#444';
+  U.text(ctx, `Press [R] to reroll (${rerollsLeft} left)`, CFG.W/2, CFG.H - S(35), { align: 'center', color: rerollColor, size: 13 });
 }
 
 // ── 13. GAME STATE MACHINE ─────────────────────────────────
@@ -2451,6 +2595,7 @@ const Game = {
   // Wave announce
   waveAnnounceTimer: 0,
   waveAnnounceNum: 0,
+  hordeAnnounceTimer: 0,
   // Death cause
   deathCause: '',
   // Touch UI
@@ -2479,12 +2624,16 @@ const Game = {
     this.milestoneTimer = 0;
     this.lastDriftComboTick = 0;
     this.upgradeSelectedIndex = -1;
+    this.rerollsLeft = CFG.REROLL_MAX;
+    this.upgradeConfirmTimer = 0;
+    this.cardAnimTimer = 0;
     this.tutorialShown = false;
     this.tutorialDismissed = false;
     this.tutorialTimer = 0;
     this.encircleCount = 0;
     this.waveAnnounceTimer = 0;
     this.waveAnnounceNum = 0;
+    this.hordeAnnounceTimer = 0;
     this.deathCause = '';
     Particles.clear();
     ScreenFX.reset();
@@ -2501,9 +2650,11 @@ const Game = {
   },
 
   buildUpgradeOffer() {
-    const stackable = ['shield'];
+    const stackable = ['shield', 'hp_regen', 'max_hp', 'damage_resist'];
+    const regenCount = this.player.upgrades.filter(u => u === 'hp_regen').length;
     const pool = ARENA_UPGRADES.filter(u =>
-      !this.player.upgrades.includes(u.id) || stackable.includes(u.id)
+      (!this.player.upgrades.includes(u.id) || stackable.includes(u.id))
+      && !(u.id === 'hp_regen' && regenCount >= 2)
     );
     return U.randSample(pool, CFG.UPGRADES_TO_OFFER);
   },
@@ -2603,7 +2754,7 @@ const Game = {
 
     // UPGRADE break
     if (this.state === STATE.UPGRADE) {
-      this.breakTimer -= rawDt;
+      this.cardAnimTimer += rawDt;
 
       // Card selection
       if (Input.keys['Digit1'] || Input.keys['Numpad1']) {
@@ -2616,18 +2767,42 @@ const Game = {
         this.selectUpgradeCard(2); Input.keys['Digit3'] = false; Input.keys['Numpad3'] = false;
       }
 
-      if (this.breakTimer <= 0) {
-        // Auto-pick if not chosen
-        if (!Waves.upgradeChosen && Waves.upgradeCards.length > 0) {
-          this.applyUpgrade(Waves.upgradeCards[U.randInt(0, Waves.upgradeCards.length - 1)]);
-          Waves.upgradeChosen = true;
+      // Reroll
+      if (Input.keys['KeyR'] && !Waves.upgradeChosen && this.rerollsLeft > 0) {
+        const newCards = this.buildUpgradeOffer();
+        if (newCards.length > 0) {
+          this.rerollsLeft--;
+          Waves.upgradeCards = newCards;
+          this.cardAnimTimer = 0;
+          this.upgradeSelectedIndex = -1;
         }
-        Waves.startWave(this.player);
-        this.player.frozen = false;
-        this.waveAnnounceTimer = 2.0;
-        this.waveAnnounceNum = Waves.waveIndex;
-        this.state = STATE.PLAYING;
+        Input.keys['KeyR'] = false;
       }
+
+      // Post-selection countdown
+      if (Waves.upgradeChosen) {
+        this.upgradeConfirmTimer -= rawDt;
+        if (this.upgradeConfirmTimer <= 0) {
+          Waves.startWave(this.player);
+          this.player.frozen = false;
+          this.waveAnnounceTimer = 2.0;
+          this.waveAnnounceNum = Waves.waveIndex;
+          this.state = STATE.PLAYING;
+        }
+      }
+
+      // Empty pool auto-start
+      if (!Waves.upgradeChosen && Waves.upgradeCards.length === 0) {
+        this.upgradeConfirmTimer -= rawDt;
+        if (this.upgradeConfirmTimer <= 0) {
+          Waves.startWave(this.player);
+          this.player.frozen = false;
+          this.waveAnnounceTimer = 2.0;
+          this.waveAnnounceNum = Waves.waveIndex;
+          this.state = STATE.PLAYING;
+        }
+      }
+
       const dt = ScreenFX.update(rawDt);
       Particles.update(dt);
       Camera.update(dt, this.player.x, this.player.y, this.player.vx, this.player.vy, this.player.speed);
@@ -2771,7 +2946,6 @@ const Game = {
     this.waveTimer = Waves.waveTimer;
     this.waveIndex = Waves.waveIndex;
     this.phase = Waves.phase;
-    this.breakTimer = Waves.breakTimer;
 
     const scrapResult = Waves.update(dt, this.player, this.score, this);
     if (scrapResult === 'scrap') {
@@ -2827,7 +3001,10 @@ const Game = {
     // Check for upgrade break transition
     if (Waves.phase === 'break' && this.state === STATE.PLAYING) {
       this.state = STATE.UPGRADE;
-      this.breakTimer = CFG.WAVE_BREAK;
+      this.rerollsLeft = CFG.REROLL_MAX;
+      this.upgradeConfirmTimer = CFG.UPGRADE_CONFIRM_TIME;
+      this.cardAnimTimer = 0;
+      this.upgradeSelectedIndex = -1;
       this.player.frozen = true;
       this.player.vx = 0;
       this.player.vy = 0;
@@ -2867,14 +3044,25 @@ const Game = {
 
       if (d < collDist) {
         if (this.player.invulnTimer > 0 || this.player.ghostFrameTimer > 0) continue;
-        // Collision!
+
+        // Determine damage (scales after wave 5)
+        const dmgMap = { chaser: CFG.DMG_CHASER, interceptor: CFG.DMG_INTERCEPTOR,
+                         drifter: CFG.DMG_DRIFTER, elite: CFG.DMG_ELITE };
+        let baseDmg = dmgMap[e.type] || CFG.DMG_CHASER;
+        const waveScale = Waves.waveIndex > 5
+          ? Math.min(CFG.DMG_SCALE_MAX, 1 + CFG.DMG_SCALE_PER_WAVE * (Waves.waveIndex - 5))
+          : 1;
+        let dmg = Math.round(baseDmg * waveScale);
+
+        // Shield absorbs hit completely
         if (this.player.shield) {
           this.shieldBreak(e);
-        } else {
-          this.deathCause = `HIT BY ${e.type.toUpperCase()}`;
-          this.die();
-          return;
+          continue;
         }
+
+        // Apply damage
+        this.playerHit(e, dmg);
+        if (this.state === STATE.DYING) return;
       } else if (d < nearDist && this.player.drifting && e.nearMissCooldown <= 0) {
         // Near miss!
         this.nearMiss(e, 'enemy');
@@ -2918,6 +3106,7 @@ const Game = {
 
     // Wave announce timer
     if (this.waveAnnounceTimer > 0) this.waveAnnounceTimer -= dt;
+    if (this.hordeAnnounceTimer > 0) this.hordeAnnounceTimer -= dt;
 
     // New best detection
     if (this.score > this.highScore) this.newBest = true;
@@ -3004,6 +3193,40 @@ const Game = {
     Particles.addFloat(this.player.x, this.player.y - 30, 'SHIELD BREAK!', CFG.C_SHIELD, 18);
   },
 
+  playerHit(source, dmg) {
+    // Apply damage resistance
+    dmg = Math.round(dmg * (1 - (this.player.damageResist || 0)));
+    dmg = Math.max(dmg, 1);
+
+    this.player.hp -= dmg;
+    this.player.invulnTimer = CFG.HIT_INVULN;
+    this.player.lastHitTimer = 0;
+
+    // Knockback
+    const dx = this.player.x - source.x;
+    const dy = this.player.y - source.y;
+    const d = Math.hypot(dx, dy) || 1;
+    this.player.vx += (dx / d) * CFG.HIT_KNOCKBACK;
+    this.player.vy += (dy / d) * CFG.HIT_KNOCKBACK;
+
+    // FX
+    ScreenFX.flash(CFG.C_ENEMY, 0.15, 0.12);
+    ScreenFX.shake(7, 0.18);
+    ScreenFX.slowmo(0.9, 0.1);
+    Particles.spawn(this.player.x, this.player.y, CFG.C_ENEMY, 6, {
+      vxMin: -100, vxMax: 100, vyMin: -100, vyMax: 100,
+      lifeMin: 0.2, lifeMax: 0.5, sizeMin: 2, sizeMax: 5, type: 'spark',
+    });
+    Particles.addFloat(this.player.x, this.player.y - 30, `-${dmg}`, CFG.C_ENEMY, 16);
+
+    // Check death
+    if (this.player.hp <= 0) {
+      this.player.hp = 0;
+      this.deathCause = `HIT BY ${source.type.toUpperCase()}`;
+      this.die();
+    }
+  },
+
   die() {
     this.state = STATE.DYING;
     this.deathPhase = 0;
@@ -3020,6 +3243,7 @@ const Game = {
     this.applyUpgrade(Waves.upgradeCards[index]);
     Waves.upgradeChosen = true;
     this.upgradeSelectedIndex = index;
+    this.upgradeConfirmTimer = CFG.UPGRADE_CONFIRM_TIME;
   },
 
   render(ctx) {
@@ -3163,6 +3387,27 @@ const Game = {
       ctx.globalAlpha = 1;
     }
 
+    // Horde announce banner
+    if (this.hordeAnnounceTimer > 0) {
+      const dur = CFG.HORDE_DELAY + 0.5;
+      const fadeIn = Math.min(1, (dur - this.hordeAnnounceTimer) / 0.2);
+      const fadeOut = Math.min(1, this.hordeAnnounceTimer / 0.3);
+      const alpha = Math.min(fadeIn, fadeOut);
+      const pulse = 1 + 0.05 * Math.sin(this.hordeAnnounceTimer * 12);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = 'rgba(60,0,0,0.7)';
+      U.roundRect(ctx, CFG.W/2 - S(140), S(160) - S(22), S(280), S(44), S(8));
+      ctx.fill();
+      ctx.save();
+      ctx.translate(CFG.W/2, S(160));
+      ctx.scale(pulse, pulse);
+      U.text(ctx, 'HORDE INCOMING!', 0, 0, {
+        align: 'center', color: CFG.C_ENEMY, size: 32, bold: true, shadow: true
+      });
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+
     // Tutorial hint
     if (this.tutorialShown && !this.tutorialDismissed && this.tutorialTimer > 0) {
       const alpha = Math.min(1, this.tutorialTimer / 0.5, (6 - this.tutorialTimer) / 0.5);
@@ -3179,7 +3424,8 @@ const Game = {
 
     // Upgrade break overlay
     if (this.state === STATE.UPGRADE) {
-      renderUpgradeBreak(ctx, Waves.upgradeCards, this.breakTimer, this.upgradeSelectedIndex);
+      renderUpgradeBreak(ctx, Waves.upgradeCards, this.cardAnimTimer, this.upgradeSelectedIndex,
+        this.rerollsLeft, Waves.upgradeChosen, this.upgradeConfirmTimer, Waves.waveIndex);
     }
 
     // Paused overlay
@@ -3273,47 +3519,37 @@ const Game = {
   },
 
   renderOffscreenIndicators(ctx) {
-    const margin = S(20);
+    // Collect which screen edges have offscreen enemies
+    const sides = { left: false, right: false, top: false, bottom: false };
     for (const e of Waves.enemies) {
       if (!e.alive) continue;
       if (Camera.isVisible(e.x, e.y, 0)) continue;
-      // Convert enemy world pos to screen pos
       const sx = e.x - Camera.x + CFG.W / 2;
       const sy = e.y - Camera.y + CFG.H / 2;
-      // Clamp to screen edge
-      const cx = CFG.W / 2, cy = CFG.H / 2;
-      const dx = sx - cx, dy = sy - cy;
-      const angle = Math.atan2(dy, dx);
-      // Find edge intersection
-      const absCos = Math.abs(Math.cos(angle));
-      const absSin = Math.abs(Math.sin(angle));
-      let edgeX, edgeY;
-      if (absCos * (CFG.H / 2 - margin) > absSin * (CFG.W / 2 - margin)) {
-        // Hit left/right edge
-        edgeX = Math.sign(dx) * (CFG.W / 2 - margin) + cx;
-        edgeY = Math.sign(dx) * (CFG.W / 2 - margin) * Math.tan(angle) + cy;
-      } else {
-        // Hit top/bottom edge
-        edgeY = Math.sign(dy) * (CFG.H / 2 - margin) + cy;
-        edgeX = Math.sign(dy) * (CFG.H / 2 - margin) / Math.tan(angle) + cx;
-      }
-      edgeX = U.clamp(edgeX, margin, CFG.W - margin);
-      edgeY = U.clamp(edgeY, margin, CFG.H - margin);
-      // Draw arrow triangle
-      ctx.save();
-      ctx.translate(edgeX, edgeY);
-      ctx.rotate(angle);
-      ctx.fillStyle = CFG.C_ENEMY;
-      ctx.globalAlpha = 0.7;
-      ctx.beginPath();
-      ctx.moveTo(S(8), 0);
-      ctx.lineTo(S(-5), S(-5));
-      ctx.lineTo(S(-5), S(5));
-      ctx.closePath();
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.restore();
+      if (sx < 0) sides.left = true;
+      if (sx > CFG.W) sides.right = true;
+      if (sy < 0) sides.top = true;
+      if (sy > CFG.H) sides.bottom = true;
     }
+    // Flash red bar on each active edge (dark border + red fill for contrast)
+    const flash = 0.55 + 0.15 * Math.sin(performance.now() * 0.008);
+    const barW = S(32);
+    const borderW = barW + S(4);
+    // Dark border behind bars
+    ctx.fillStyle = '#000';
+    ctx.globalAlpha = flash * 0.6;
+    if (sides.left)   ctx.fillRect(0, 0, borderW, CFG.H);
+    if (sides.right)  ctx.fillRect(CFG.W - borderW, 0, borderW, CFG.H);
+    if (sides.top)    ctx.fillRect(0, 0, CFG.W, borderW);
+    if (sides.bottom) ctx.fillRect(0, CFG.H - borderW, CFG.W, borderW);
+    // Red bars
+    ctx.fillStyle = CFG.C_ENEMY;
+    ctx.globalAlpha = flash;
+    if (sides.left)   ctx.fillRect(0, 0, barW, CFG.H);
+    if (sides.right)  ctx.fillRect(CFG.W - barW, 0, barW, CFG.H);
+    if (sides.top)    ctx.fillRect(0, 0, CFG.W, barW);
+    if (sides.bottom) ctx.fillRect(0, CFG.H - barW, CFG.W, barW);
+    ctx.globalAlpha = 1;
   },
 
   renderMinimap(ctx) {

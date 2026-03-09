@@ -47,7 +47,7 @@ Sprites configured via `CFG.ENEMY_SPRITES_BY_TYPE` (per-type sprite pools with r
 Enemies spawn 550px from player, lifespan 10-18s, despawn if offscreen >5s or >1200px away.
 
 ## Wave System
-- **Combat phase**: 25s (wave 1: 30s). Enemies spawn on interval.
+- **Combat phase**: Starts at 30s, +10s per wave, capped at 120s. Enemies spawn on interval.
 - **Break phase**: 8s. All enemies cleared, player picks 1 of 3 upgrades.
 - **Spawn ramp** (linear wave 1→5, then constant):
   - First spawn delay: 2.5s → 0.6s
@@ -75,7 +75,9 @@ Core mechanic: the player leaves a visible trail. When the trail forms a closed 
 - Loop kills trigger shockwave particles + score award
 
 ## Upgrades (14 total, no rarity system)
-Offered during wave break phase (pick 1 of 3):
+Offered during wave break phase (pick 1 of 3). No selection timer — player takes as long as needed.
+- **Rerolls**: Press R to reroll upgrade cards (up to 3 per break, resets each break)
+- **Post-selection**: After choosing, cards disappear and a centered 3-second countdown plays before next wave
 
 | Upgrade | Effect |
 |---------|--------|
