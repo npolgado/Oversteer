@@ -114,6 +114,15 @@ const CFG = {
   DMG_INTERCEPTOR: 18,
   DMG_DRIFTER: 15,
   DMG_ELITE: 25,
+  DMG_SCALE_PER_WAVE: 0.12,
+  DMG_SCALE_MAX: 3.0,
+  // Horde
+  HORDE_TRIGGER: 0.75,
+  HORDE_DELAY: 1.5,
+  HORDE_BASE_COUNT: 4,
+  HORDE_WAVE_GROWTH: 0.5,
+  HORDE_MAX_COUNT: 15,
+  HORDE_SPAWN_DIST: 950,
   // Open World
   WORLD_W: 3000, WORLD_H: 3000,
   // Enemy lifespan
@@ -1622,6 +1631,18 @@ const Trail = {
     this._lastDt = dt;
     this._lastPlayerX = player.x;
     this._lastPlayerY = player.y;
+    // Trail color matches drift particle combo colors
+    const comboInt = Math.floor(player.comboLevel || 0);
+    if (comboInt >= 5) {
+      // Purple (CFG.C_RARE #7C5CFF)
+      this._trailR = 124; this._trailG = 92; this._trailB = 255;
+    } else if (comboInt >= 3) {
+      // Cyan (CFG.C_ACCENT #35F2D0)
+      this._trailR = 53; this._trailG = 242; this._trailB = 208;
+    } else {
+      // Default cyan
+      this._trailR = 53; this._trailG = 242; this._trailB = 208;
+    }
     this.recordTimer -= dt;
     if (this.recordTimer <= 0) {
       this.push(player.x, player.y);
@@ -1766,7 +1787,7 @@ const Trail = {
     for (let i = 1; i < this.count; i++) {
       const frac = i / this.count;
       const glowAlpha = (0.02 + frac * 0.08) * (nearLoop ? 1.4 : 1);
-      ctx.strokeStyle = `rgba(53,242,208,${glowAlpha})`;
+      ctx.strokeStyle = `rgba(${this._trailR||53},${this._trailG||242},${this._trailB||208},${glowAlpha})`;
       ctx.beginPath();
       const p0 = this.getPoint(i - 1);
       const p1 = this.getPoint(i);
@@ -1781,9 +1802,10 @@ const Trail = {
       const frac = i / this.count;
       const alphaBoost = nearLoop ? 0.15 : 0;
       const alpha = 0.08 + frac * 0.30 + alphaBoost;
-      const r = Math.round(53 + frac * (53 - 53));
-      const g = Math.round(100 + frac * (242 - 100));
-      const b = Math.round(140 + frac * (208 - 140));
+      const tr = this._trailR || 53, tg = this._trailG || 242, tb = this._trailB || 208;
+      const r = Math.round(tr * 0.4 + frac * tr * 0.6);
+      const g = Math.round(tg * 0.4 + frac * tg * 0.6);
+      const b = Math.round(tb * 0.55 + frac * tb * 0.45);
       ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
       ctx.beginPath();
       const p0 = this.getPoint(i - 1);
@@ -1798,7 +1820,7 @@ const Trail = {
     if (this._flashPoly && this._flashPolyTimer > 0) {
       ctx.save();
       ctx.globalAlpha = (this._flashPolyTimer / 0.3) * 0.25;
-      ctx.fillStyle = CFG.C_ACCENT;
+      ctx.fillStyle = `rgb(${this._trailR||53},${this._trailG||242},${this._trailB||208})`;
       ctx.beginPath();
       ctx.moveTo(this._flashPoly[0].x, this._flashPoly[0].y);
       for (let i = 1; i < this._flashPoly.length; i++) {
@@ -1821,7 +1843,7 @@ const Trail = {
           if (d < previewDist) {
             const closeness = 1 - d / previewDist; // 1=very close, 0=at edge
             ctx.save();
-            ctx.strokeStyle = CFG.C_ACCENT;
+            ctx.strokeStyle = `rgb(${this._trailR||53},${this._trailG||242},${this._trailB||208})`;
             ctx.globalAlpha = 0.3 + closeness * 0.4;
             ctx.lineWidth = 2;
             ctx.setLineDash([6, 4]);
@@ -1855,6 +1877,8 @@ const Waves = {
   upgradeCards: [],
   upgradeChosen: false,
   cadenceMult: 1,
+  hordeTriggered: false,
+  hordeSpawnTimer: -1,
 
   reset() {
     this.waveIndex = 0;
@@ -1876,6 +1900,8 @@ const Waves = {
     this.currentSpawnInterval = CFG.SPAWN_INTERVAL_INITIAL;
     this.currentCombatDuration = CFG.WAVE_COMBAT;
     this.noBursts = false;
+    this.hordeTriggered = false;
+    this.hordeSpawnTimer = -1;
   },
 
   startWave(player) {
@@ -1894,7 +1920,8 @@ const Waves = {
 
     this.spawnTimer = this.currentFirstSpawn;
     this.burstTimer = CFG.BURST_INTERVAL;
-
+    this.hordeTriggered = false;
+    this.hordeSpawnTimer = -1;
   },
 
   getEnemyType(score) {
@@ -1925,6 +1952,25 @@ const Waves = {
     this.enemies.push(e);
   },
 
+  spawnHorde(score, speedBonus, player) {
+    const count = Math.min(CFG.HORDE_MAX_COUNT,
+      CFG.HORDE_BASE_COUNT + Math.floor(this.waveIndex * CFG.HORDE_WAVE_GROWTH));
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count;
+      let x = player.x + Math.cos(angle) * CFG.HORDE_SPAWN_DIST;
+      let y = player.y + Math.sin(angle) * CFG.HORDE_SPAWN_DIST;
+      x = U.clamp(x, 50, CFG.WORLD_W - 50);
+      y = U.clamp(y, 50, CFG.WORLD_H - 50);
+
+      const type = this.getEnemyType(score);
+      const e = new Enemy(type, x, y);
+      e.heading = Math.atan2(player.y - y, player.x - x);
+      e.maxSpeed += speedBonus;
+      e.baseMaxSpeed = e.maxSpeed;
+      this.enemies.push(e);
+    }
+  },
+
   update(dt, player, score, game) {
     if (this.phase === 'combat') {
       this.waveTimer += dt;
@@ -1953,6 +1999,22 @@ const Waves = {
         if (this._burstQueue[i].delay <= 0) {
           const b = this._burstQueue.splice(i, 1)[0];
           if (this.phase === 'combat') this.spawnEnemy(b.score, b.speedBonus, b.player);
+        }
+      }
+
+      // Horde event at 75% of combat phase (skip wave 1)
+      if (!this.hordeTriggered && this.waveIndex >= 1 &&
+          this.waveTimer >= this.currentCombatDuration * CFG.HORDE_TRIGGER) {
+        this.hordeTriggered = true;
+        this.hordeSpawnTimer = CFG.HORDE_DELAY;
+        game.hordeAnnounceTimer = CFG.HORDE_DELAY + 0.5;
+      }
+      // Horde spawn countdown
+      if (this.hordeSpawnTimer > 0) {
+        this.hordeSpawnTimer -= dt;
+        if (this.hordeSpawnTimer <= 0) {
+          this.spawnHorde(score, game.speedBonus, player);
+          ScreenFX.shake(5, 0.3);
         }
       }
 
@@ -2517,6 +2579,7 @@ const Game = {
   // Wave announce
   waveAnnounceTimer: 0,
   waveAnnounceNum: 0,
+  hordeAnnounceTimer: 0,
   // Death cause
   deathCause: '',
   // Touch UI
@@ -2551,6 +2614,7 @@ const Game = {
     this.encircleCount = 0;
     this.waveAnnounceTimer = 0;
     this.waveAnnounceNum = 0;
+    this.hordeAnnounceTimer = 0;
     this.deathCause = '';
     Particles.clear();
     ScreenFX.reset();
@@ -2936,10 +3000,14 @@ const Game = {
       if (d < collDist) {
         if (this.player.invulnTimer > 0 || this.player.ghostFrameTimer > 0) continue;
 
-        // Determine damage
+        // Determine damage (scales after wave 5)
         const dmgMap = { chaser: CFG.DMG_CHASER, interceptor: CFG.DMG_INTERCEPTOR,
                          drifter: CFG.DMG_DRIFTER, elite: CFG.DMG_ELITE };
-        let dmg = dmgMap[e.type] || CFG.DMG_CHASER;
+        let baseDmg = dmgMap[e.type] || CFG.DMG_CHASER;
+        const waveScale = Waves.waveIndex > 5
+          ? Math.min(CFG.DMG_SCALE_MAX, 1 + CFG.DMG_SCALE_PER_WAVE * (Waves.waveIndex - 5))
+          : 1;
+        let dmg = Math.round(baseDmg * waveScale);
 
         // Shield absorbs hit completely
         if (this.player.shield) {
@@ -2993,6 +3061,7 @@ const Game = {
 
     // Wave announce timer
     if (this.waveAnnounceTimer > 0) this.waveAnnounceTimer -= dt;
+    if (this.hordeAnnounceTimer > 0) this.hordeAnnounceTimer -= dt;
 
     // New best detection
     if (this.score > this.highScore) this.newBest = true;
@@ -3269,6 +3338,27 @@ const Game = {
       U.text(ctx, this.milestoneText, CFG.W/2, S(100), {
         align: 'center', color: CFG.C_RARE, size: 28, bold: true, shadow: true
       });
+      ctx.globalAlpha = 1;
+    }
+
+    // Horde announce banner
+    if (this.hordeAnnounceTimer > 0) {
+      const dur = CFG.HORDE_DELAY + 0.5;
+      const fadeIn = Math.min(1, (dur - this.hordeAnnounceTimer) / 0.2);
+      const fadeOut = Math.min(1, this.hordeAnnounceTimer / 0.3);
+      const alpha = Math.min(fadeIn, fadeOut);
+      const pulse = 1 + 0.05 * Math.sin(this.hordeAnnounceTimer * 12);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = 'rgba(60,0,0,0.7)';
+      U.roundRect(ctx, CFG.W/2 - S(140), S(160) - S(22), S(280), S(44), S(8));
+      ctx.fill();
+      ctx.save();
+      ctx.translate(CFG.W/2, S(160));
+      ctx.scale(pulse, pulse);
+      U.text(ctx, 'HORDE INCOMING!', 0, 0, {
+        align: 'center', color: CFG.C_ENEMY, size: 32, bold: true, shadow: true
+      });
+      ctx.restore();
       ctx.globalAlpha = 1;
     }
 
