@@ -146,7 +146,12 @@ const CFG = {
   ],
   // Sprite paths (for future PNG support)
   PLAYER_SPRITE: 'cars/player.png',
-  ENEMY_SPRITES: ['cars/enemy_red.png', 'cars/enemy_orange.png'],
+  ENEMY_SPRITES_BY_TYPE: {
+    chaser: ['cars/enemy_red.png', 'cars/enemy_orange.png'],
+    interceptor: ['cars/police.png', 'cars/ambulance.png'],
+    drifter: ['cars/taxi.png', 'cars/mini_van.png'],
+    elite: ['cars/truck.png', 'cars/mini_truck.png'],
+  },
   BACKGROUND_SPRITE: 'background.png',
 };
 
@@ -325,7 +330,7 @@ const Assets = {
 // Preload configured sprites
 Assets.preload([
   CFG.PLAYER_SPRITE,
-  ...CFG.ENEMY_SPRITES,
+  ...Object.values(CFG.ENEMY_SPRITES_BY_TYPE).flat(),
   ...CFG.PROP_POOL.map(p => p.image),
   CFG.BACKGROUND_SPRITE,
 ]);
@@ -844,6 +849,7 @@ class Enemy {
     this.nearMissCooldown = 0;
     this.offscreenTimer = 0;
     this.driftToggleTimer = U.randFloat(2, 5);
+    this.driftDuration = 0;
     this.glowExtra = 0;
     this.age = 0;
     this.lifespan = U.randFloat(CFG.ENEMY_LIFESPAN_MIN, CFG.ENEMY_LIFESPAN_MAX);
@@ -851,7 +857,8 @@ class Enemy {
     this.baseMaxSpeed = 0; // set after maxSpeed is assigned
     this.health = 1;
     this.armored = false;
-    this.sprite = CFG.ENEMY_SPRITES.length > 0 ? U.randChoice(CFG.ENEMY_SPRITES) : null;
+    const spritePool = CFG.ENEMY_SPRITES_BY_TYPE[type] || [];
+    this.sprite = spritePool.length > 0 ? U.randChoice(spritePool) : null;
 
     this.radius = CFG.ENEMY_RADIUS;
     if (type === 'elite') {
@@ -887,14 +894,24 @@ class Enemy {
     // Drifter type: periodic drift toggles
     let wantDrift = false;
     if (this.type === 'drifter') {
-      this.driftToggleTimer -= dt;
-      if (this.driftToggleTimer <= 0) {
-        this.driftToggleTimer = U.randFloat(1.5, 4);
-        wantDrift = true;
+      if (this.drifting) {
+        // Currently drifting — count down duration
+        this.driftDuration -= dt;
+        if (this.driftDuration > 0) {
+          wantDrift = true;
+        } else {
+          // Drift ended, set cooldown before next drift
+          wantDrift = false;
+          this.driftToggleTimer = U.randFloat(1.5, 3);
+        }
+      } else {
+        // Not drifting — count down until next drift
+        this.driftToggleTimer -= dt;
+        if (this.driftToggleTimer <= 0) {
+          wantDrift = true;
+          this.driftDuration = U.randFloat(1, 2.5);
+        }
       }
-      if (this.drifting) wantDrift = true;
-      // Release drift after a while
-      if (this.drifting && this.driftToggleTimer > 2) wantDrift = false;
     }
 
     this.wallHit = false;
@@ -1560,6 +1577,8 @@ const Trail = {
     this.checkTimer = 0;
     this._flashPoly = null;
     this._flashPolyTimer = 0;
+    this.MAX_POINTS = 400;
+    this.CLOSE_DIST = 40;
   },
 
   push(x, y) {
