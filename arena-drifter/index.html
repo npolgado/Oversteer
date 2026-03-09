@@ -82,7 +82,8 @@ const CFG = {
   SCRAP_NEAR_MISS_CHANCE: 0.35,
   // Upgrades
   UPGRADES_TO_OFFER: 3,
-  UPGRADE_BREAK_TIME: 8,
+  REROLL_MAX: 3,
+  UPGRADE_CONFIRM_TIME: 3,
   // Colors
   C_BG: '#07080B',
   C_BG2: '#0E1118',
@@ -152,6 +153,8 @@ const CFG = {
   FIRST_SPAWN_MIN: 0.6,
   SPAWN_INTERVAL_MIN: 1.5,
   WAVE_COMBAT_WAVE1: 30,
+  WAVE_TIME_GROWTH: 10,
+  WAVE_COMBAT_MAX: 120,
   // Props
   PROP_CHUNK_SIZE: 500,
   PROP_DENSITY: 0.00001,
@@ -1915,7 +1918,8 @@ const Waves = {
     const ramp = Math.min(1, (this.waveIndex - 1) / 4);
     this.currentFirstSpawn = U.lerp(CFG.FIRST_SPAWN_INITIAL, CFG.FIRST_SPAWN_MIN, ramp);
     this.currentSpawnInterval = U.lerp(CFG.SPAWN_INTERVAL_INITIAL, CFG.SPAWN_INTERVAL_MIN, ramp);
-    this.currentCombatDuration = this.waveIndex === 1 ? CFG.WAVE_COMBAT_WAVE1 : CFG.WAVE_COMBAT;
+    this.currentCombatDuration = Math.min(CFG.WAVE_COMBAT_MAX,
+      CFG.WAVE_COMBAT_WAVE1 + CFG.WAVE_TIME_GROWTH * (this.waveIndex - 1));
     this.noBursts = this.waveIndex === 1;
 
     this.spawnTimer = this.currentFirstSpawn;
@@ -2029,15 +2033,7 @@ const Waves = {
         this.upgradeChosen = false;
       }
     } else if (this.phase === 'break') {
-      this.breakTimer -= dt;
-      if (this.breakTimer <= 0 || this.upgradeChosen) {
-        if (!this.upgradeChosen && this.upgradeCards.length > 0) {
-          // Auto-pick random
-          game.applyUpgrade(this.upgradeCards[U.randInt(0, this.upgradeCards.length - 1)]);
-          this.upgradeChosen = true;
-        }
-        this.startWave(player);
-      }
+      // Selection handled in UPGRADE state
     }
 
     // Update enemies
@@ -2351,11 +2347,14 @@ const ARENA_UPGRADES = [
     apply(p) { p.maxHp += 30; p.hp += 30; } },
   { id: 'damage_resist', name: 'Armor Plating', desc: 'Take 25% less damage', icon: 'V',
     apply(p) { p.damageResist = 1 - (1 - p.damageResist) * 0.75; } },
+  // Future: { id: 'extra_rerolls', name: 'Lucky Draw', icon: 'R',
+  //   desc: '+2 upgrade rerolls per break', apply(p) {} },
+  // Implementation: break transition adds player.upgrades.filter(u => u === 'extra_rerolls').length * 2 to rerollsLeft
 ];
 
 // ── 12. HUD / UI ────────────────────────────────────────────
 function renderHUD(ctx, game) {
-  const { score, player, waveTimer, waveIndex, driftCombo, phase, breakTimer, highScore, newBest } = game;
+  const { score, player, waveTimer, waveIndex, driftCombo, phase, highScore, newBest } = game;
 
   // Helper: draw dark backdrop panel
   function panel(x, y, w, h, r) {
@@ -2487,16 +2486,31 @@ function renderHUD(ctx, game) {
 
 }
 
-function renderUpgradeBreak(ctx, cards, breakTimer, selectedIndex) {
+function renderUpgradeBreak(ctx, cards, cardAnimTimer, selectedIndex, rerollsLeft, upgradeChosen, upgradeConfirmTimer, waveIndex) {
   // Dim
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
   ctx.fillRect(0, 0, CFG.W, CFG.H);
 
-  U.text(ctx, 'CHOOSE UPGRADE', CFG.W/2, S(60), { align: 'center', color: CFG.C_ACCENT, size: 28, bold: true, shadow: true });
+  if (upgradeChosen) {
+    // Post-selection: show chosen upgrade + countdown
+    const chosen = cards[selectedIndex];
+    if (chosen) {
+      U.text(ctx, chosen.icon, CFG.W/2, CFG.H/2 - S(60), { align: 'center', color: CFG.C_ACCENT, size: 48, bold: true, shadow: true });
+      U.text(ctx, chosen.name, CFG.W/2, CFG.H/2 - S(15), { align: 'center', color: CFG.C_TEXT, size: 22, bold: true, shadow: true });
+    }
+    const secs = Math.ceil(Math.max(0, upgradeConfirmTimer));
+    U.text(ctx, `${secs}`, CFG.W/2, CFG.H/2 + S(40), { align: 'center', color: CFG.C_ACCENT, size: 48, bold: true, shadow: true });
+    U.text(ctx, `Wave ${waveIndex + 1} incoming...`, CFG.W/2, CFG.H/2 + S(80), { align: 'center', color: '#888', size: 16, shadow: true });
+    return;
+  }
 
-  // Timer
-  const secs = Math.ceil(breakTimer);
-  U.text(ctx, `${secs}s`, CFG.W/2, S(90), { align: 'center', color: '#888', size: 16 });
+  // No upgrades available edge case
+  if (cards.length === 0) {
+    U.text(ctx, 'No upgrades available', CFG.W/2, CFG.H/2, { align: 'center', color: '#888', size: 20, shadow: true });
+    return;
+  }
+
+  U.text(ctx, 'CHOOSE UPGRADE', CFG.W/2, S(60), { align: 'center', color: CFG.C_ACCENT, size: 28, bold: true, shadow: true });
 
   // Cards
   const cardW = S(180), cardH = S(200), gap = S(20);
@@ -2508,11 +2522,11 @@ function renderUpgradeBreak(ctx, cards, breakTimer, selectedIndex) {
     const y = S(120);
 
     // Slide-up animation (staggered)
-    const slideOffset = Math.max(0, S(24) - breakTimer * S(120) + i * S(7));
+    const slideOffset = Math.max(0, S(24) - cardAnimTimer * S(120) + i * S(7));
 
     ctx.save();
     ctx.translate(0, slideOffset);
-    ctx.globalAlpha = Math.min(1, breakTimer * 5 - i * 0.3);
+    ctx.globalAlpha = Math.min(1, cardAnimTimer * 5 - i * 0.3);
 
     // Card bg
     ctx.fillStyle = selectedIndex === i ? '#2A3344' : CFG.C_PANEL;
@@ -2544,7 +2558,9 @@ function renderUpgradeBreak(ctx, cards, breakTimer, selectedIndex) {
     cx += cardW + gap;
   }
 
-  U.text(ctx, 'Press 1 / 2 / 3 to choose', CFG.W/2, CFG.H - S(40), { align: 'center', color: '#666', size: 13 });
+  U.text(ctx, 'Press 1 / 2 / 3 to choose', CFG.W/2, CFG.H - S(60), { align: 'center', color: '#666', size: 13 });
+  const rerollColor = rerollsLeft > 0 ? '#888' : '#444';
+  U.text(ctx, `Press [R] to reroll (${rerollsLeft} left)`, CFG.W/2, CFG.H - S(35), { align: 'center', color: rerollColor, size: 13 });
 }
 
 // ── 13. GAME STATE MACHINE ─────────────────────────────────
@@ -2608,6 +2624,9 @@ const Game = {
     this.milestoneTimer = 0;
     this.lastDriftComboTick = 0;
     this.upgradeSelectedIndex = -1;
+    this.rerollsLeft = CFG.REROLL_MAX;
+    this.upgradeConfirmTimer = 0;
+    this.cardAnimTimer = 0;
     this.tutorialShown = false;
     this.tutorialDismissed = false;
     this.tutorialTimer = 0;
@@ -2735,7 +2754,7 @@ const Game = {
 
     // UPGRADE break
     if (this.state === STATE.UPGRADE) {
-      this.breakTimer -= rawDt;
+      this.cardAnimTimer += rawDt;
 
       // Card selection
       if (Input.keys['Digit1'] || Input.keys['Numpad1']) {
@@ -2748,18 +2767,42 @@ const Game = {
         this.selectUpgradeCard(2); Input.keys['Digit3'] = false; Input.keys['Numpad3'] = false;
       }
 
-      if (this.breakTimer <= 0) {
-        // Auto-pick if not chosen
-        if (!Waves.upgradeChosen && Waves.upgradeCards.length > 0) {
-          this.applyUpgrade(Waves.upgradeCards[U.randInt(0, Waves.upgradeCards.length - 1)]);
-          Waves.upgradeChosen = true;
+      // Reroll
+      if (Input.keys['KeyR'] && !Waves.upgradeChosen && this.rerollsLeft > 0) {
+        const newCards = this.buildUpgradeOffer();
+        if (newCards.length > 0) {
+          this.rerollsLeft--;
+          Waves.upgradeCards = newCards;
+          this.cardAnimTimer = 0;
+          this.upgradeSelectedIndex = -1;
         }
-        Waves.startWave(this.player);
-        this.player.frozen = false;
-        this.waveAnnounceTimer = 2.0;
-        this.waveAnnounceNum = Waves.waveIndex;
-        this.state = STATE.PLAYING;
+        Input.keys['KeyR'] = false;
       }
+
+      // Post-selection countdown
+      if (Waves.upgradeChosen) {
+        this.upgradeConfirmTimer -= rawDt;
+        if (this.upgradeConfirmTimer <= 0) {
+          Waves.startWave(this.player);
+          this.player.frozen = false;
+          this.waveAnnounceTimer = 2.0;
+          this.waveAnnounceNum = Waves.waveIndex;
+          this.state = STATE.PLAYING;
+        }
+      }
+
+      // Empty pool auto-start
+      if (!Waves.upgradeChosen && Waves.upgradeCards.length === 0) {
+        this.upgradeConfirmTimer -= rawDt;
+        if (this.upgradeConfirmTimer <= 0) {
+          Waves.startWave(this.player);
+          this.player.frozen = false;
+          this.waveAnnounceTimer = 2.0;
+          this.waveAnnounceNum = Waves.waveIndex;
+          this.state = STATE.PLAYING;
+        }
+      }
+
       const dt = ScreenFX.update(rawDt);
       Particles.update(dt);
       Camera.update(dt, this.player.x, this.player.y, this.player.vx, this.player.vy, this.player.speed);
@@ -2903,7 +2946,6 @@ const Game = {
     this.waveTimer = Waves.waveTimer;
     this.waveIndex = Waves.waveIndex;
     this.phase = Waves.phase;
-    this.breakTimer = Waves.breakTimer;
 
     const scrapResult = Waves.update(dt, this.player, this.score, this);
     if (scrapResult === 'scrap') {
@@ -2959,7 +3001,10 @@ const Game = {
     // Check for upgrade break transition
     if (Waves.phase === 'break' && this.state === STATE.PLAYING) {
       this.state = STATE.UPGRADE;
-      this.breakTimer = CFG.WAVE_BREAK;
+      this.rerollsLeft = CFG.REROLL_MAX;
+      this.upgradeConfirmTimer = CFG.UPGRADE_CONFIRM_TIME;
+      this.cardAnimTimer = 0;
+      this.upgradeSelectedIndex = -1;
       this.player.frozen = true;
       this.player.vx = 0;
       this.player.vy = 0;
@@ -3198,6 +3243,7 @@ const Game = {
     this.applyUpgrade(Waves.upgradeCards[index]);
     Waves.upgradeChosen = true;
     this.upgradeSelectedIndex = index;
+    this.upgradeConfirmTimer = CFG.UPGRADE_CONFIRM_TIME;
   },
 
   render(ctx) {
@@ -3378,7 +3424,8 @@ const Game = {
 
     // Upgrade break overlay
     if (this.state === STATE.UPGRADE) {
-      renderUpgradeBreak(ctx, Waves.upgradeCards, this.breakTimer, this.upgradeSelectedIndex);
+      renderUpgradeBreak(ctx, Waves.upgradeCards, this.cardAnimTimer, this.upgradeSelectedIndex,
+        this.rerollsLeft, Waves.upgradeChosen, this.upgradeConfirmTimer, Waves.waveIndex);
     }
 
     // Paused overlay

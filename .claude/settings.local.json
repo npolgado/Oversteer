@@ -9,7 +9,8 @@
       "Bash(rm:*)",
       "Bash(mv:*)",
       "Bash(cp:*)",
-      "Bash(identify:*)"
+      "Bash(identify:*)",
+      "Skill(patch-noter)"
     ]
   }
 }
