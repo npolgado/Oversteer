@@ -5,20 +5,124 @@ Oversteer is a top-down arena drifting game. The entire game lives in a single s
 
 - **Source of truth**: `arena-drifter/index.html` (~3500 lines)
 - **Run**: `npx serve arena-drifter`
-- **Game**: Arena-based (fixed 3000x3000 world), wave-based enemy spawning, drift combos, near-miss scoring, delta-time physics
+- **Game**: Arena-based (fixed 3000x3000 world), wave-based enemy spawning, drift combos, near-miss scoring, trail encirclement kills, delta-time physics (px/sec)
 
 ## Project Structure
 ```
 arena-drifter/
   index.html                    The game (single-file, self-contained)
   assets/                       PNG sprites (cars, props)
-    cars/                       Car sprites (point UP in PNG, rotated -90° in code)
+    cars/                       Car sprites (point UP in PNG, rotated +90° in code to face RIGHT)
     props/                      Prop sprites (trees, rocks, mud, etc.)
-docs/PRD.md                     Game design document
 references/reference_mock.png   Visual inspiration
 .gitignore                      Repo config
 CLAUDE.md                       This file
 ```
+
+## Game States
+`MENU` → `PLAYING` (combat/break phases) → `UPGRADE` → `PLAYING` → `DYING` → `GAME_OVER` → `MENU`
+- `PAUSED`: Toggle with P/Escape during gameplay
+- `SANDBOX`: Free drive mode (no enemies), toggled with S on menu
+
+## Player Physics
+- Free 2D movement with angle-based heading (0=right)
+- **Drift system**: Lateral friction drops from 8.5 to 3.2 when drifting; forward drag rises from 1.7 to 2.1
+- **Handbrake**: Triggered by reverse input + speed > 180 px/s. Turn rate x2.0, duration 0.3s, deceleration 1800 px/s²
+- **Visual angle**: Sprite follows `atan2(vy, vx)` so the car visually slides during drift
+- **Wall riding**: Drifting within 30px of arena wall grants +10% speed bonus
+- **Drift chaining**: Re-entering drift within 0.5s grants score multipliers (1.5x first chain, 2.0x second)
+- Controls: W/Up=accel, S/Down=reverse, A/D or Left/Right=turn, Down=handbrake/drift
+
+## Enemy Types
+Enemies share the same physics engine as the player. Unlocked by score, not wave number.
+
+| Type | Speed | Turn Rate | Behavior | Sprites | Unlock |
+|------|-------|-----------|----------|---------|--------|
+| Chaser | 420 px/s | 200°/s (1.0x) | Drives straight at player | enemy_red, enemy_orange | Always |
+| Interceptor | 460 px/s | 170°/s (0.85x) | Leads player position by 0.5s | police, ambulance | 1000 pts |
+| Drifter | 440 px/s | 220°/s (1.1x) | Alternates normal driving (1.5-3s) and sustained drifts (1-2.5s) | taxi, mini_van | 1500 pts |
+| Elite | 378 px/s | 160°/s (0.8x) | Armored (2 HP), larger hitbox (r=14), 1.5x lifespan | truck, mini_truck | Wave 4+, 12% chance |
+
+Sprites configured via `CFG.ENEMY_SPRITES_BY_TYPE` (per-type sprite pools with random selection).
+Enemies spawn 550px from player, lifespan 10-18s, despawn if offscreen >5s or >1200px away.
+
+## Wave System
+- **Combat phase**: 25s (wave 1: 30s). Enemies spawn on interval.
+- **Break phase**: 8s. All enemies cleared, player picks 1 of 3 upgrades.
+- **Spawn ramp** (linear wave 1→5, then constant):
+  - First spawn delay: 2.5s → 0.6s
+  - Spawn interval: 4.0s → 1.5s
+- **Burst spawning** (disabled wave 1): Every 8s, spawns 2 enemies with 0.3s delay
+- **Speed bonus**: At 2000+ score, enemies get up to +120 px/s bonus
+
+## Scoring
+- Base: 4 pts/sec (modified by score_freak upgrade)
+- Near-miss enemy: 25 pts (while drifting, within ~16px, 1.2s cooldown per target)
+- Near-miss hazard: 15 pts (within ~20px)
+- Near-miss streak: 3+ consecutive within 2s grants 50 × streak bonus
+- Encirclement kills: base + bonus with combo multiplier
+- Bomb kills: 50 pts per enemy
+- Combo system: Combo level 1-8, decays over time, multiplies encirclement score
+- Drift chain multipliers: 1.5x / 2.0x for chained drifts
+- High score persisted in localStorage
+
+## Trail & Encirclement
+Core mechanic: the player leaves a visible trail. When the trail forms a closed loop, enemies inside are killed.
+- Trail records position every 0.05s, checks for loops every 0.15s
+- `MAX_POINTS`: 400 (upgradeable to 600 via trail_echo)
+- `CLOSE_DIST`: 40px detection radius (upgradeable to 60 via wider_trail)
+- Both values reset on death/new run via `Trail.reset()`
+- Loop kills trigger shockwave particles + score award
+
+## Upgrades (14 total, no rarity system)
+Offered during wave break phase (pick 1 of 3):
+
+| Upgrade | Effect |
+|---------|--------|
+| turbo | +15% top speed |
+| tight_turns | +25% turn rate |
+| drift_king | Drift boost +50%, drift lateral friction ×0.75 |
+| shield | Absorbs one collision (knockback + 1s invulnerability) |
+| magnet | Auto-collect scraps within 150px |
+| score_freak | Score multiplier ×1.5 |
+| ghost_frame | 0.3s invulnerability after near-miss |
+| thick_plating | Collision radius -3px |
+| afterburner | Drift boost doubled |
+| combo_master | Combo decays 50% slower |
+| speed_demon | +20% player speed (+10% enemy speed too) |
+| wider_trail | Loop detection radius +50% (CLOSE_DIST: 40→60) |
+| trail_echo | Trail lasts 50% longer (MAX_POINTS: 400→600) |
+| encircle_bonus | +50% score from encirclement |
+
+## Pickups
+Scraps spawn every 6s during combat. Types determined by random roll:
+- **scrap** (80%): 10 pts, 35% chance to grant +1 combo
+- **trail_boost** (8%): +100 trail MAX_POINTS for 3s
+- **speed_pickup** (8%): ×1.2 max speed for 2s
+- **bomb** (4%, wave 5+ only): Explosion kills nearby enemies, 50 pts each
+- **Speed boost zones**: Spawn every 12s, grant ×1.3 speed for 1.5s
+
+## Prop System
+- Chunk-based procedural scatter: 500×500px chunks, seeded RNG (`seed = cx*7919 + cy*104729`)
+- Density: 0.00001 per sq px (~2.5 props per chunk)
+- Min distance from center: 100px clear zone
+- 4 types: solid (tree r=50, rock r=40), slow (mud r=62), slip (puddle r=55), decoration (bush r=25)
+- Chunks load/unload dynamically as camera moves
+- Props use `Assets.drawOrFallback()` with procedural fallback if PNG missing
+
+## Asset & Sprite Conventions
+- Assets base path: `assets/` (relative to arena-drifter/)
+- Car PNGs point UP; code rotates +90° (`Math.PI/2`) to face RIGHT before drawing
+- Sprites drawn into square bounding box via `drawImage(img, -s/2, -s/2, s, s)`
+- `Assets.load()` creates Image elements; `Assets.preload()` loads all configured paths at init
+- FXCache pre-renders expensive effects (vignette, prop glows) to offscreen canvases
+- Responsive canvas scaling via `S()` helper function (reference resolution 1920×1080)
+
+## Death & Effects
+- Death freeze: 0.10s pause, then slowmo 0.35× for 0.35s
+- Shard particles: 10-14 shards on death
+- Screen flash and vignette effects
+- Near-miss triggers brief slowmo (0.85× for 0.15s)
 
 ---
 
