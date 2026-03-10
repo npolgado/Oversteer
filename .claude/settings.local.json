@@ -10,7 +10,9 @@
       "Bash(mv:*)",
       "Bash(cp:*)",
       "Bash(identify:*)",
-      "Skill(patch-noter)"
+      "Skill(patch-noter)",
+      "Skill(game-balancer)",
+      "Bash(node check_syntax.js)"
     ]
   }
 }

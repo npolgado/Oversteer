@@ -2,7 +2,7 @@
 
 ---
 
-## 2026-03-09 - v0.9.5 - Horde and Upgrade Rerolls (hp_system branch)
+## 2026-03-09 - v0.9.5 - Horde and Upgrade Rerolls
 - **Horde event**: At 75% of each combat phase (wave 2+), a ring of enemies spawns around the player with a "HORDE INCOMING!" warning banner and screen shake
   - Base 4 enemies, +0.5 per wave, up to 15 max
   - 1.5s delay between warning and spawn
@@ -12,6 +12,10 @@
 - Enemy damage now scales after wave 5 (+12% per wave, up to 3x max)
 - Trail changes color to purple at combo level 5+
 - Wave combat duration now increases each wave (+10s per wave, starting at 30s, capped at 120s)
+- FPS display for diagnostics
+- FPS drop improvements on wave start
+- Balanced wave 6+ (late game)
+- Increased hp regen stacking count
 
 ## 2026-03-08 - v0.9 - Health System (hp_system branch)
 - Added player HP system (100 HP, configurable per-enemy damage values)

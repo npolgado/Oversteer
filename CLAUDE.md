@@ -3,7 +3,7 @@
 ## Project Overview
 Oversteer is a top-down arena drifting game. The entire game lives in a single self-contained HTML/Canvas/JS file.
 
-- **Source of truth**: `arena-drifter/index.html` (~3500 lines)
+- **Source of truth**: `arena-drifter/index.html` (~3800 lines)
 - **Run**: `npx serve arena-drifter`
 - **Game**: Arena-based (fixed 3000x3000 world), wave-based enemy spawning, drift combos, near-miss scoring, trail encirclement kills, delta-time physics (px/sec)
 
@@ -54,6 +54,15 @@ Enemies spawn 550px from player, lifespan 10-18s, despawn if offscreen >5s or >1
   - Spawn interval: 4.0s → 1.5s
 - **Burst spawning** (disabled wave 1): Every 8s, spawns 2 enemies with 0.3s delay
 - **Speed bonus**: At 2000+ score, enemies get up to +120 px/s bonus
+- **Horde event**: Triggers once per wave (wave 2+) at a random point between 60-85% of combat duration (`CFG.HORDE_TRIGGER_MIN`/`MAX`). Spawns 4 + 0.5×wave enemies (max 15) at 950px from player with 1.5s warning.
+
+## Health System
+- **Player HP**: 100 base, displayed as HP bar in HUD
+- **Damage by type**: Chaser 15, Interceptor 18, Drifter 15, Elite 25
+- **Damage scaling**: After wave 5, damage scales by +12% per wave (`DMG_SCALE_PER_WAVE`), capped at 3.0x
+- **Hit invulnerability**: 0.8s after taking damage, knockback 120 px/s
+- **HP regen**: Activates after `CFG.HP_REGEN_DELAY` (2.0s) without taking a hit. Rate set by hp_regen upgrade (3 HP/s per stack)
+- **Death**: Player dies when HP reaches 0, triggers death freeze + slowmo sequence
 
 ## Scoring
 - Base: 4 pts/sec (modified by score_freak upgrade)
@@ -74,10 +83,11 @@ Core mechanic: the player leaves a visible trail. When the trail forms a closed 
 - Both values reset on death/new run via `Trail.reset()`
 - Loop kills trigger shockwave particles + score award
 
-## Upgrades (14 total, no rarity system)
+## Upgrades (17 total, no rarity system)
 Offered during wave break phase (pick 1 of 3). No selection timer — player takes as long as needed.
 - **Rerolls**: Press R to reroll upgrade cards (up to 3 per break, resets each break)
 - **Post-selection**: After choosing, cards disappear and a centered 3-second countdown plays before next wave
+- **Stackable upgrades**: shield, hp_regen (max 3), max_hp, damage_resist can be picked multiple times
 
 | Upgrade | Effect |
 |---------|--------|
@@ -95,6 +105,9 @@ Offered during wave break phase (pick 1 of 3). No selection timer — player tak
 | wider_trail | Loop detection radius +50% (CLOSE_DIST: 40→60) |
 | trail_echo | Trail lasts 50% longer (MAX_POINTS: 400→600) |
 | encircle_bonus | +50% score from encirclement |
+| hp_regen | +3 HP/sec regen after 2s without damage (stackable, max 3) |
+| max_hp | +30 max HP, heals +30 immediately (stackable) |
+| damage_resist | Take 25% less damage, diminishing per stack: 1-(1-x)×0.75 |
 
 ## Pickups
 Scraps spawn every 6s during combat. Types determined by random roll:
@@ -113,8 +126,9 @@ Scraps spawn every 6s during combat. Types determined by random roll:
 - Props use `Assets.drawOrFallback()` with procedural fallback if PNG missing
 
 ## Asset & Sprite Conventions
-- Assets base path: `assets/` (relative to arena-drifter/)
+- Assets must live under `arena-drifter/assets/` (not a sibling directory) because `npx serve arena-drifter` sets the serve root
 - Car PNGs point UP; code rotates +90° (`Math.PI/2`) to face RIGHT before drawing
+- Because of the 90° rotation, W/H must be swapped in `drawImage()` calls so on-screen dimensions match the fallback rectangles
 - Sprites drawn into square bounding box via `drawImage(img, -s/2, -s/2, s, s)`
 - `Assets.load()` creates Image elements; `Assets.preload()` loads all configured paths at init
 - FXCache pre-renders expensive effects (vignette, prop glows) to offscreen canvases
