@@ -17,12 +17,35 @@ arena-drifter/
 references/reference_mock.png   Visual inspiration
 .gitignore                      Repo config
 CLAUDE.md                       This file
+HISTORY.md                      Removed code history
+patch_notes.md                  Version history
 ```
 
 ## Game States
 `MENU` → `PLAYING` (combat/break phases) → `UPGRADE` → `PLAYING` → `DYING` → `GAME_OVER` → `MENU`
-- `PAUSED`: Toggle with P/Escape during gameplay
+- `PAUSED`: Toggle with P/Escape during gameplay. Displays wave number, difficulty stats, and enemy speed bonus. Resume with P or return to menu.
 - `SANDBOX`: Free drive mode (no enemies), toggled with S on menu
+
+## Controls
+
+### Keyboard
+| Key | Action |
+|-----|--------|
+| W / Up | Accelerate |
+| S / Down | Reverse / Handbrake (at speed > 180 px/s) |
+| A/D or Left/Right | Steer |
+| Space | Handbrake (alias for S/Down at speed) |
+| P / Escape | Pause |
+| R | Reroll upgrades (during upgrade selection) |
+| 1/2/3 or Numpad 1/2/3 | Select upgrade card |
+| S (menu only) | Sandbox mode |
+| Enter | Confirm / Start |
+
+### Touch (mobile browsers)
+- **Left side**: Virtual analog stick (appears on first touch)
+- **Right side**: Drift button
+- **Two-finger tap**: Pause
+- Touch UI only renders after the first touch event. Menu shows a hint text for touch controls.
 
 ## Player Physics
 - Free 2D movement with angle-based heading (0=right)
@@ -31,7 +54,6 @@ CLAUDE.md                       This file
 - **Visual angle**: Sprite follows `atan2(vy, vx)` so the car visually slides during drift
 - **Wall riding**: Drifting within 30px of arena wall grants +10% speed bonus
 - **Drift chaining**: Re-entering drift within 0.5s grants score multipliers (1.5x first chain, 2.0x second)
-- Controls: W/Up=accel, S/Down=reverse, A/D or Left/Right=turn, Down=handbrake/drift
 
 ## Enemy Types
 Enemies share the same physics engine as the player. Unlocked by score, not wave number.
@@ -66,14 +88,22 @@ Enemies spawn 550px from player, lifespan 10-18s, despawn if offscreen >5s or >1
 
 ## Scoring
 - Base: 4 pts/sec (modified by score_freak upgrade)
-- Near-miss enemy: 25 pts (while drifting, within ~16px, 1.2s cooldown per target)
-- Near-miss hazard: 15 pts (within ~20px)
+- Near-miss enemy: 25 pts (while drifting, within `CFG.NEAR_MISS_ENEMY` = 8px additive to collision radius, 1.2s cooldown per target)
+- Near-miss hazard: 15 pts (within `CFG.NEAR_MISS_HAZARD` = 10px additive to collision radius)
 - Near-miss streak: 3+ consecutive within 2s grants 50 × streak bonus
 - Encirclement kills: base + bonus with combo multiplier
 - Bomb kills: 50 pts per enemy
 - Combo system: Combo level 1-8, decays over time, multiplies encirclement score
 - Drift chain multipliers: 1.5x / 2.0x for chained drifts
-- High score persisted in localStorage
+
+### Milestones
+- Score milestones trigger every 250 points with an animated banner and screen flash
+- Combo level milestones at levels 3, 5, and 8 trigger additional banners
+- Banners display for ~0.57s with fade in/out
+
+### High Score
+- Stored in `localStorage` as `oversteer_highscore_v1`
+- Displayed on the menu screen
 
 ## Trail & Encirclement
 Core mechanic: the player leaves a visible trail. When the trail forms a closed loop, enemies inside are killed.
@@ -110,11 +140,19 @@ Offered during wave break phase (pick 1 of 3). No selection timer — player tak
 | damage_resist | Take 25% less damage, diminishing per stack: 1-(1-x)×0.75 |
 
 ## Pickups
-Scraps spawn every 6s during combat. Types determined by random roll:
-- **scrap** (80%): 10 pts, 35% chance to grant +1 combo
-- **trail_boost** (8%): +100 trail MAX_POINTS for 3s
-- **speed_pickup** (8%): ×1.2 max speed for 2s
-- **bomb** (4%, wave 5+ only): Explosion kills nearby enemies, 50 pts each
+Scraps spawn every 6s during combat. Types determined by cascading random roll:
+
+| Type | Waves 1-4 | Wave 5+ |
+|------|-----------|---------|
+| bomb | — | 4% |
+| trail_boost | 12% | 8% |
+| speed_pickup | 8% | 8% |
+| scrap | 80% | 80% |
+
+- **scrap**: 10 pts, 35% chance to grant +1 combo
+- **trail_boost**: +100 trail MAX_POINTS for 3s
+- **speed_pickup**: ×1.2 max speed for 2s
+- **bomb** (wave 5+ only): Explosion kills nearby enemies, 50 pts each
 - **Speed boost zones**: Spawn every 12s, grant ×1.3 speed for 1.5s
 
 ## Prop System
@@ -134,141 +172,22 @@ Scraps spawn every 6s during combat. Types determined by random roll:
 - FXCache pre-renders expensive effects (vignette, prop glows) to offscreen canvases
 - Responsive canvas scaling via `S()` helper function (reference resolution 1920×1080)
 
-## Death & Effects
-- Death freeze: 0.10s pause, then slowmo 0.35× for 0.35s
-- Shard particles: 10-14 shards on death
-- Screen flash and vignette effects
-- Near-miss triggers brief slowmo (0.85× for 0.15s)
+## Visual Effects
+- **ScreenFX**: Manages slowmo, dynamic zoom, screen shake, flash, and freeze effects
+  - Near-miss: 0.85× slowmo for 0.15s
+  - Damage taken: 0.9× slowmo for 0.1s
+  - Combo: 0.9× slowmo
+  - Dynamic zoom: ±4% based on speed, +1-4% boost on drift chains
+- **FXCache**: Pre-renders vignette overlay and per-type prop glows to offscreen canvases
+- **Particles**: Shard (death/explosions), smoke (enemy despawn), ring (milestones/encirclement)
+- **Death sequence**: 0.10s freeze → 0.35× slowmo for 0.35s, 10-14 shard particles, screen flash + vignette
+
+## Tutorial
+- Activates on wave 1 when enemies exist and the player hasn't encircled yet
+- Displays "Drive a loop to encircle enemies and destroy them" for 6s
+- Dismissed on first successful encirclement or timeout
+- Fades in/out over 0.5s
 
 ---
 
-## Removed Code
-
-The following code was removed from the repository in March 2026 as it represents older, superseded versions of the game. Documented here for historical reference.
-
-### Python Roguelike Version (`src/`, `main.py`, `requirements.txt`, `assets/`)
-
-A free-driving survival roguelike built with Python 3.11 + Pygame 2.6.1. The player drove freely in an infinite 2D world, avoiding enemies and collecting fuel to survive as long as possible.
-
-**State machine**: MENU -> MODIFIER_SELECT -> PLAYING <-> UPGRADE_SELECT -> GAME_OVER -> MENU
-
-#### Player Physics (`src/player.py`, `src/constants.py`)
-- Free 2D movement with angle-based heading (0=right, 270=up)
-- **Drift system**: Velocity lags behind heading via grip parameter, creating natural slide/drift
-- **Effective grip**: `max(0.45, grip / (1 + |speed| * 0.06))` — grip decreases at high speed
-- **Handbrake (SPACE)**: Grip drops to 0.18, turn rate x1.35, speed decays x0.88/frame for power-sliding
-- **W + SPACE = power slide**: Speed maintained while grip is low, enabling sustained drifts
-- **Nitro (N key)**: +3 speed cap for 90 frames, consumed from limited charges
-- **Visual angle**: Follows `atan2(vy, vx)` (not heading), so the car sprite visually "slides"
-- Controls: W/Up=accel, S/Down=reverse, A/D=turn, SPACE=handbrake, N=nitro
-
-#### Enemy AI (`src/traffic.py`)
-- Waypoint-following navigation with intelligent pursuit
-- **Chase mode** (within 900px): 72% chance to lead-shot the player's predicted position
-- Lead-shot: Predicts position ~0.4*(dist/speed) frames ahead with +-80px noise
-- **Outside chase range**: Random waypoint wander
-- Grip = 0.88 (higher than player's default 0.82)
-- Spawns at 500px from player, despawns at 1300px
-- Difficulty ramp: +1 enemy every 20s, speed grows 0.025/s, caps at 7.0
-
-#### Fuel System (`src/pickups.py`, `src/game.py`)
-- Constant drain: 0.038/frame (always draining)
-- Fuel canisters spawn every 10s at 250-550px from player
-- **Magnet upgrade**: Fuel pulled toward player at 4.0*(1 - dist/160) speed
-- 2 canisters pre-spawned at run start
-- Game over when fuel hits 0
-
-#### Upgrade System (`src/upgrades.py`) — 11 upgrades, 3 rarities
-Offered every 40 seconds (freezes gameplay for selection, pick 1 of 3):
-
-| Rarity | Upgrade | Effect |
-|--------|---------|--------|
-| Common | wide_tires | Grip +0.07 (max 0.96) |
-| Common | fuel_tank | Capacity x1.30, instant +20 fuel |
-| Common | steady_hands | Turn rate +0.45 (max 6.0 deg/frame) |
-| Common | lead_foot | Max speed +1.5 (max 14.0) |
-| Uncommon | nitro | +1 nitro charge |
-| Uncommon | shield | +1 hit absorption |
-| Uncommon | magnet | Auto-pulls fuel (160px radius) |
-| Uncommon | overdrive | Max speed +1.0, grip +0.04 |
-| Rare | ghost | +2 shields |
-| Rare | overclock | Enemy speed growth x0.60 |
-| Rare | double_fuel | Fuel pickup value x2.0 |
-
-#### Modifier System (`src/modifiers.py`) — 8 run modifiers
-Chosen at run start, affects entire run:
-
-| Modifier | Effect |
-|----------|--------|
-| rush_hour | Enemy count x2 |
-| black_ice | Grip x0.78 |
-| gridlock | Enemy count x1.5 |
-| low_fuel | Start fuel x0.5 |
-| fog | Top 55% of screen fades to black |
-| lucky_start | Free random upgrade at start |
-| adrenaline | Max speed x1.25 |
-| no_fuel | Fuel drain disabled |
-
-#### Prop System (`src/props.py`, `src/maps.py`)
-- **Chunk-based procedural scatter**: 500x500px chunks, seeded RNG (`seed = cx*7919 + cy*104729`)
-- Density: ~75 props per chunk (0.0003 * area)
-- 4 prop types:
-  - **solid**: Blocks movement, bounces player, zeroes velocity in collision normal, speed x0.3 (trees, rocks)
-  - **slow**: Speed debuff zone with duration/strength (mud)
-  - **slip**: Grip debuff zone with duration/strength (puddles)
-  - **decoration**: Visual only (bushes)
-- Chunks load/unload dynamically as camera moves
-- 200px clear zone around world origin
-
-#### World & Rendering (`src/world.py`, `src/ui.py`, `src/assets.py`)
-- **Infinite tiled world**: 100x100px checkerboard (grass_a/grass_b tiles or colored rects)
-- Camera follows player; player always drawn at screen center (450, 350)
-- **Asset system**: PNG loader with procedural fallback for every visual
-- **Rotation cache**: `(sprite_key, int_angle_deg) -> Surface`, max 360 entries per sprite
-- **UI**: Card-based upgrade/modifier selection, HUD (fuel bar, speed bar, time MM:SS, nitro/shield indicators, upgrade list), fog overlay, game over screen with stats
-- **Font caching**: SysFont cached by (size, bold), never recreated per frame
-- Score: Primary = time alive (MM:SS), Secondary = distance (px driven)
-
-#### Map System (`src/maps.py`)
-- JSON-driven: `assets/maps/grasslands.json`
-- PropDef/MapDef dataclasses defining tiles, prop pools, enemy/player sprites
-- Default map hardcoded as fallback
-
-#### Unused Road Renderer (`src/road.py`)
-- ~130-line pseudo-3D scrolling road class, left over from the earlier lane-based prototype
-- Infinite horizontal road strips, curve generation, lane markers, rumble strips
-- Was not imported or used in the free-driving version but remained in the codebase
-
-### Lane-Based Web Version (`roguelike-racer/`)
-
-An earlier prototype using pseudo-3D scrolling road (Outrun-style). Multi-file JS application:
-```
-roguelike-racer/
-├── index.html      Entry point
-└── js/
-    ├── main.js       Game loop and initialization
-    ├── config.js     Constants and tuning values
-    ├── road.js       Pseudo-3D road rendering
-    ├── entities.js   Player, traffic, and pickup entities
-    ├── roguelike.js  Upgrade/roguelike systems
-    └── utils.js      Shared utility functions
-```
-- 3-lane road with lane switching (mouse or keyboard)
-- Fuel burn scales with speed
-- Weather effects: rain, snow, night (color overrides)
-- Difficulty scaling: speed bonus + traffic density per km
-- Score: per-metre + near-miss bonuses
-- Roguelike upgrades every 3000m
-
-### Removed Assets (`assets/`)
-
-The Python version used a PNG-first asset system with procedural fallback: `AssetManager` would attempt to load PNGs from disk, and if files were missing, it generated shapes programmatically at runtime (colored rectangles for cars, circles for props/pickups, colored rects for tiles). This meant the game was playable with zero asset files.
-
-- `assets/cars/`: player.png, enemy_orange.png, enemy_red.png (34x56px, pointing UP)
-- `assets/tiles/`: 100x100px grass tile PNGs
-- `assets/pickups/`: Directory for fuel canister sprites (empty — procedural fallback was used at runtime)
-- `assets/props/`: Tree, rock, mud, puddle, bush sprites
-- `assets/maps/grasslands.json`: Map definition file
-
-### Other Removed Files
-- `.lprof/`: Python profiling data
+> Historical versions (Python roguelike, lane-based web prototype) documented in [HISTORY.md](HISTORY.md).

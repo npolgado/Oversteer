@@ -8,7 +8,7 @@ A top-down arena drifting game built entirely in a single HTML/Canvas/JS file. D
 - **Drift**: Slide your car to build combos and score multipliers
 - **Encircle**: Your car leaves a trail — form a closed loop around enemies to kill them
 - **Near-miss**: Graze enemies and hazards while drifting for bonus points
-- **Upgrades**: Choose from 14 upgrades between waves to customize your build
+- **Upgrades**: Choose from 17 upgrades between waves to customize your build
 - **Enemies**: 4 types with distinct behaviors — chasers, interceptors, drifters, and armored elites
 
 ## Controls
@@ -19,7 +19,11 @@ A top-down arena drifting game built entirely in a single HTML/Canvas/JS file. D
 | S / Down | Reverse / Handbrake (at speed) |
 | A/D or Left/Right | Steer |
 | P / Escape | Pause |
+| R | Reroll upgrades (during selection) |
+| 1/2/3 | Select upgrade card |
 | S (menu only) | Sandbox mode |
+
+**Touch (mobile, TO DO TEST)**: Left-side virtual stick, right-side drift button, two-finger pause.
 
 ## Setup
 
@@ -39,11 +43,13 @@ No build step, no dependencies, no bundler — just a static file server serving
 
 ```
 arena-drifter/
-  index.html          The entire game (~3500 lines)
+  index.html          The entire game (~3800 lines)
   assets/
     cars/             Car sprites (player + enemies)
     props/            Environment sprites (trees, rocks, mud, etc.)
 ```
+
+See [patch_notes.md](patch_notes.md) for version history.
 
 ## License
 
