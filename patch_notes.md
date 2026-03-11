@@ -2,6 +2,14 @@
 
 ---
 
+## 2026-03-11 - v0.9.6 - Various Bug Fixes
+- **Pickups**: Fixed a bug where multiple pickups cannot be attained at the same time
+- **Mobile**: Fixes bug where players could not start game on mobile, as well as other mobile menu issues
+- **Speed Demon**: Fixed an issue where enemy speed penalty was not applied
+- **Trails**: Fixed issue with trail upgrades not persisting
+- **Gameplay**: Various fps and performace improvements
+- dev: added unit testing (currently 14/14 passed)
+
 ## 2026-03-09 - v0.9.5 - Horde and Upgrade Rerolls
 - **Horde event**: At 75% of each combat phase (wave 2+), a ring of enemies spawns around the player with a "HORDE INCOMING!" warning banner and screen shake
   - Base 4 enemies, +0.5 per wave, up to 15 max

@@ -18,6 +18,18 @@ test('wave 5 reaches minimum spawn values', () => {
   assert.equal(timing.combatDuration, 70);
 });
 
+test('mid-wave ramp values fall between initial and min', () => {
+  const timing = computeWaveTiming(3);
+  assert.ok(timing.firstSpawn < 2.5 && timing.firstSpawn > 0.6);
+  assert.ok(timing.spawnInterval < 4.0 && timing.spawnInterval > 1.5);
+  assert.equal(timing.noBursts, false);
+});
+
+test('combat duration caps at max for high waves', () => {
+  const timing = computeWaveTiming(20);
+  assert.equal(timing.combatDuration, 120);
+});
+
 test('horde count scales with wave index', () => {
   assert.equal(computeHordeCount(1), 5);
   assert.equal(computeHordeCount(5), 7);

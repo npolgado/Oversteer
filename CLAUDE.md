@@ -14,6 +14,7 @@ arena-drifter/
   assets/                       PNG sprites (cars, props)
     cars/                       Car sprites (point UP in PNG, rotated +90° in code to face RIGHT)
     props/                      Prop sprites (trees, rocks, mud, etc.)
+test/                           Node tests (logic mirrored from index.html)
 references/reference_mock.png   Visual inspiration
 .gitignore                      Repo config
 CLAUDE.md                       This file

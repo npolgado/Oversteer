@@ -32,3 +32,12 @@ test('tap outside cards and reroll does nothing', () => {
   assert.equal(result.selectedIndex, -1);
   assert.equal(result.reroll, false);
 });
+
+test('card selection wins if tap overlaps card and reroll bounds', () => {
+  const cards = [{ x: 300, y: 620, w: 200, h: 40 }];
+  const reroll = { x: 300, y: 620, w: 200, h: 40 };
+  const tap = { x: 350, y: 635 };
+  const result = hitTestUpgradeTap(tap, cards, reroll);
+  assert.equal(result.selectedIndex, 0);
+  assert.equal(result.reroll, false);
+});

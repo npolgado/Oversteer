@@ -28,3 +28,14 @@ test('magnet pulls scraps into collection range', () => {
   assert.deepEqual(events, ['scrap']);
   assert.equal(scraps.length, 0);
 });
+
+test('no pickups collected when out of range', () => {
+  const scraps = [{ x: 200, y: 0, type: 'scrap' }];
+  const boostZones = [{ x: 200, y: 0 }];
+  const player = { x: 0, y: 0, radius: 10, magnetRange: 0 };
+
+  const events = collectPickupEvents(scraps, boostZones, player, 0.016);
+  assert.deepEqual(events, []);
+  assert.equal(scraps.length, 1);
+  assert.equal(boostZones.length, 1);
+});
