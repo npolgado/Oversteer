@@ -18,12 +18,13 @@ A top-down arena drifting game built entirely in a single HTML/Canvas/JS file. D
 | W / Up | Accelerate |
 | S / Down | Reverse / Handbrake (at speed) |
 | A/D or Left/Right | Steer |
+| Space (hold) | Drift (speed >= 180) |
 | P / Escape | Pause |
 | R | Reroll upgrades (during selection) |
 | 1/2/3 | Select upgrade card |
 | S (menu only) | Sandbox mode |
 
-**Touch (mobile, TO DO TEST)**: Left-side virtual stick, right-side drift button, two-finger pause.
+**Touch (mobile, TO DO TEST)**: Tap to start, left-side virtual stick, right-side drift button, two-finger pause.
 
 ## Setup
 

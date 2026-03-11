@@ -165,7 +165,7 @@ const CFG = {
     { image: 'props/tree_1.png', radius: 50, weight: 3, type: 'solid' },
     { image: 'props/rock_1.png', radius: 40, weight: 2, type: 'solid' },
     { image: 'props/mud_1.png',  radius: 62, weight: 2, type: 'slow', duration: 2.0, strength: 0.5 },
-    { image: 'props/puddle_1.png', radius: 55, weight: 2, type: 'slip', duration: 1.5, strength: 0.6 },
+    { image: 'props/mud_1.png', radius: 55, weight: 2, type: 'slip', duration: 1.5, strength: 0.6 },
     { image: 'props/bush_1.png', radius: 25, weight: 5, type: 'decoration' },
   ],
   // Sprite paths (for future PNG support)
@@ -186,6 +186,46 @@ function S(px) { return Math.round(px * CFG.S); }
 const FXCache = {
   vignetteCanvas: null,
   propGlow: {},  // keyed by "radius_type"
+  pickupGlow: {}, // keyed by pickup type
+  boostGlow: null,
+
+  _hexToRgb(hex) {
+    const raw = hex.replace('#', '').trim();
+    if (raw.length === 3) {
+      return {
+        r: parseInt(raw[0] + raw[0], 16),
+        g: parseInt(raw[1] + raw[1], 16),
+        b: parseInt(raw[2] + raw[2], 16),
+      };
+    }
+    return {
+      r: parseInt(raw.slice(0, 2), 16),
+      g: parseInt(raw.slice(2, 4), 16),
+      b: parseInt(raw.slice(4, 6), 16),
+    };
+  },
+
+  _rgba(hex, a) {
+    const { r, g, b } = this._hexToRgb(hex);
+    return `rgba(${r},${g},${b},${a})`;
+  },
+
+  _makeGlow(radius, color, a0, a1, a2) {
+    const size = Math.ceil(radius * 2) + 2;
+    const c = document.createElement('canvas');
+    c.width = size; c.height = size;
+    const cx = c.getContext('2d');
+    const center = size / 2;
+    const g = cx.createRadialGradient(center, center, radius * 0.2, center, center, radius);
+    g.addColorStop(0, this._rgba(color, a0));
+    g.addColorStop(0.5, this._rgba(color, a1));
+    g.addColorStop(1, this._rgba(color, a2));
+    cx.fillStyle = g;
+    cx.beginPath();
+    cx.arc(center, center, radius, 0, Math.PI * 2);
+    cx.fill();
+    return { canvas: c, size };
+  },
 
   initVignette() {
     const c = document.createElement('canvas');
@@ -228,9 +268,29 @@ const FXCache = {
     }
   },
 
+  initPickupGlow() {
+    const baseR = CFG.SCRAP_RADIUS;
+    const defs = {
+      scrap: { color: CFG.C_PICKUP, radius: baseR * 2.4, a0: 0.65, a1: 0.3, a2: 0 },
+      speed_pickup: { color: CFG.C_ACCENT, radius: baseR * 2.6, a0: 0.6, a1: 0.28, a2: 0 },
+      trail_boost: { color: CFG.C_RARE, radius: baseR * 2.6, a0: 0.6, a1: 0.28, a2: 0 },
+      bomb: { color: '#FF4444', radius: baseR * 3.1, a0: 0.75, a1: 0.35, a2: 0 },
+    };
+    for (const [key, def] of Object.entries(defs)) {
+      this.pickupGlow[key] = this._makeGlow(def.radius, def.color, def.a0, def.a1, def.a2);
+    }
+  },
+
+  initBoostGlow() {
+    const radius = CFG.BOOST_ZONE_RADIUS * 2.1;
+    this.boostGlow = this._makeGlow(radius, CFG.C_ACCENT, 0.55, 0.25, 0);
+  },
+
   init() {
     this.initVignette();
     this.initPropGlow();
+    this.initPickupGlow();
+    this.initBoostGlow();
   },
 };
 
@@ -391,7 +451,7 @@ const Input = {
   drift: false, pause: false, enter: false,
   _pausePressed: false, _enterPressed: false,
   // Touch state
-  touch: { active: false, stickId: null, stickOrigin: null, stickPos: null, driftId: null, pauseTap: false },
+  touch: { active: false, stickId: null, stickOrigin: null, stickPos: null, driftId: null, pauseTap: false, tap: null, tapAge: 0 },
 
   init() {
     document.addEventListener('keydown', e => {
@@ -449,6 +509,8 @@ const Input = {
   _touchEnd(e) {
     const t = this.touch;
     for (const touch of e.changedTouches) {
+      t.tap = this._getTouchPos(touch);
+      t.tapAge = 0;
       if (touch.identifier === t.stickId) {
         t.stickId = null; t.stickOrigin = null; t.stickPos = null; t.active = false;
       }
@@ -456,6 +518,15 @@ const Input = {
         t.driftId = null;
       }
     }
+  },
+
+  consumeTap() {
+    const t = this.touch;
+    if (!t.tap) return null;
+    const tap = t.tap;
+    t.tap = null;
+    t.tapAge = 0;
+    return tap;
   },
 
   poll() {
@@ -494,6 +565,14 @@ const Input = {
 
     // Touch pause
     if (t.pauseTap) { this.pause = true; t.pauseTap = false; }
+
+    if (t.tap) {
+      t.tapAge = (t.tapAge || 0) + 1;
+      if (t.tapAge > 1) {
+        t.tap = null;
+        t.tapAge = 0;
+      }
+    }
   },
 };
 
@@ -1170,13 +1249,23 @@ const Props = {
   checkPlayerCollision(player) {
     const hits = [];
     const pr = player.radius;
-    for (const prop of this.allProps) {
-      if (!prop.alive || prop.type === 'decoration') continue;
-      const dx = player.x - prop.x, dy = player.y - prop.y;
-      const dist = dx * dx + dy * dy;
-      const minDist = pr + prop.radius;
-      if (dist < minDist * minDist) {
-        hits.push(prop);
+    const cs = CFG.PROP_CHUNK_SIZE;
+    const cx = Math.floor(player.x / cs);
+    const cy = Math.floor(player.y / cs);
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oy = -1; oy <= 1; oy++) {
+        const key = (cx + ox) + ',' + (cy + oy);
+        const chunk = this.chunks[key];
+        if (!chunk) continue;
+        for (const prop of chunk) {
+          if (!prop.alive || prop.type === 'decoration') continue;
+          const dx = player.x - prop.x, dy = player.y - prop.y;
+          const dist = dx * dx + dy * dy;
+          const minDist = pr + prop.radius;
+          if (dist < minDist * minDist) {
+            hits.push(prop);
+          }
+        }
       }
     }
     return hits;
@@ -1629,7 +1718,7 @@ const Trail = {
   CLOSE_DIST: 40,
   SKIP_RECENT: 20,
 
-  reset() {
+  clear() {
     this.points = [];
     this.head = 0;
     this.count = 0;
@@ -1637,6 +1726,10 @@ const Trail = {
     this.checkTimer = 0;
     this._flashPoly = null;
     this._flashPolyTimer = 0;
+  },
+
+  reset() {
+    this.clear();
     this.MAX_POINTS = 400;
     this.CLOSE_DIST = 40;
   },
@@ -1770,9 +1863,7 @@ const Trail = {
           ScreenFX.shake(5, 0.2);
 
           // Clear trail after successful encirclement
-          this.points = [];
-          this.head = 0;
-          this.count = 0;
+          this.clear();
           return;
         }
         break; // only check first matching loop
@@ -1807,43 +1898,47 @@ const Trail = {
       }
     }
 
-    // Trail with color gradient: dim oldest -> bright cyan newest
     ctx.save();
     ctx.lineCap = 'round';
     const trailW = nearLoop ? 5 : 4;
+    const tr = this._trailR || 53, tg = this._trailG || 242, tb = this._trailB || 208;
+    const start = this.getPoint(0);
+    const end = this.getPoint(this.count - 1);
+    const loopMult = nearLoop ? 1.4 : 1;
 
     // Glow underlay: thicker, semi-transparent pass (no shadowBlur)
     ctx.lineWidth = trailW + (nearLoop ? 10 : 7);
-    for (let i = 1; i < this.count; i++) {
-      const frac = i / this.count;
-      const glowAlpha = (0.02 + frac * 0.08) * (nearLoop ? 1.4 : 1);
-      ctx.strokeStyle = `rgba(${this._trailR||53},${this._trailG||242},${this._trailB||208},${glowAlpha})`;
-      ctx.beginPath();
-      const p0 = this.getPoint(i - 1);
-      const p1 = this.getPoint(i);
-      ctx.moveTo(p0.x, p0.y);
-      ctx.lineTo(p1.x, p1.y);
-      ctx.stroke();
+    const glowGrad = ctx.createLinearGradient(start.x, start.y, end.x, end.y);
+    const glowStart = Math.min(1, 0.02 * loopMult);
+    const glowEnd = Math.min(1, 0.10 * loopMult);
+    glowGrad.addColorStop(0, `rgba(${tr},${tg},${tb},${glowStart})`);
+    glowGrad.addColorStop(1, `rgba(${tr},${tg},${tb},${glowEnd})`);
+    ctx.strokeStyle = glowGrad;
+    ctx.beginPath();
+    for (let i = 0; i < this.count; i++) {
+      const p = this.getPoint(i);
+      if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
     }
+    ctx.stroke();
 
     // Sharp trail on top
     ctx.lineWidth = trailW;
-    for (let i = 1; i < this.count; i++) {
-      const frac = i / this.count;
-      const alphaBoost = nearLoop ? 0.15 : 0;
-      const alpha = 0.08 + frac * 0.30 + alphaBoost;
-      const tr = this._trailR || 53, tg = this._trailG || 242, tb = this._trailB || 208;
-      const r = Math.round(tr * 0.4 + frac * tr * 0.6);
-      const g = Math.round(tg * 0.4 + frac * tg * 0.6);
-      const b = Math.round(tb * 0.55 + frac * tb * 0.45);
-      ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
-      ctx.beginPath();
-      const p0 = this.getPoint(i - 1);
-      const p1 = this.getPoint(i);
-      ctx.moveTo(p0.x, p0.y);
-      ctx.lineTo(p1.x, p1.y);
-      ctx.stroke();
+    const alphaBoost = nearLoop ? 0.15 : 0;
+    const mainStartAlpha = Math.min(1, 0.08 + alphaBoost);
+    const mainEndAlpha = Math.min(1, 0.38 + alphaBoost);
+    const mainStartR = Math.round(tr * 0.4);
+    const mainStartG = Math.round(tg * 0.4);
+    const mainStartB = Math.round(tb * 0.55);
+    const mainGrad = ctx.createLinearGradient(start.x, start.y, end.x, end.y);
+    mainGrad.addColorStop(0, `rgba(${mainStartR},${mainStartG},${mainStartB},${mainStartAlpha})`);
+    mainGrad.addColorStop(1, `rgba(${tr},${tg},${tb},${mainEndAlpha})`);
+    ctx.strokeStyle = mainGrad;
+    ctx.beginPath();
+    for (let i = 0; i < this.count; i++) {
+      const p = this.getPoint(i);
+      if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
     }
+    ctx.stroke();
     ctx.restore();
 
     // Flash polygon from encirclement kill
@@ -2062,7 +2157,7 @@ const Waves = {
         this.phase = 'break';
         this.breakTimer = CFG.WAVE_BREAK;
         this.enemies = [];
-        Trail.reset();
+        Trail.clear();
         // Build upgrade offer
         this.upgradeCards = game.buildUpgradeOffer();
         this.upgradeChosen = false;
@@ -2102,6 +2197,8 @@ const Waves = {
       this.scrapTimer = CFG.SCRAP_INTERVAL;
     }
 
+    const events = [];
+
     // Update scraps
     for (let i = this.scraps.length - 1; i >= 0; i--) {
       const s = this.scraps[i];
@@ -2120,7 +2217,8 @@ const Waves = {
       if (U.dist(s.x, s.y, player.x, player.y) < CFG.SCRAP_RADIUS + player.radius + 10) {
         const pType = s.type || 'scrap';
         this.scraps.splice(i, 1);
-        return pType;
+        events.push(pType);
+        continue;
       }
       if (s.life <= 0) this.scraps.splice(i, 1);
     }
@@ -2144,12 +2242,13 @@ const Waves = {
       bz.phase += dt * 3;
       if (U.dist(bz.x, bz.y, player.x, player.y) < CFG.BOOST_ZONE_RADIUS + player.radius) {
         this.boostZones.splice(i, 1);
-        return 'boost';
+        events.push('boost');
+        continue;
       }
       if (bz.life <= 0) this.boostZones.splice(i, 1);
     }
 
-    return null;
+    return events.length ? events : null;
   },
 
   renderArena(ctx, time) {
@@ -2280,16 +2379,19 @@ const Waves = {
         bomb: '#FF4444',
       };
       const color = colors[pType] || CFG.C_PICKUP;
+      const glow = FXCache.pickupGlow[pType] || FXCache.pickupGlow.scrap;
+      if (glow) {
+        ctx.globalAlpha = 0.9;
+        ctx.drawImage(glow.canvas, -glow.size / 2, -glow.size / 2);
+        ctx.globalAlpha = 1;
+      }
       ctx.fillStyle = color;
-      ctx.shadowColor = color;
-      ctx.shadowBlur = pType === 'bomb' ? 14 : 8;
 
       if (pType === 'bomb') {
         // Circle with X
         ctx.beginPath();
         ctx.arc(0, 0, CFG.SCRAP_RADIUS + 2, 0, Math.PI * 2);
         ctx.fill();
-        ctx.shadowBlur = 0;
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
@@ -2321,7 +2423,6 @@ const Waves = {
         ctx.closePath();
         ctx.fill();
       }
-      ctx.shadowBlur = 0;
       ctx.restore();
     }
   },
@@ -2332,14 +2433,15 @@ const Waves = {
       ctx.translate(bz.x, bz.y);
       const pulse = 0.6 + 0.3 * Math.sin(bz.phase);
       ctx.globalAlpha = pulse * Math.min(1, bz.life / 2);
+      const glow = FXCache.boostGlow;
+      if (glow) {
+        ctx.drawImage(glow.canvas, -glow.size / 2, -glow.size / 2);
+      }
       ctx.fillStyle = CFG.C_ACCENT;
-      ctx.shadowColor = CFG.C_ACCENT;
-      ctx.shadowBlur = 15;
       ctx.beginPath();
       ctx.arc(0, 0, CFG.BOOST_ZONE_RADIUS, 0, Math.PI * 2);
       ctx.fill();
       // Inner chevron
-      ctx.shadowBlur = 0;
       ctx.fillStyle = '#fff';
       ctx.globalAlpha *= 0.7;
       ctx.beginPath();
@@ -2537,6 +2639,7 @@ function renderHUD(ctx, game) {
 }
 
 function renderUpgradeBreak(ctx, cards, cardAnimTimer, selectedIndex, rerollsLeft, upgradeChosen, upgradeConfirmTimer, waveIndex) {
+  const bounds = { cardBounds: [], rerollBounds: null };
   // Dim
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
   ctx.fillRect(0, 0, CFG.W, CFG.H);
@@ -2551,13 +2654,13 @@ function renderUpgradeBreak(ctx, cards, cardAnimTimer, selectedIndex, rerollsLef
     const secs = Math.ceil(Math.max(0, upgradeConfirmTimer));
     U.text(ctx, `${secs}`, CFG.W/2, CFG.H/2 + S(40), { align: 'center', color: CFG.C_ACCENT, size: 48, bold: true, shadow: true });
     U.text(ctx, `Wave ${waveIndex + 1} incoming...`, CFG.W/2, CFG.H/2 + S(80), { align: 'center', color: '#888', size: 16, shadow: true });
-    return;
+    return bounds;
   }
 
   // No upgrades available edge case
   if (cards.length === 0) {
     U.text(ctx, 'No upgrades available', CFG.W/2, CFG.H/2, { align: 'center', color: '#888', size: 20, shadow: true });
-    return;
+    return bounds;
   }
 
   U.text(ctx, 'CHOOSE UPGRADE', CFG.W/2, S(60), { align: 'center', color: CFG.C_ACCENT, size: 28, bold: true, shadow: true });
@@ -2573,6 +2676,8 @@ function renderUpgradeBreak(ctx, cards, cardAnimTimer, selectedIndex, rerollsLef
 
     // Slide-up animation (staggered)
     const slideOffset = Math.max(0, S(24) - cardAnimTimer * S(120) + i * S(7));
+    const drawY = y + slideOffset;
+    bounds.cardBounds.push({ x: cx, y: drawY, w: cardW, h: cardH });
 
     ctx.save();
     ctx.translate(0, slideOffset);
@@ -2608,9 +2713,11 @@ function renderUpgradeBreak(ctx, cards, cardAnimTimer, selectedIndex, rerollsLef
     cx += cardW + gap;
   }
 
-  U.text(ctx, 'Press 1 / 2 / 3 to choose', CFG.W/2, CFG.H - S(60), { align: 'center', color: '#666', size: 13 });
+  U.text(ctx, 'Press 1 / 2 / 3 or tap a card', CFG.W/2, CFG.H - S(60), { align: 'center', color: '#666', size: 13 });
   const rerollColor = rerollsLeft > 0 ? '#888' : '#444';
   U.text(ctx, `Press [R] to reroll (${rerollsLeft} left)`, CFG.W/2, CFG.H - S(35), { align: 'center', color: rerollColor, size: 13 });
+  bounds.rerollBounds = { x: CFG.W/2 - S(170), y: CFG.H - S(50), w: S(340), h: S(28) };
+  return bounds;
 }
 
 // ── 13. GAME STATE MACHINE ─────────────────────────────────
@@ -2628,6 +2735,8 @@ const Game = {
   phase: 'combat',
   breakTimer: 0,
   speedBonus: 0,
+  speedBonusFromScore: 0,
+  speedBonusFromUpgrades: 0,
   menuAnim: 0,
   gameOverTimer: 0,
   deathTimer: 0,
@@ -2637,6 +2746,8 @@ const Game = {
   milestoneText: '',
   lastDriftComboTick: 0,
   upgradeSelectedIndex: -1,
+  upgradeCardBounds: [],
+  upgradeRerollBounds: null,
   // Tutorial
   tutorialShown: false,
   tutorialDismissed: false,
@@ -2668,6 +2779,8 @@ const Game = {
     this.phase = 'combat';
     this.breakTimer = 0;
     this.speedBonus = 0;
+    this.speedBonusFromScore = 0;
+    this.speedBonusFromUpgrades = 0;
     this.gameOverTimer = 0;
     this.deathTimer = 0;
     this.deathPhase = 0;
@@ -2675,6 +2788,8 @@ const Game = {
     this.milestoneTimer = 0;
     this.lastDriftComboTick = 0;
     this.upgradeSelectedIndex = -1;
+    this.upgradeCardBounds = [];
+    this.upgradeRerollBounds = null;
     this.rerollsLeft = CFG.REROLL_MAX;
     this.upgradeConfirmTimer = 0;
     this.cardAnimTimer = 0;
@@ -2716,7 +2831,8 @@ const Game = {
     this.player.upgrades.push(upg.id);
     if (upg.id === 'speed_demon') {
       // Enemies get +10% speed bonus
-      this.speedBonus += 40;
+      this.speedBonusFromUpgrades += 40;
+      this.speedBonus = this.speedBonusFromScore + this.speedBonusFromUpgrades;
     }
   },
 
@@ -2725,7 +2841,8 @@ const Game = {
     this.menuAnim += rawDt;
 
     if (this.state === STATE.MENU) {
-      if (Input.enter || Input.keys['Space']) {
+      const tap = Input.consumeTap();
+      if (Input.enter || Input.keys['Space'] || tap) {
         this.sandbox = false;
         localStorage.setItem('oversteer_sandbox', '0');
         this.reset();
@@ -2806,6 +2923,7 @@ const Game = {
     // UPGRADE break
     if (this.state === STATE.UPGRADE) {
       this.cardAnimTimer += rawDt;
+      const tap = Input.consumeTap();
 
       // Card selection
       if (Input.keys['Digit1'] || Input.keys['Numpad1']) {
@@ -2828,6 +2946,24 @@ const Game = {
           this.upgradeSelectedIndex = -1;
         }
         Input.keys['KeyR'] = false;
+      }
+      if (tap && !Waves.upgradeChosen) {
+        const within = (p, r) => r && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+        let picked = -1;
+        for (let i = 0; i < this.upgradeCardBounds.length; i++) {
+          if (within(tap, this.upgradeCardBounds[i])) { picked = i; break; }
+        }
+        if (picked >= 0) {
+          this.selectUpgradeCard(picked);
+        } else if (within(tap, this.upgradeRerollBounds) && this.rerollsLeft > 0) {
+          const newCards = this.buildUpgradeOffer();
+          if (newCards.length > 0) {
+            this.rerollsLeft--;
+            Waves.upgradeCards = newCards;
+            this.cardAnimTimer = 0;
+            this.upgradeSelectedIndex = -1;
+          }
+        }
       }
 
       // Post-selection countdown
@@ -3001,20 +3137,22 @@ const Game = {
     this.phase = Waves.phase;
 
     const scrapResult = Waves.update(dt, this.player, this.score, this);
-    if (scrapResult === 'scrap') {
+    const pickupEvents = scrapResult ? (Array.isArray(scrapResult) ? scrapResult : [scrapResult]) : [];
+    for (const event of pickupEvents) {
+      if (event === 'scrap') {
       Particles.spawn(this.player.x, this.player.y, CFG.C_PICKUP, 8, {
         vxMin: -60, vxMax: 60, vyMin: -60, vyMax: 60,
         lifeMin: 0.2, lifeMax: 0.5, sizeMin: 2, sizeMax: 4, type: 'spark',
       });
       Particles.addFloat(this.player.x, this.player.y - 20, '+SCRAP', CFG.C_PICKUP, 14);
-    } else if (scrapResult === 'speed_pickup') {
+      } else if (event === 'speed_pickup') {
       this.player.speedBoostTimer = CFG.BOOST_ZONE_DURATION;
       Particles.spawn(this.player.x, this.player.y, CFG.C_ACCENT, 10, {
         vxMin: -70, vxMax: 70, vyMin: -70, vyMax: 70,
         lifeMin: 0.3, lifeMax: 0.5, sizeMin: 2, sizeMax: 4, type: 'spark',
       });
       Particles.addFloat(this.player.x, this.player.y - 20, 'SPEED!', CFG.C_ACCENT, 16);
-    } else if (scrapResult === 'trail_boost') {
+      } else if (event === 'trail_boost') {
       // Temporarily increase trail length
       Trail.MAX_POINTS = Math.min(800, Trail.MAX_POINTS + 200);
       Particles.spawn(this.player.x, this.player.y, CFG.C_RARE, 10, {
@@ -3022,7 +3160,7 @@ const Game = {
         lifeMin: 0.3, lifeMax: 0.5, sizeMin: 2, sizeMax: 5, type: 'spark',
       });
       Particles.addFloat(this.player.x, this.player.y - 20, 'TRAIL+', CFG.C_RARE, 16);
-    } else if (scrapResult === 'bomb') {
+      } else if (event === 'bomb') {
       // Kill all on-screen enemies
       let bombKills = 0;
       for (const e of Waves.enemies) {
@@ -3041,7 +3179,7 @@ const Game = {
       ScreenFX.shake(12, 0.4);
       Particles.addFloat(this.player.x, this.player.y - 30, `BOMB! x${bombKills}`, '#FF4444', 22);
       this.score += bombKills * 50 * this.player.scoreMult;
-    } else if (scrapResult === 'boost') {
+      } else if (event === 'boost') {
       this.player.speedBoostTimer = CFG.BOOST_ZONE_DURATION;
       Particles.spawn(this.player.x, this.player.y, CFG.C_ACCENT, 12, {
         vxMin: -80, vxMax: 80, vyMin: -80, vyMax: 80,
@@ -3049,6 +3187,7 @@ const Game = {
       });
       Particles.addFloat(this.player.x, this.player.y - 20, 'SPEED BOOST!', CFG.C_ACCENT, 16);
       ScreenFX.zoom(1.04, 0.15);
+    }
     }
 
     // Check for upgrade break transition
@@ -3142,7 +3281,8 @@ const Game = {
 
     // Progressive intensity
     if (this.score >= 500 && Waves.cadenceMult === 1) Waves.cadenceMult = 0.9;
-    this.speedBonus = Math.min(120, Math.max(0, Math.floor((this.score - 2000) / 500) * 12));
+    this.speedBonusFromScore = Math.min(120, Math.max(0, Math.floor((this.score - 2000) / 500) * 12));
+    this.speedBonus = this.speedBonusFromScore + this.speedBonusFromUpgrades;
     // Enemy glow increase
     const glowBonus = Math.min(20, Math.floor(this.score / 500) * 3);
     for (const e of Waves.enemies) e.glowExtra = glowBonus;
@@ -3477,8 +3617,15 @@ const Game = {
 
     // Upgrade break overlay
     if (this.state === STATE.UPGRADE) {
-      renderUpgradeBreak(ctx, Waves.upgradeCards, this.cardAnimTimer, this.upgradeSelectedIndex,
+      const upgradeBounds = renderUpgradeBreak(ctx, Waves.upgradeCards, this.cardAnimTimer, this.upgradeSelectedIndex,
         this.rerollsLeft, Waves.upgradeChosen, this.upgradeConfirmTimer, Waves.waveIndex);
+      if (upgradeBounds) {
+        this.upgradeCardBounds = upgradeBounds.cardBounds || [];
+        this.upgradeRerollBounds = upgradeBounds.rerollBounds || null;
+      } else {
+        this.upgradeCardBounds = [];
+        this.upgradeRerollBounds = null;
+      }
     }
 
     // Paused overlay
@@ -3686,9 +3833,11 @@ const Game = {
     const controls = [
       ['W/A/S/D or Arrows', 'Drive & Steer'],
       ['SPACE (hold)', 'Drift (speed >= 180)'],
+      ['S / Down', 'Reverse / Handbrake'],
       ['Drive a loop', 'Encircle enemies to kill'],
       ['P / Escape', 'Pause'],
       ['1 / 2 / 3', 'Select upgrade'],
+      ['R', 'Reroll upgrades'],
     ];
     for (let i = 0; i < controls.length; i++) {
       U.text(ctx, controls[i][0], CFG.W/2 - S(10), cy + S(22) + i * S(20), { align: 'right', size: 12, color: CFG.C_ACCENT });
@@ -3696,7 +3845,7 @@ const Game = {
     }
 
     // Mobile
-    U.text(ctx, 'TOUCH: Left stick + Right DRIFT button + 2-finger pause', CFG.W/2, cy + S(130), {
+    U.text(ctx, 'TOUCH: Tap to start, left stick + right DRIFT + 2-finger pause', CFG.W/2, cy + S(152), {
       align: 'center', size: 11, color: '#555',
     });
 
@@ -3709,7 +3858,7 @@ const Game = {
 
     // Start prompt
     if (Math.floor(this.menuAnim * 2) % 2 === 0) {
-      U.text(ctx, '[ ENTER ] TO START', CFG.W/2, CFG.H * 0.92, {
+      U.text(ctx, '[ ENTER / TAP ] TO START', CFG.W/2, CFG.H * 0.92, {
         align: 'center', size: 20, bold: true, color: CFG.C_ACCENT, shadow: true,
       });
     }
