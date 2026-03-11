@@ -40,7 +40,22 @@ Then open the URL shown in your terminal (usually `http://localhost:3000`).
 
 No build step, no dependencies, no bundler — just a static file server serving a single HTML file.
 
+## Developers
+
+To enable the pre-push test hook, run:
+
+```bash
+scripts/install-hooks
+```
+
+On Linux/macOS you may need:
+
+```bash
+chmod +x .githooks/pre-push scripts/install-hooks
+```
+
 ## Project Structure
+
 
 ```
 arena-drifter/

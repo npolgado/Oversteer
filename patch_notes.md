@@ -8,7 +8,7 @@
 - **Speed Demon**: Fixed an issue where enemy speed penalty was not applied
 - **Trails**: Fixed issue with trail upgrades not persisting
 - **Gameplay**: Various fps and performace improvements
-- dev: added unit testing (currently 14/14 passed)
+- dev: added unit testing (currently 22/22 passed)
 
 ## 2026-03-09 - v0.9.5 - Horde and Upgrade Rerolls
 - **Horde event**: At 75% of each combat phase (wave 2+), a ring of enemies spawns around the player with a "HORDE INCOMING!" warning banner and screen shake
