@@ -6,7 +6,7 @@ Oversteer v1.0 is a polished, audio-complete top-down arena drift combat game re
 
 ---
 
-## Current State (v0.9.5)
+## Current State (v0.9.6)
 
 The game is playable and fun. Core gameplay loop is complete.
 
@@ -23,15 +23,15 @@ The game is playable and fun. Core gameplay loop is complete.
 | Visual effects | ScreenFX (slowmo, zoom, shake, flash, freeze), particles, FXCache |
 | Controls | Keyboard + touch (virtual analog stick, drift button) |
 | Audio | **None** |
-| Mobile UX | Partial — can drive but **cannot select upgrades** (blocks play after wave 1) |
-| Architecture | Single HTML file (~3800 lines), zero dependencies |
+| Mobile UX | Complete — keyboard + touch (virtual stick, drift button, tap upgrade cards/reroll) |
+| Map selection | 2 maps (City Boys arena, Loopy ring) with menu selection and localStorage persistence |
+| Game-over screen | Run stats (score, best, wave, encircled, time), upgrades taken, death cause, NEW BEST flash |
+| Testing | 22 unit tests (Node), pre-push hook |
+| Architecture | Single HTML file (~4060 lines), zero dependencies |
 
 ### Known Bugs
 
-1. **Pickup collection early-return** — `Waves.update()` returns early when a scrap is collected, skipping remaining scraps and boost zones for that frame
-2. **Remaining `shadowBlur`** — Lines ~2285 and ~2337 still use `shadowBlur` on scraps/boost zones (performance killer)
-3. **Touch upgrade selection missing** — Mobile players cannot select upgrades (requires keyboard 1/2/3)
-4. **Trail rendering: 1200+ draw calls/frame** — Each trail segment gets individual `beginPath/stroke` calls
+All previously known bugs resolved in v0.9.6 (pickup early-return, shadowBlur on pickups, touch upgrade selection, trail draw call batching).
 
 ---
 
@@ -43,12 +43,12 @@ These are blockers for a v1.0 release.
 
 #### Bug Fixes
 
-| Bug | Description | Impact |
-|-----|-------------|--------|
-| Pickup early-return | `Waves.update()` exits loop on first scrap collection | Silent pickup loss, especially with magnet upgrade |
-| shadowBlur on scraps/boosts | 2 remaining `shadowBlur` usages not converted to FXCache | FPS drops on weaker hardware |
-| Touch upgrade selection | No touch input handler for upgrade cards | Mobile completely blocked after wave 1 |
-| Trail draw call batching | 600 segments x 2 passes = 1200+ individual draw calls | Unnecessary GPU overhead |
+| Bug | Description | Impact | Status |
+|-----|-------------|--------|--------|
+| Pickup early-return | `Waves.update()` exits loop on first scrap collection | Silent pickup loss, especially with magnet upgrade | **Done (v0.9.6)** |
+| shadowBlur on scraps/boosts | 2 remaining `shadowBlur` usages not converted to FXCache | FPS drops on weaker hardware | **Done (v0.9.6)** |
+| Touch upgrade selection | No touch input handler for upgrade cards | Mobile completely blocked after wave 1 | **Done (v0.9.6)** |
+| Trail draw call batching | 600 segments x 2 passes = 1200+ individual draw calls | Unnecessary GPU overhead | **Done (v0.9.6)** |
 
 #### Audio System
 
@@ -78,9 +78,9 @@ High-value features that significantly improve the experience.
 
 | Feature | Description |
 |---------|-------------|
-| Run statistics | Track per-run: enemies killed, encirclements, near-misses, drift time, waves reached, peak combo. Show post-run breakdown on game-over screen. |
-| Screen-edge enemy indicators | Arrows/dots at screen edge showing direction of off-screen enemies |
-| Improved game-over screen | Display run stats, high score comparison, "press Enter to retry" |
+| Run statistics | **Partial** — game-over screen shows score/best/wave/encircled/time/upgrades/death cause. Remaining: peak combo, near-miss count, drift time, enemies killed |
+| Screen-edge enemy indicators | **Done (v0.9.6)** — red flash bars at screen edges when enemies are off-screen |
+| Improved game-over screen | **Done (v0.9.6)** — run stats, high score comparison, NEW BEST flash, upgrades taken, death cause, Enter to menu / R to restart |
 | Arena boundary effects | Visual treatment at arena edges (glow, particles, or fence effect) |
 
 ### P2 — Nice to Have

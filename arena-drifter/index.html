@@ -176,8 +176,35 @@ const CFG = {
     drifter: ['cars/taxi.png', 'cars/mini_van.png'],
     elite: ['cars/truck.png', 'cars/mini_truck.png'],
   },
-  BACKGROUND_SPRITE: 'backgrounds/background.png',
+  BACKGROUND_SPRITE: 'backgrounds/background_01.png',
 };
+
+// Base config snapshot (used for map overrides)
+const CFG_BASE = Object.assign({}, CFG);
+delete CFG_BASE.S;
+
+// Map definitions
+const MAPS = [
+  {
+    id: 'arena',
+    name: 'City Boys',
+    desc: 'Standard props, original arena.',
+    cfg: {},
+  },
+  {
+    id: 'arena_02',
+    name: 'Loopy',
+    desc: 'Rocky ring, no trees or mud.',
+    cfg: {
+      BACKGROUND_SPRITE: 'backgrounds/background_02.png',
+      PROP_POOL: [
+        { image: 'props/rock_1.png', radius: 40, weight: 3, type: 'solid' },
+        { image: 'props/bush_1.png', radius: 25, weight: 5, type: 'decoration' },
+      ],
+    },
+  },
+];
+const MAPS_BY_ID = Object.fromEntries(MAPS.map(m => [m.id, m]));
 
 // Scale helper: converts reference-resolution pixels to current resolution
 function S(px) { return Math.round(px * CFG.S); }
@@ -442,6 +469,7 @@ Assets.preload([
   ...Object.values(CFG.ENEMY_SPRITES_BY_TYPE).flat(),
   ...CFG.PROP_POOL.map(p => p.image),
   CFG.BACKGROUND_SPRITE,
+  'backgrounds/background_02.png',
 ]);
 
 // ── 3. INPUT ────────────────────────────────────────────────
@@ -2721,11 +2749,12 @@ function renderUpgradeBreak(ctx, cards, cardAnimTimer, selectedIndex, rerollsLef
 }
 
 // ── 13. GAME STATE MACHINE ─────────────────────────────────
-const STATE = { MENU: 0, PLAYING: 1, PAUSED: 2, UPGRADE: 3, DYING: 4, GAME_OVER: 5 };
+const STATE = { MENU: 0, MAP_SELECT: 1, PLAYING: 2, PAUSED: 3, UPGRADE: 4, DYING: 5, GAME_OVER: 6 };
 
 const Game = {
   state: STATE.MENU,
   player: new Player(),
+  selectedMapId: localStorage.getItem('oversteer_map_v1') || 'arena',
   score: 0,
   highScore: parseInt(localStorage.getItem('oversteer_highscore_v1') || '0'),
   newBest: false,
@@ -2764,12 +2793,35 @@ const Game = {
   sandbox: false,
   touchDriftBtn: { x: CFG.W - S(70), y: CFG.H - S(80), r: S(40) },
 
+  applyMap(id) {
+    const map = MAPS_BY_ID[id] || MAPS[0];
+    this.selectedMapId = map.id;
+    localStorage.setItem('oversteer_map_v1', map.id);
+
+    // Reset to base CFG, then apply map overrides
+    for (const k in CFG_BASE) CFG[k] = CFG_BASE[k];
+    if (map.cfg) {
+      for (const k in map.cfg) CFG[k] = map.cfg[k];
+    }
+
+    // Rebuild prop glow cache for current PROP_POOL
+    FXCache.propGlow = {};
+    FXCache.initPropGlow();
+  },
+
+  cycleMap(dir) {
+    const idx = Math.max(0, MAPS.findIndex(m => m.id === this.selectedMapId));
+    const next = (idx + dir + MAPS.length) % MAPS.length;
+    this.applyMap(MAPS[next].id);
+  },
+
   init() {
     Input.init();
     this.state = STATE.MENU;
   },
 
   reset() {
+    this.applyMap(this.selectedMapId);
     this.player.reset();
     this.score = 0;
     this.newBest = false;
@@ -2843,18 +2895,39 @@ const Game = {
     if (this.state === STATE.MENU) {
       const tap = Input.consumeTap();
       if (Input.enter || Input.keys['Space'] || tap) {
-        this.sandbox = false;
-        localStorage.setItem('oversteer_sandbox', '0');
-        this.reset();
-        this.state = STATE.PLAYING;
+        this.state = STATE.MAP_SELECT;
         Input.keys['Space'] = false;
       }
       if (Input.keys['KeyS']) {
         this.sandbox = true;
         localStorage.setItem('oversteer_sandbox', '1');
+        this.state = STATE.MAP_SELECT;
+        Input.keys['KeyS'] = false;
+      }
+      return;
+    }
+
+    if (this.state === STATE.MAP_SELECT) {
+      const tap = Input.consumeTap();
+      if (Input.keys['ArrowLeft'] || Input.keys['KeyA']) {
+        this.cycleMap(-1);
+        Input.keys['ArrowLeft'] = false;
+        Input.keys['KeyA'] = false;
+      }
+      if (Input.keys['ArrowRight'] || Input.keys['KeyD']) {
+        this.cycleMap(1);
+        Input.keys['ArrowRight'] = false;
+        Input.keys['KeyD'] = false;
+      }
+      if (Input.enter || Input.keys['Space'] || tap) {
+        if (!this.sandbox) localStorage.setItem('oversteer_sandbox', '0');
         this.reset();
         this.state = STATE.PLAYING;
-        Input.keys['KeyS'] = false;
+        Input.keys['Space'] = false;
+      }
+      if (Input.keys['Escape']) {
+        this.state = STATE.MENU;
+        Input.keys['Escape'] = false;
       }
       return;
     }
@@ -3444,6 +3517,10 @@ const Game = {
       this.renderMenu(ctx);
       return;
     }
+    if (this.state === STATE.MAP_SELECT) {
+      this.renderMapSelect(ctx);
+      return;
+    }
 
     ScreenFX.applyPre(ctx);
 
@@ -3858,12 +3935,47 @@ const Game = {
 
     // Start prompt
     if (Math.floor(this.menuAnim * 2) % 2 === 0) {
-      U.text(ctx, '[ ENTER / TAP ] TO START', CFG.W/2, CFG.H * 0.92, {
+      U.text(ctx, '[ ENTER / TAP ] SELECT MAP', CFG.W/2, CFG.H * 0.92, {
         align: 'center', size: 20, bold: true, color: CFG.C_ACCENT, shadow: true,
       });
     }
     U.text(ctx, '[ S ] SANDBOX — free drive, no enemies', CFG.W/2, CFG.H * 0.97, {
       align: 'center', size: 13, color: '#555',
+    });
+  },
+
+  renderMapSelect(ctx) {
+    // BG
+    const g = ctx.createLinearGradient(0, 0, 0, CFG.H);
+    g.addColorStop(0, '#020308');
+    g.addColorStop(0.5, '#07080B');
+    g.addColorStop(1, '#0E1118');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, CFG.W, CFG.H);
+
+    const pulse = 1 + 0.03 * Math.sin(this.menuAnim * 3);
+    ctx.save();
+    ctx.translate(CFG.W/2, CFG.H * 0.2);
+    ctx.scale(pulse, pulse);
+    U.text(ctx, 'SELECT MAP', 0, 0, { align: 'center', size: 44, bold: true, color: CFG.C_ACCENT, shadow: true });
+    ctx.restore();
+
+    const map = MAPS_BY_ID[this.selectedMapId] || MAPS[0];
+    const cy = CFG.H * 0.45;
+    U.text(ctx, map.name.toUpperCase(), CFG.W/2, cy, {
+      align: 'center', size: 26, color: CFG.C_TEXT, bold: true,
+    });
+    U.text(ctx, map.desc, CFG.W/2, cy + S(26), {
+      align: 'center', size: 14, color: '#777',
+    });
+    U.text(ctx, '[ A / D ] change map', CFG.W/2, cy + S(60), {
+      align: 'center', size: 12, color: '#555',
+    });
+    U.text(ctx, '[ ENTER / TAP ] start', CFG.W/2, CFG.H * 0.8, {
+      align: 'center', size: 18, bold: true, color: CFG.C_ACCENT, shadow: true,
+    });
+    U.text(ctx, '[ ESC ] back', CFG.W/2, CFG.H * 0.85, {
+      align: 'center', size: 12, color: '#555',
     });
   },
 

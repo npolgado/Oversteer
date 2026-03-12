@@ -2,7 +2,7 @@
 
 ## Architecture Overview
 
-v1.0 retains the single-file HTML/Canvas/JS architecture (`arena-drifter/index.html`, ~3800 lines). All changes are modifications to this file plus new audio assets. No build tooling, no module system, no framework migration.
+v1.0 retains the single-file HTML/Canvas/JS architecture (`arena-drifter/index.html`, ~4060 lines). All changes are modifications to this file plus new audio assets. No build tooling, no module system, no framework migration.
 
 **Rationale:** The current codebase is well-organized with clear module boundaries (CFG, FXCache, PerfMon, Utils, Assets, Input, Physics, Player, Enemy, Props, Particles, ScreenFX, Camera, Trail, Waves, Upgrades, HUD, Game). Performance is adequate after planned optimizations. A rewrite would discard finely tuned physics constants and game-feel parameters that live in the code.
 
@@ -21,90 +21,14 @@ v1.0 retains the single-file HTML/Canvas/JS architecture (`arena-drifter/index.h
 
 ## Bug Fix Specifications
 
-### 1. Pickup Collection Early-Return
+All 4 P0 bugs were resolved in v0.9.6:
 
-**File:** `arena-drifter/index.html`, `Waves.update()` (~line 2123)
-
-**Problem:** When a scrap is collected, `return pType` exits the entire update method. Remaining scraps and all boost zone checks are skipped for that frame. With the magnet upgrade at high speed, multiple pickups can be in range simultaneously — only the first is collected.
-
-**Fix:** Replace `return pType` with a `continue` statement or restructure the loop so collection doesn't exit the method. Ensure boost zone iteration still runs after scrap processing.
-
-```javascript
-// BEFORE (broken):
-if (collected) return pType;
-
-// AFTER (fixed):
-if (collected) continue;  // Process remaining scraps
-```
-
-### 2. Remaining shadowBlur Usage
-
-**File:** `arena-drifter/index.html`, lines ~2285, ~2292, ~2324, ~2337, ~2342
-
-**Problem:** Scrap and boost zone rendering still uses `ctx.shadowBlur` for glow effects. The rest of the codebase already migrated to FXCache pre-rendered glow canvases (v0.8).
-
-**Fix:** Create FXCache entries for scrap and boost zone glows (same pattern as prop glows). Draw pre-rendered glow canvas behind the item instead of setting shadowBlur.
-
-```javascript
-// Pattern to follow (existing in FXCache):
-FXCache.propGlow[type] = offscreenCanvas;  // Pre-rendered at init
-
-// New entries needed:
-FXCache.scrapGlow = createGlowCanvas(radius, color);
-FXCache.boostGlow = createGlowCanvas(radius, color);
-```
-
-### 3. Touch Upgrade Selection
-
-**File:** `arena-drifter/index.html`, Input section + `renderUpgradeBreak()`
-
-**Problem:** Upgrade cards can only be selected via keyboard (1/2/3 keys). No touch event handler exists for the card UI. Mobile players are stuck after wave 1.
-
-**Fix:** Add a `touchend` event listener that hit-tests touch coordinates against the 3 upgrade card bounding boxes. Cards are rendered at known positions during the UPGRADE state — store their bounding rects and check touch position against them.
-
-```javascript
-// During UPGRADE state touchend:
-const rect = canvas.getBoundingClientRect();
-const tx = (e.changedTouches[0].clientX - rect.left) / scale;
-const ty = (e.changedTouches[0].clientY - rect.top) / scale;
-for (let i = 0; i < 3; i++) {
-  if (tx >= cardBounds[i].x && tx <= cardBounds[i].x + cardBounds[i].w &&
-      ty >= cardBounds[i].y && ty <= cardBounds[i].y + cardBounds[i].h) {
-    selectUpgrade(i);
-    break;
-  }
-}
-```
-
-Also add touch support for the reroll button (R key equivalent).
-
-### 4. Trail Rendering Batching
-
-**File:** `arena-drifter/index.html`, Trail rendering section
-
-**Problem:** Each of up to 600 trail segments gets individual `beginPath()`/`moveTo()`/`lineTo()`/`stroke()` calls, done twice (glow pass + solid pass) = 1200+ draw calls per frame.
-
-**Fix:** Batch segments of the same color into a single path. Use one `beginPath()`, iterate with `moveTo()`/`lineTo()` pairs, then one `stroke()`. Two passes (glow + solid) = ~2-4 draw calls total.
-
-```javascript
-// BEFORE: per-segment drawing
-for (const seg of trail) {
-  ctx.beginPath();
-  ctx.moveTo(seg.x1, seg.y1);
-  ctx.lineTo(seg.x2, seg.y2);
-  ctx.stroke();
-}
-
-// AFTER: batched drawing
-ctx.beginPath();
-for (const seg of trail) {
-  ctx.moveTo(seg.x1, seg.y1);
-  ctx.lineTo(seg.x2, seg.y2);
-}
-ctx.stroke();
-```
-
-If trail color changes at combo level 5+ (cyan → purple), batch segments by color into 2 paths.
+| Bug | Fix Applied |
+|-----|-------------|
+| Pickup early-return | Replaced `return pType` with `continue` in `Waves.update()` |
+| shadowBlur on pickups/boosts | Migrated to FXCache pre-rendered glow canvases (`pickupGlow`, `boostGlow`) |
+| Touch upgrade selection | Added touch hit-testing for upgrade cards and reroll button |
+| Trail draw call batching | Batched into single gradient path draw instead of per-segment strokes |
 
 ---
 
@@ -178,10 +102,10 @@ Add to the existing pause overlay:
 
 | Metric | Current | v1.0 Target |
 |--------|---------|-------------|
-| Trail draw calls | ~1200/frame | <10/frame |
-| shadowBlur usage | 5 instances | 0 instances |
-| FPS (mid-range) | ~50-60 | 60 stable |
-| Pickup accuracy | Misses on multi-collect | 100% collection |
+| Trail draw calls | ✅ Batched (single gradient path) | <10/frame |
+| shadowBlur usage | ✅ 0 instances | 0 instances |
+| FPS (mid-range) | ✅ 60 stable | 60 stable |
+| Pickup accuracy | ✅ Fixed (continue instead of return) | 100% collection |
 
 Verification: PerfMon HUD (bottom-left) shows FPS and worst frame time. Test with 10+ enemies on screen, active trail, and drifting.
 
@@ -221,7 +145,7 @@ Directory: `arena-drifter/assets/audio/`
 |---------|-------------|
 | New enemy types | Blocker (blocks trail paths), Flanker (approaches from side), Bomber (leaves hazard zones) |
 | New upgrades (5-8) | Synergy-tagged upgrades: dash burst, trail burn damage, chain lightning on loop kill, heal on combo threshold, extra rerolls |
-| Run statistics | Per-run tracking with persistent best-of records in localStorage |
+| Run statistics | Advanced per-run metrics (peak combo, near-miss count, drift time, enemies killed) — basic stats (score/best/wave/encircled/time/upgrades/death cause) already on game-over screen |
 | Difficulty modifiers | Pre-run toggles with score multipliers (double enemies, half HP, speed boost) |
 
 ### v1.2 — Architecture Migration
@@ -253,7 +177,7 @@ Directory: `arena-drifter/assets/audio/`
 
 ### v2.0 — World Expansion
 
-**Source:** [Visual Implementation Plan](roadmaps/version_1_roadmap/oversteer_visual_implementation_plan.md)
+**Source:** [Visual Implementation Plan](oversteer_visual_implementation_plan.md)
 
 This phase brings the game from a single-arena experience to a multi-world run-based game.
 
@@ -319,5 +243,5 @@ Lightweight, non-intrusive:
 ## Related Documents
 
 - [Product Requirements Document](PRD.md)
-- [Development Roadmap](roadmaps/version_1_roadmap/26_03_09_roadmap.md)
-- [Visual Implementation Plan](roadmaps/version_1_roadmap/oversteer_visual_implementation_plan.md)
+- [Development Roadmap](26_03_09_roadmap.md)
+- [Visual Implementation Plan](oversteer_visual_implementation_plan.md)

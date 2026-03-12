@@ -2,32 +2,31 @@
 
 ## Current State
 
-Oversteer is a polished, playable top-down arena drifting game (~3800 lines, single HTML file). Core gameplay loop is complete: wave-based enemies, drift combos, trail encirclement kills, 17 upgrades, health system, pickups, and touch controls. The codebase is well-organized with clear sections, performance-conscious patterns (swap-and-pop, ring buffers, FXCache), and zero TODOs or incomplete features.
+Oversteer is a polished, playable top-down arena drifting game (~4060 lines, single HTML file). Core gameplay loop is complete: wave-based enemies, drift combos, trail encirclement kills, 17 upgrades, health system, pickups, and touch controls. The codebase is well-organized with clear sections, performance-conscious patterns (swap-and-pop, ring buffers, FXCache), and zero TODOs or incomplete features.
 
-**Recent development focus:** FPS optimization, health system, horde events, upgrade rerolls.
+**Recent development focus (v0.9.6):** All P0 bug fixes, full mobile touch support (upgrade cards + reroll), FXCache pickup/boost glows, trail batching, chunk-based prop collision, map selection (2 maps with localStorage persistence), game-over stats screen (score/best/wave/encircled/time/upgrades/death cause), screen-edge enemy indicators, 22 unit tests with pre-push hook.
 
 ---
 
 ## Bugs & Issues Found
 
-1. **Single-pickup-per-frame bug** — `Waves.update()` returns early on line ~2123 when a scrap is collected, skipping remaining scraps and boost zones for that frame. Causes silent pickup loss with magnet at high speed.
+All 4 bugs resolved in v0.9.6:
 
-2. **Remaining `shadowBlur` usage** — Lines ~2285 and ~2337 still use `shadowBlur` on scraps and boost zones. Rest of codebase already eliminated this performance killer.
-
-3. **Touch controls can't select upgrades** — Mobile players can drive but can't pick upgrades (requires keyboard 1/2/3). Blocks mobile play entirely after wave 1.
-
-4. **Trail rendering: 1200+ draw calls/frame** — Each of up to 600 trail segments gets individual `beginPath/stroke` calls (×2 passes). Could batch into a few paths.
+1. ~~**Single-pickup-per-frame bug**~~ — Fixed: replaced `return` with `continue`
+2. ~~**Remaining `shadowBlur` usage**~~ — Fixed: migrated to FXCache pre-rendered glows
+3. ~~**Touch controls can't select upgrades**~~ — Fixed: added touch hit-testing for cards + reroll
+4. ~~**Trail rendering: 1200+ draw calls/frame**~~ — Fixed: batched into single gradient path draw
 
 ---
 
-## Phase 1: Core Polish (quick wins)
+## Phase 1: Core Polish — ✅ COMPLETE (v0.9.6)
 
-| Task | Impact | Effort |
+| Task | Impact | Status |
 |------|--------|--------|
-| Fix pickup collection bug (early return) | Correctness | ~30 min |
-| Replace `shadowBlur` with FXCache glows | Performance | 1-2 hrs |
-| Batch trail rendering into fewer draw calls | Performance | 2-3 hrs |
-| Add touch hit detection for upgrade cards | Mobile playability | 1-2 hrs |
+| Fix pickup collection bug (early return) | Correctness | ✅ Done |
+| Replace `shadowBlur` with FXCache glows | Performance | ✅ Done |
+| Batch trail rendering into fewer draw calls | Performance | ✅ Done |
+| Add touch hit detection for upgrade cards | Mobile playability | ✅ Done |
 
 ## Phase 2: Audio System
 
@@ -47,7 +46,7 @@ Uses Web Audio API. Medium complexity.
 
 | Feature | Description |
 |---------|-------------|
-| Run statistics | Track per-run stats (enemies killed, near-misses, drift time, wave reached). Show post-run breakdown. |
+| Run statistics | **Partial** — game-over screen shows score/best/wave/encircled/time/upgrades/death cause. Remaining: peak combo, near-miss count, drift time, enemies killed |
 | Difficulty modifiers | Pre-run choices (double enemies, reduced HP, etc.) — revive concept from Python version. Per-modifier leaderboards. |
 | New enemy types | Blocker (blocks trail paths), Flanker (approaches from side), Bomber (leaves hazard zones). Each forces different strategy. |
 | More upgrades + synergies | Expand to 25-30 upgrades with combo interactions. `extra_rerolls` is already commented out as a candidate. |
@@ -58,7 +57,7 @@ Uses Web Audio API. Medium complexity.
 - Enemy-type-specific death animations
 - Arena boundary visual effects
 - Drift trail thickness varying with speed
-- Screen-edge indicators for off-screen enemies
+- ~~Screen-edge indicators for off-screen enemies~~ — ✅ Done (v0.9.6, red flash bars at edges)
 
 ## Phase 5: Strategic Direction (pick one)
 
@@ -73,10 +72,10 @@ Uses Web Audio API. Medium complexity.
 
 ## Long-Term Architecture Notes
 
-- **Canvas 2D ceiling:** If perf issues persist after Phase 1, consider WebGL (PixiJS). Significant rewrite but unlocks GPU batching.
-- **Prop collision scaling:** Chunk system exists for generation but not collision queries. Add spatial hashing if prop count grows.
+- **Canvas 2D ceiling:** Phase 1 perf fixes resolved immediate issues. If future features reintroduce perf pressure, consider WebGL (PixiJS).
+- ~~**Prop collision scaling:**~~ Chunk-based collision lookup added in v0.9.6 — no longer checking all props.
 - **State machine:** As complexity grows, consider formal state objects with enter/exit/update methods instead of integer-based states.
-- **File decomposition:** Split into ES modules when file exceeds ~4500 lines. Use bundler for dev, single-file for distribution.
+- **File decomposition:** At ~4060 lines, approaching the ~4500 trigger. Split into ES modules when threshold exceeded. Use bundler for dev, single-file for distribution.
 - **Accessibility:** Red/green/cyan color scheme may be hard for color-blind players. Add shape-based indicators.
 
 ---
