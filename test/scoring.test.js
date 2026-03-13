@@ -1,7 +1,22 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { applyNearMiss, updateRunStats, makeRunStats, applyDriftShield, applyComboHeal } = require('./logic');
+const {
+  applyNearMiss,
+  updateRunStats,
+  makeRunStats,
+  applyDriftShield,
+  applyComboHeal,
+  driftComboScoreTick,
+  applyComboDecay,
+  computeCollisionDamage,
+  applyPlayerDamage,
+  applyShieldBreak,
+  applyHpRegen,
+  applyGhostFrameNearMiss,
+  updateNearMissStreak,
+  computeEncircleOutcome,
+} = require('../arena-drifter/logic');
 
 test('near-miss increases score and combo', () => {
   const player = { scoreMult: 1, comboLevel: 0, consecutiveNearMisses: 0 };
@@ -97,4 +112,68 @@ test('combo_heal does not overheal past maxHp', () => {
 
 test('combo_heal does nothing without upgrade', () => {
   assert.equal(applyComboHeal(2.5, 3.0, false, 50, 100), 50);
+});
+
+test('drift combo awards points at each interval boundary', () => {
+  const r1 = driftComboScoreTick(0.9, 0, 2);
+  assert.equal(r1.scoreDelta, 0);
+  const r2 = driftComboScoreTick(1.1, 0, 2);
+  assert.equal(r2.scoreDelta, 15);
+  const r3 = driftComboScoreTick(2.2, r2.nextTick, 2);
+  assert.equal(r3.scoreDelta, 15);
+});
+
+test('combo decay is slower with combo_master', () => {
+  assert.equal(applyComboDecay(6, false, 1.0), 4);
+  assert.equal(applyComboDecay(6, true, 1.0), 5);
+});
+
+test('damage scaling increases after wave 5 and caps', () => {
+  assert.equal(computeCollisionDamage(15, 3), 15);
+  assert.equal(computeCollisionDamage(15, 6), 17);
+  assert.equal(computeCollisionDamage(15, 50), 45);
+});
+
+test('damage pipeline applies resistance, drift shield, and min 1', () => {
+  const player = { hp: 100, damageResist: 0.25, driftShield: true, invulnTimer: 0, lastHitTimer: 3 };
+  const dmg = applyPlayerDamage(player, 10, true);
+  assert.equal(dmg, 5);
+  assert.equal(player.hp, 95);
+  assert.equal(player.invulnTimer, 0.5);
+  assert.equal(player.lastHitTimer, 0);
+});
+
+test('shield break grants invuln and clears shield', () => {
+  const player = { shield: true, invulnTimer: 0 };
+  applyShieldBreak(player);
+  assert.equal(player.shield, false);
+  assert.equal(player.invulnTimer, 1.0);
+});
+
+test('hp regen waits for delay and clamps to max', () => {
+  const player = { hp: 90, maxHp: 100, hpRegen: 5, lastHitTimer: 1.5 };
+  applyHpRegen(player, 0.4);
+  assert.equal(player.hp, 90);
+  applyHpRegen(player, 0.2);
+  assert.equal(player.hp, 91);
+  applyHpRegen(player, 5);
+  assert.equal(player.hp, 100);
+});
+
+test('ghost frame sets invuln timer on near miss', () => {
+  const player = { ghostFrameTimer: 0 };
+  applyGhostFrameNearMiss(player, true);
+  assert.equal(player.ghostFrameTimer, 0.3);
+});
+
+test('near-miss streak resets when timer expires', () => {
+  const player = { consecutiveNearMisses: 3, nearMissStreakTimer: 0.1 };
+  updateNearMissStreak(player, 0.2);
+  assert.equal(player.consecutiveNearMisses, 0);
+});
+
+test('encircle outcome scales with combo and bonus', () => {
+  const result = computeEncircleOutcome(2, 0, 1, 1);
+  assert.equal(result.scoreDelta, 300);
+  assert.equal(result.comboLevel, 4);
 });
