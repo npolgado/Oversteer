@@ -3,7 +3,7 @@
 ## Project Overview
 Oversteer is a top-down arena drifting game. The entire game lives in a single self-contained HTML/Canvas/JS file.
 
-- **Source of truth**: `arena-drifter/index.html` (~3800 lines)
+- **Source of truth**: `arena-drifter/index.html` (~4000 lines)
 - **Run**: `npx serve arena-drifter`
 - **Game**: Arena-based (fixed 3000x3000 world), wave-based enemy spawning, drift combos, near-miss scoring, trail encirclement kills, delta-time physics (px/sec)
 
@@ -12,9 +12,13 @@ Oversteer is a top-down arena drifting game. The entire game lives in a single s
 arena-drifter/
   index.html                    The game (single-file, self-contained)
   assets/                       PNG sprites (cars, props)
+    backgrounds/                Background images per map
     cars/                       Car sprites (point UP in PNG, rotated +90° in code to face RIGHT)
     props/                      Prop sprites (trees, rocks, mud, etc.)
 test/                           Node tests (logic mirrored from index.html)
+docs/roadmaps/                  PRD, TDD, version roadmaps
+scripts/                        install-hooks
+.githooks/                      pre-push (runs tests before push)
 references/reference_mock.png   Visual inspiration
 .gitignore                      Repo config
 CLAUDE.md                       This file
@@ -23,9 +27,10 @@ patch_notes.md                  Version history
 ```
 
 ## Game States
-`MENU` → `PLAYING` (combat/break phases) → `UPGRADE` → `PLAYING` → `DYING` → `GAME_OVER` → `MENU`
+`MENU` → `MAP_SELECT` → `PLAYING` (combat/break phases) → `UPGRADE` → `PLAYING` → `DYING` → `GAME_OVER` → `MENU`
+- `MAP_SELECT`: Choose map with A/D, confirm with Enter/Tap, Escape to go back. Selection persisted in localStorage.
 - `PAUSED`: Toggle with P/Escape during gameplay. Displays wave number, difficulty stats, and enemy speed bonus. Resume with P or return to menu.
-- `SANDBOX`: Free drive mode (no enemies), toggled with S on menu
+- `SANDBOX`: Free drive mode (no enemies), toggled with S on menu (goes through MAP_SELECT)
 
 ## Controls
 
@@ -40,6 +45,8 @@ patch_notes.md                  Version history
 | R | Reroll upgrades (during upgrade selection) |
 | 1/2/3 or Numpad 1/2/3 | Select upgrade card |
 | S (menu only) | Sandbox mode |
+| A/D (map select) | Cycle maps |
+| Escape (map select) | Back to menu |
 | Enter | Confirm / Start |
 
 ### Touch (mobile browsers)
@@ -163,6 +170,18 @@ Scraps spawn every 6s during combat. Types determined by cascading random roll:
 - 4 types: solid (tree r=50, rock r=40), slow (mud r=62), slip (puddle r=55), decoration (bush r=25)
 - Chunks load/unload dynamically as camera moves
 - Props use `Assets.drawOrFallback()` with procedural fallback if PNG missing
+
+## Map System
+- `MAPS` array defines available maps, each with `id`, `name`, `desc`, and `cfg` overrides
+- `CFG_BASE` stores a snapshot of default config; `applyMap()` resets CFG to base then applies map-specific overrides
+- Maps can override any CFG key (e.g., `BACKGROUND_SPRITE`, `PROP_POOL`)
+- Selected map stored in `localStorage` as `oversteer_map_v1`
+- `FXCache.propGlow` is rebuilt when switching maps (prop pool may change)
+
+| Map | ID | Description |
+|-----|----|-------------|
+| City Boys | arena | Standard props, original arena |
+| Loopy | arena_02 | Rocky ring, no trees or mud |
 
 ## Asset & Sprite Conventions
 - Assets must live under `arena-drifter/assets/` (not a sibling directory) because `npx serve arena-drifter` sets the serve root
