@@ -3,7 +3,7 @@
 ## Project Overview
 Oversteer is a top-down arena drifting game. The entire game lives in a single self-contained HTML/Canvas/JS file.
 
-- **Source of truth**: `arena-drifter/index.html` (~4000 lines)
+- **Source of truth**: `arena-drifter/index.html` (~4600 lines)
 - **Run**: `npx serve arena-drifter`
 - **Game**: Arena-based (fixed 3000x3000 world), wave-based enemy spawning, drift combos, near-miss scoring, trail encirclement kills, delta-time physics (px/sec)
 
@@ -43,11 +43,14 @@ patch_notes.md                  Version history
 | Space | Handbrake (alias for S/Down at speed) |
 | P / Escape | Pause |
 | R | Reroll upgrades (during upgrade selection) |
-| 1/2/3 or Numpad 1/2/3 | Select upgrade card |
+| 1/2/3 or Numpad 1/2/3 | Select upgrade card / Toggle difficulty modifiers (map select) |
 | S (menu only) | Sandbox mode |
 | A/D (map select) | Cycle maps |
 | Escape (map select) | Back to menu |
 | Enter | Confirm / Start |
+| M (pause) | Toggle mute |
+| [ / ] (pause) | SFX volume down/up |
+| - / = (pause) | Music volume down/up |
 
 ### Touch (mobile browsers)
 - **Left side**: Virtual analog stick (appears on first touch)
@@ -121,7 +124,7 @@ Core mechanic: the player leaves a visible trail. When the trail forms a closed 
 - Both values reset on death/new run via `Trail.reset()`
 - Loop kills trigger shockwave particles + score award
 
-## Upgrades (17 total, no rarity system)
+## Upgrades (21 total, no rarity system)
 Offered during wave break phase (pick 1 of 3). No selection timer — player takes as long as needed.
 - **Rerolls**: Press R to reroll upgrade cards (up to 3 per break, resets each break)
 - **Post-selection**: After choosing, cards disappear and a centered 3-second countdown plays before next wave
@@ -146,6 +149,10 @@ Offered during wave break phase (pick 1 of 3). No selection timer — player tak
 | hp_regen | +3 HP/sec regen after 2s without damage (stackable, max 3) |
 | max_hp | +30 max HP, heals +30 immediately (stackable) |
 | damage_resist | Take 25% less damage, diminishing per stack: 1-(1-x)×0.75 |
+| drift_shield | -40% damage while drifting |
+| combo_heal | Heal 10/15/25 HP at combo milestones 3/5/8 |
+| trail_magnet | Trail points attract scraps within 80px |
+| speed_trail | Trail MAX_POINTS scales with speed (+1 per 100px/s) |
 
 ## Pickups
 Scraps spawn every 6s during combat. Types determined by cascading random roll:
@@ -192,15 +199,59 @@ Scraps spawn every 6s during combat. Types determined by cascading random roll:
 - FXCache pre-renders expensive effects (vignette, prop glows) to offscreen canvases
 - Responsive canvas scaling via `S()` helper function (reference resolution 1920×1080)
 
+## Audio System
+- **Dependency**: Howler.js 2.2.4 (CDN) for one-shot SFX; Web Audio API for continuous sounds
+- **AudioManager** (`Audio` object): Hybrid approach — live Web Audio oscillators for engine/drift/music, Howler for one-shots
+- **Procedural synthesis**: All sounds generated at init as WAV blob URLs (no audio files needed)
+- **Live sounds**: Engine (sawtooth 80-200Hz, pitch follows speed), drift squeal (high-pass noise), music (sine pad 110+165Hz with LFO)
+- **One-shot SFX**: collision, encircle, near_miss, horde_warn, combo_sting, ui_click
+- **Lifecycle**: Engine+music start on PLAYING, stop on pause/death/menu. Music ducks to 30% on pause, fades out on death.
+- **AudioContext resume**: Called on first keydown/touchstart to satisfy browser autoplay policy
+- **Persistence**: Volume/mute prefs saved to `localStorage` as `oversteer_audio_v1`
+- **Pause controls**: M=mute, [/]=SFX volume, -/==music volume
+
+## Difficulty Modifiers
+- Toggled on MAP_SELECT screen with number keys (1/2/3) or touch
+- Applied in `Game.reset()` after `applyMap()`
+- Reset on GAME_OVER → MENU transition
+
+| Modifier | Effect | Score Multiplier |
+|----------|--------|-----------------|
+| Hard Mode | Enemy speed +100 px/s | 1.5x |
+| Speed Rush | Spawn intervals halved | 1.3x |
+| Fragile | 50 HP max | 1.4x |
+
+## Extended Run Stats
+- Tracked during gameplay: `peakCombo`, `nearMissTotal`, `totalDriftTime`, `enemiesKilled`
+- Reset in `Game.reset()`
+- Displayed on game-over screen below existing stats
+
 ## Visual Effects
 - **ScreenFX**: Manages slowmo, dynamic zoom, screen shake, flash, and freeze effects
   - Near-miss: 0.85× slowmo for 0.15s
   - Damage taken: 0.9× slowmo for 0.1s
   - Combo: 0.9× slowmo
   - Dynamic zoom: ±4% based on speed, +1-4% boost on drift chains
+  - **Directional shake**: `shake(intensity, dur, dirX, dirY)` — 70% biased toward direction, 30% random
 - **FXCache**: Pre-renders vignette overlay and per-type prop glows to offscreen canvases
-- **Particles**: Shard (death/explosions), smoke (enemy despawn), ring (milestones/encirclement)
+- **Particles**: Shard (death/explosions), smoke (enemy despawn), ring (milestones/encirclement), spark (wall-riding)
 - **Death sequence**: 0.10s freeze → 0.35× slowmo for 0.35s, 10-14 shard particles, screen flash + vignette
+- **Enemy death FX**: Type-specific via `enemyDeathFX()` — red sparks (chaser), blue sparks (interceptor), smoke burst (drifter), golden explosion + screen shake (elite)
+- **Arena boundary**: Multi-pass glow (3 passes: lineWidth 14/8/2, pulsing with `sin(time*2)`) using `CFG.C_ACCENT`
+- **Wall-riding sparks**: 1-2 spark particles emitted along nearest wall when drifting near boundary
+- **Drift trail thickness**: Trail `lineWidth` varies per segment based on speed (base + 3×speedFrac)
+
+## Testing
+- Pure logic extracted to `test/logic.js` (mirrors functions from `index.html`); tests in `*.test.js` files
+- Run tests: `node --test test/`
+- When adding new game mechanics, extract the testable logic into `test/logic.js` with a matching export, then write tests against it
+- Tests run in Node (no browser/DOM) — keep test helpers dependency-free
+
+## Coding Conventions
+- Avoid `.filter()` on per-frame arrays (enemies, particles) — use in-place swap-and-pop to reduce GC pressure
+- Reset `lastTime = timestamp` in the game loop when transitioning between states (e.g. UPGRADE→PLAYING) to prevent dt spikes
+- When adding new upgrades, always initialize their player flags explicitly in the Player constructor — relying on `undefined`-is-falsy creates inconsistency bugs
+- `startWave()` must clean up scraps, boostZones, and `_burstQueue` — these don't auto-reset between waves
 
 ## Tutorial
 - Activates on wave 1 when enemies exist and the player hasn't encircled yet

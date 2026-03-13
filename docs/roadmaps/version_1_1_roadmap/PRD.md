@@ -102,6 +102,13 @@ Pre-run toggles with score multipliers (examples):
 - Modifiers must be selectable before a run.
 - Score multipliers must be transparent and displayed in HUD or summary.
 
+### Testing Suite Updates
+
+- Add unit tests for new enemy behaviors and hazard interactions.
+- Add tests for new upgrade effects and synergy tags.
+- Add tests for new run statistics aggregation and reset logic.
+- Add tests for difficulty modifier application and score multiplier math.
+
 ---
 
 ## Success Criteria
