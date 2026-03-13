@@ -27,6 +27,9 @@ const CFG = {
   CHASER_SPEED: 420,
   INTERCEPTOR_SPEED: 460,
   DRIFTER_SPEED: 440,
+  BLOCKER_SPEED: 380,
+  FLANKER_SPEED: 470,
+  BOMBER_SPEED: 400,
   ENEMY_RADIUS: 9,
   ENEMY_W: 32, ENEMY_H: 16, ENEMY_SPRITE_S: 50,
   ENEMY_ACCEL: 700,
@@ -91,6 +94,9 @@ const CFG = {
   DMG_INTERCEPTOR: 18,
   DMG_DRIFTER: 15,
   DMG_ELITE: 25,
+  DMG_BLOCKER: 12,
+  DMG_FLANKER: 20,
+  DMG_BOMBER: 14,
   DMG_SCALE_PER_WAVE: 0.12,
   DMG_SCALE_MAX: 3.0,
   // Horde
@@ -117,6 +123,13 @@ const CFG = {
   BOOST_ZONE_DURATION: 1.5,
   BOOST_ZONE_MULT: 1.3,
   BOOST_ZONE_SPAWN_INTERVAL: 12,
+  // Bomber hazard zones
+  BOMB_ZONE_RADIUS: 55,
+  BOMB_ZONE_DURATION: 6.0,
+  BOMB_ZONE_INTERVAL: 4.0,
+  BOMB_ZONE_DMG: 8,
+  BOMB_ZONE_SLOW: 0.6,
+  BOMB_ZONE_MAX: 15,
   // Drift chaining
   DRIFT_CHAIN_WINDOW: 0.5,
   DRIFT_CHAIN_MULT_1: 1.5,
@@ -150,6 +163,9 @@ const CFG = {
     interceptor: ['cars/police.png', 'cars/ambulance.png'],
     drifter: ['cars/taxi.png', 'cars/mini_van.png'],
     elite: ['cars/truck.png', 'cars/mini_truck.png'],
+    blocker: ['cars/truck.png', 'cars/enemy_red.png'],
+    flanker: ['cars/police.png', 'cars/enemy_orange.png'],
+    bomber: ['cars/mini_truck.png', 'cars/mini_van.png'],
   },
   BACKGROUND_SPRITE: 'backgrounds/background_01.png',
 };
@@ -546,6 +562,57 @@ function applyComboHeal(oldLevel, newLevel, hasComboHeal, hp, maxHp) {
   return hp;
 }
 
+// Enemy pool helpers
+function getEnemyPool(score) {
+  const pool = ['chaser'];
+  if (score >= 1000) pool.push('interceptor');
+  if (score >= 1500) pool.push('drifter');
+  if (score >= 2000) pool.push('blocker');
+  if (score >= 2500) pool.push('flanker');
+  if (score >= 3000) pool.push('bomber');
+  return pool;
+}
+
+function shouldSpawnElite(waveIndex, roll) {
+  return waveIndex >= 4 && roll < 0.12;
+}
+
+function computeFlankTarget(px, py, pvx, pvy, flankSide) {
+  const pSpeed = Math.hypot(pvx, pvy);
+  if (pSpeed < 50) return { x: px, y: py };
+  const perpX = -pvy / pSpeed * flankSide;
+  const perpY = pvx / pSpeed * flankSide;
+  return { x: px + perpX * 200, y: py + perpY * 200 };
+}
+
+function computeBlockerTarget(trailPoints) {
+  if (!trailPoints || trailPoints.length === 0) return null;
+  let sx = 0, sy = 0;
+  const step = Math.max(1, Math.floor(trailPoints.length / 50));
+  let count = 0;
+  for (let i = 0; i < trailPoints.length; i += step) {
+    sx += trailPoints[i].x;
+    sy += trailPoints[i].y;
+    count++;
+  }
+  return { x: sx / count, y: sy / count };
+}
+
+function applyBombZoneDamage(dmg, dt, damageResist) {
+  const raw = Math.round(dmg * dt);
+  if (raw < 1) return 0;
+  return Math.max(1, Math.round(raw * (1 - (damageResist || 0))));
+}
+
+function computeModifierScoreMult(modifiers) {
+  let mult = 1;
+  if (modifiers.hardMode) mult *= 1.5;
+  if (modifiers.speedRush) mult *= 1.3;
+  if (modifiers.fragile) mult *= 1.4;
+  if (modifiers.doubleEnemies) mult *= 1.6;
+  return mult;
+}
+
 const OversteerLogic = {
   CFG,
   CFG_BASE,
@@ -579,6 +646,12 @@ const OversteerLogic = {
   makeRunStats,
   applyDriftShield,
   applyComboHeal,
+  getEnemyPool,
+  shouldSpawnElite,
+  computeFlankTarget,
+  computeBlockerTarget,
+  applyBombZoneDamage,
+  computeModifierScoreMult,
 };
 
   if (typeof module !== 'undefined' && module.exports) {

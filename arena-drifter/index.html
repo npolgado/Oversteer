@@ -772,6 +772,12 @@ class Player {
     this.comboHeal = false;
     this.trailMagnet = false;
     this.speedTrail = false;
+    // v1.1 upgrade flags
+    this.dashBurst = false;
+    this.dashCooldown = 0;
+    this.trailBurn = false;
+    this.chainLightning = false;
+    this.nitroDrift = false;
     // Handbrake
     this.handbrakeTimer = 0;
     // Speed boost
@@ -847,6 +853,20 @@ class Player {
     if (this.handbrakeTimer > 0) this.turnRate *= CFG.HANDBRAKE_TURN_MULT;
     // Speed boost zone: temporary max speed increase
     if (this.speedBoostTimer > 0) this.maxSpeed *= CFG.BOOST_ZONE_MULT;
+    // Nitro Drift: +30% speed while drifting
+    if (this.nitroDrift && this.drifting) this.maxSpeed *= 1.3;
+    // Dash Burst cooldown
+    if (this.dashCooldown > 0) this.dashCooldown -= dt;
+    // Dash Burst activation: tap brake at high speed
+    if (this.dashBurst && Input.down && this.speed > 300 && this.dashCooldown <= 0 && !this.drifting) {
+      this.dashCooldown = 3.0;
+      this.invulnTimer = 0.2;
+      this.maxSpeed *= 1.3;
+      Particles.spawn(this.x, this.y, CFG.C_ACCENT, 8, {
+        vxMin: -150, vxMax: 150, vyMin: -150, vyMax: 150,
+        lifeMin: 0.2, lifeMax: 0.4, sizeMin: 2, sizeMax: 5, type: 'spark',
+      });
+    }
 
     this.wallHit = false;
     this.driftJustStarted = false;
@@ -1040,7 +1060,7 @@ class Player {
 // ── 6. ENEMIES ──────────────────────────────────────────────
 class Enemy {
   constructor(type, x, y) {
-    this.type = type; // 'chaser', 'interceptor', 'drifter', 'elite'
+    this.type = type; // 'chaser', 'interceptor', 'drifter', 'elite', 'blocker', 'flanker', 'bomber'
     this.x = x; this.y = y;
     this.vx = 0; this.vy = 0;
     this.heading = 0;
@@ -1073,6 +1093,22 @@ class Enemy {
       this.lifespan *= 1.5; // elites live longer
     } else if (type === 'chaser') { this.maxSpeed = CFG.CHASER_SPEED; this.turnRate = CFG.ENEMY_TURN_RATE; }
     else if (type === 'interceptor') { this.maxSpeed = CFG.INTERCEPTOR_SPEED; this.turnRate = CFG.ENEMY_TURN_RATE * 0.85; }
+    else if (type === 'blocker') {
+      this.maxSpeed = CFG.BLOCKER_SPEED; this.turnRate = CFG.ENEMY_TURN_RATE * 0.7;
+      this.holdingTrail = false;
+    }
+    else if (type === 'flanker') {
+      this.maxSpeed = CFG.FLANKER_SPEED; this.turnRate = CFG.ENEMY_TURN_RATE * 0.9;
+      this.flankSide = Math.random() < 0.5 ? 1 : -1;
+      this.flankSwitchTimer = U.randFloat(3, 5);
+      this.striking = false;
+      this.strikeTimer = 0;
+    }
+    else if (type === 'bomber') {
+      this.maxSpeed = CFG.BOMBER_SPEED; this.turnRate = CFG.ENEMY_TURN_RATE * 0.75;
+      this.bombTimer = CFG.BOMB_ZONE_INTERVAL;
+      this._dropBomb = false;
+    }
     else { this.maxSpeed = CFG.DRIFTER_SPEED; this.turnRate = CFG.ENEMY_TURN_RATE * 1.1; }
     this.baseMaxSpeed = this.maxSpeed;
   }
@@ -1082,11 +1118,68 @@ class Enemy {
 
     // Target
     let tx = player.x, ty = player.y;
+    let throttle = true;
+
     if (this.type === 'interceptor') {
       // Lead the player
       const lookAhead = 0.5;
       tx += player.vx * lookAhead;
       ty += player.vy * lookAhead;
+    } else if (this.type === 'blocker') {
+      // Target trail midpoint to block encirclement routes
+      if (player._trailMidpoint) {
+        tx = player._trailMidpoint.x;
+        ty = player._trailMidpoint.y;
+      }
+      const distToTarget = U.dist(this.x, this.y, tx, ty);
+      if (distToTarget < 80) {
+        this.holdingTrail = true;
+        // Face the player while holding position
+        tx = player.x; ty = player.y;
+        throttle = false; // stop accelerating, park near trail
+      } else {
+        this.holdingTrail = false;
+      }
+    } else if (this.type === 'flanker') {
+      // Flank side switching
+      this.flankSwitchTimer -= dt;
+      if (this.flankSwitchTimer <= 0) {
+        this.flankSide *= -1;
+        this.flankSwitchTimer = U.randFloat(3, 5);
+      }
+      const distToPlayer = U.dist(this.x, this.y, player.x, player.y);
+      if (this.striking) {
+        // Direct charge at player
+        this.strikeTimer -= dt;
+        if (this.strikeTimer <= 0) this.striking = false;
+        tx = player.x; ty = player.y;
+      } else if (distToPlayer < 120) {
+        // Close enough — strike!
+        this.striking = true;
+        this.strikeTimer = 1.0;
+        tx = player.x; ty = player.y;
+      } else {
+        // Flank: target perpendicular to player velocity
+        const pSpeed = Math.hypot(player.vx, player.vy);
+        if (pSpeed > 50) {
+          const perpX = -player.vy / pSpeed * this.flankSide;
+          const perpY = player.vx / pSpeed * this.flankSide;
+          tx = player.x + perpX * 200;
+          ty = player.y + perpY * 200;
+        }
+      }
+    } else if (this.type === 'bomber') {
+      // Orbit ahead of player, drop hazard zones
+      const pSpeed = Math.hypot(player.vx, player.vy);
+      if (pSpeed > 30) {
+        tx = player.x + (player.vx / pSpeed) * 300;
+        ty = player.y + (player.vy / pSpeed) * 300;
+      }
+      this.bombTimer -= dt;
+      if (this.bombTimer <= 0) {
+        this.bombTimer = CFG.BOMB_ZONE_INTERVAL;
+        this._dropBomb = true;
+      }
     }
 
     // Desired heading
@@ -1119,7 +1212,7 @@ class Enemy {
 
     this.wallHit = false;
     this.driftJustStarted = false;
-    updatePhysics(this, dt, turnInput, true, false, wantDrift, false);
+    updatePhysics(this, dt, turnInput, throttle, false, wantDrift, false);
 
     // Near miss cooldown
     if (this.nearMissCooldown > 0) this.nearMissCooldown -= dt;
@@ -1185,8 +1278,19 @@ class Enemy {
       ctx.globalAlpha = this.fadeAlpha !== undefined ? Math.max(0.15, this.fadeAlpha) : 1;
     }
 
-    // Danger aura (colored outline instead of shadowBlur)
-    const auraColor = isElite ? (this.armored ? CFG.C_RARE : CFG.C_ENEMY) : CFG.C_ENEMY;
+    // Type-specific colors for aura and fallback rendering
+    const typeColorMap = {
+      chaser: CFG.C_ENEMY, interceptor: '#4488FF', drifter: '#FFD700',
+      elite: this.armored ? CFG.C_RARE : CFG.C_ENEMY,
+      blocker: '#88FF88', flanker: '#FF8800', bomber: '#CC2200',
+    };
+    const typeDarkMap = {
+      chaser: CFG.C_ENEMY_DARK, interceptor: '#1A2244', drifter: '#3A3000',
+      elite: this.armored ? '#2A1A4A' : CFG.C_ENEMY_DARK,
+      blocker: '#1A3A1A', flanker: '#3A2200', bomber: '#3A0800',
+    };
+    const auraColor = typeColorMap[this.type] || CFG.C_ENEMY;
+    const bodyDark = typeDarkMap[this.type] || CFG.C_ENEMY_DARK;
 
     // Try sprite first (PNGs point UP → rotate +90° to face RIGHT)
     const _eImg = this.sprite ? Assets._cache[this.sprite] : null;
@@ -1203,9 +1307,9 @@ class Enemy {
       ctx.globalAlpha = this.fadeAlpha !== undefined ? Math.max(0.15, this.fadeAlpha) : 1;
     } else {
     // Body
-    ctx.fillStyle = isElite ? (this.armored ? '#2A1A4A' : CFG.C_ENEMY_DARK) : CFG.C_ENEMY_DARK;
+    ctx.fillStyle = bodyDark;
     ctx.fillRect(-ew/2, -eh/2, ew, eh);
-    ctx.strokeStyle = isElite ? (this.armored ? CFG.C_RARE : CFG.C_ENEMY) : CFG.C_ENEMY;
+    ctx.strokeStyle = auraColor;
     ctx.lineWidth = isElite ? 2.5 : 1.5;
     ctx.strokeRect(-ew/2, -eh/2, ew, eh);
 
@@ -1642,6 +1746,29 @@ function enemyDeathFX(type, x, y, isElite) {
       });
       ScreenFX.shake(6, 0.25);
       break;
+    case 'blocker':
+      Particles.spawn(x, y, '#88FF88', 10, {
+        vxMin: -200, vxMax: 200, vyMin: -200, vyMax: 200,
+        lifeMin: 0.3, lifeMax: 0.7, sizeMin: 4, sizeMax: 8, type: 'shard',
+      });
+      break;
+    case 'flanker':
+      Particles.spawn(x, y, '#FF8800', 12, {
+        vxMin: -350, vxMax: 350, vyMin: -350, vyMax: 350,
+        lifeMin: 0.2, lifeMax: 0.4, sizeMin: 2, sizeMax: 5, type: 'spark',
+      });
+      break;
+    case 'bomber':
+      Particles.spawn(x, y, '#CC2200', 14, {
+        vxMin: -250, vxMax: 250, vyMin: -250, vyMax: 250,
+        lifeMin: 0.4, lifeMax: 0.8, sizeMin: 5, sizeMax: 12, type: 'shard',
+      });
+      Particles.spawn(x, y, '#FF6600', 6, {
+        vxMin: -100, vxMax: 100, vyMin: -100, vyMax: 100,
+        lifeMin: 0.3, lifeMax: 0.5, sizeMin: 3, sizeMax: 6, type: 'smoke',
+      });
+      ScreenFX.shake(4, 0.2);
+      break;
     default:
       Particles.spawn(x, y, '#FF6688', 6, {
         vxMin: -200, vxMax: 200, vyMin: -200, vyMax: 200,
@@ -1977,6 +2104,35 @@ const Trail = {
           ScreenFX.flash(CFG.C_ACCENT, 0.15, 0.12);
           ScreenFX.shake(5, 0.2);
 
+          // Chain Lightning: damage 1 nearby enemy per kill
+          if (player.chainLightning && killCount > 0) {
+            const killed = enemies.filter(e => !e.alive);
+            for (const dead of killed) {
+              let closest = null, closestDist = 200;
+              for (const e2 of enemies) {
+                if (!e2.alive) continue;
+                const d2 = U.dist(dead.x, dead.y, e2.x, e2.y);
+                if (d2 < closestDist) { closestDist = d2; closest = e2; }
+              }
+              if (closest) {
+                closest.health--;
+                if (closest.health <= 0) {
+                  closest.alive = false;
+                  enemyDeathFX(closest.type, closest.x, closest.y, false);
+                  game.enemiesKilled++;
+                  game.score += 50 * player.scoreMult;
+                } else {
+                  closest.armored = false;
+                }
+                // Lightning particle line
+                Particles.spawn((dead.x + closest.x) / 2, (dead.y + closest.y) / 2, '#88CCFF', 6, {
+                  vxMin: -60, vxMax: 60, vyMin: -60, vyMax: 60,
+                  lifeMin: 0.1, lifeMax: 0.3, sizeMin: 2, sizeMax: 4, type: 'spark',
+                });
+              }
+            }
+          }
+
           // Clear trail after successful encirclement
           this.clear();
           return;
@@ -2119,6 +2275,7 @@ const Waves = {
   scrapTimer: 0,
   boostZones: [],
   boostZoneTimer: 0,
+  bombZones: [],
   upgradeCards: [],
   upgradeChosen: false,
   cadenceMult: 1,
@@ -2138,6 +2295,7 @@ const Waves = {
     this.scrapTimer = CFG.SCRAP_INTERVAL;
     this.boostZones = [];
     this.boostZoneTimer = CFG.BOOST_ZONE_SPAWN_INTERVAL;
+    this.bombZones = [];
     this.upgradeCards = [];
     this.upgradeChosen = false;
     this.cadenceMult = 1;
@@ -2161,6 +2319,7 @@ const Waves = {
     this.scrapTimer = CFG.SCRAP_INTERVAL;
     this.boostZones = [];
     this.boostZoneTimer = CFG.BOOST_ZONE_SPAWN_INTERVAL;
+    this.bombZones = [];
     this._burstQueue = [];
 
     // Wave-specific timing ramp: wave 1 is easiest, fully ramped by wave 5
@@ -2182,6 +2341,9 @@ const Waves = {
     const pool = ['chaser'];
     if (score >= 1000) pool.push('interceptor');
     if (score >= 1500) pool.push('drifter');
+    if (score >= 2000) pool.push('blocker');
+    if (score >= 2500) pool.push('flanker');
+    if (score >= 3000) pool.push('bomber');
     // Elite: rare spawn from wave 4+
     if (this.waveIndex >= 4 && Math.random() < 0.12) return 'elite';
     return U.randChoice(pool);
@@ -2278,6 +2440,7 @@ const Waves = {
         this.phase = 'break';
         this.breakTimer = CFG.WAVE_BREAK;
         this.enemies = [];
+        this.bombZones = [];
         Trail.clear();
         // Build upgrade offer
         this.upgradeCards = game.buildUpgradeOffer();
@@ -2291,10 +2454,29 @@ const Waves = {
     for (const e of this.enemies) {
       e.update(dt, player);
     }
+    // Process bomber bomb drops
+    for (const e of this.enemies) {
+      if (e.type === 'bomber' && e._dropBomb && e.alive) {
+        if (this.bombZones.length < CFG.BOMB_ZONE_MAX) {
+          this.bombZones.push({ x: e.x, y: e.y, life: CFG.BOMB_ZONE_DURATION, radius: CFG.BOMB_ZONE_RADIUS, phase: 0 });
+        }
+        e._dropBomb = false;
+      }
+    }
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       if (!this.enemies[i].alive) {
         this.enemies[i] = this.enemies[this.enemies.length - 1];
         this.enemies.pop();
+      }
+    }
+    // Update bomb zones
+    for (let i = this.bombZones.length - 1; i >= 0; i--) {
+      const bz = this.bombZones[i];
+      bz.life -= dt;
+      bz.phase += dt * 3;
+      if (bz.life <= 0) {
+        this.bombZones[i] = this.bombZones[this.bombZones.length - 1];
+        this.bombZones.pop();
       }
     }
 
@@ -2599,6 +2781,30 @@ const Waves = {
       ctx.restore();
     }
   },
+
+  renderBombZones(ctx) {
+    for (const bz of this.bombZones) {
+      ctx.save();
+      ctx.translate(bz.x, bz.y);
+      const pulse = 0.3 + 0.15 * Math.sin(bz.phase);
+      const fadeAlpha = Math.min(1, bz.life / 1.5);
+      ctx.globalAlpha = pulse * fadeAlpha;
+      ctx.fillStyle = '#CC2200';
+      ctx.beginPath();
+      ctx.arc(0, 0, bz.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#FF4400';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Inner hazard core
+      ctx.globalAlpha *= 0.5;
+      ctx.fillStyle = '#FF6600';
+      ctx.beginPath();
+      ctx.arc(0, 0, bz.radius * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  },
 };
 
 // ── 11. UPGRADES ────────────────────────────────────────────
@@ -2645,6 +2851,17 @@ const ARENA_UPGRADES = [
     apply(p) { p.trailMagnet = true; } },
   { id: 'speed_trail', name: 'Speed Trail', desc: 'Trail grows with speed', icon: 'ST',
     apply(p) { p.speedTrail = true; } },
+  // v1.1 upgrades
+  { id: 'dash_burst', name: 'Dash Burst', desc: 'Tap brake at speed for invuln dash (3s cd)', icon: 'DB',
+    apply(p) { p.dashBurst = true; } },
+  { id: 'trail_burn', name: 'Trail Burn', desc: 'Trail damages enemies that touch it', icon: 'TB',
+    apply(p) { p.trailBurn = true; } },
+  { id: 'chain_lightning', name: 'Chain Lightning', desc: 'Loop kills chain to 1 nearby enemy', icon: 'CL',
+    apply(p) { p.chainLightning = true; } },
+  { id: 'extra_rerolls', name: 'Lucky Dice', desc: '+2 rerolls per break', icon: 'LR',
+    apply(p) { /* handled in reroll logic */ } },
+  { id: 'nitro_drift', name: 'Nitro Drift', desc: '+30% speed while drifting', icon: 'ND',
+    apply(p) { p.nitroDrift = true; } },
 ];
 
 // ── 12. HUD / UI ────────────────────────────────────────────
@@ -2921,7 +3138,7 @@ const Game = {
   enemiesKilled: 0,
   // Touch UI
   sandbox: false,
-  modifiers: { hardMode: false, speedRush: false, fragile: false },
+  modifiers: { hardMode: false, speedRush: false, fragile: false, doubleEnemies: false },
   touchDriftBtn: { x: CFG.W - S(70), y: CFG.H - S(80), r: S(40) },
 
   applyMap(id) {
@@ -3010,6 +3227,12 @@ const Game = {
       this.player.hp = 50;
       this.player.scoreMult *= 1.4;
     }
+    if (this.modifiers.doubleEnemies) {
+      CFG.SPAWN_INTERVAL_INITIAL *= 0.5;
+      CFG.SPAWN_INTERVAL_MIN *= 0.5;
+      CFG.BURST_COUNT = 4;
+      this.player.scoreMult *= 1.6;
+    }
     if (!this.sandbox) {
       Waves.startWave(this.player);
       this.waveAnnounceTimer = 2.0;
@@ -3018,11 +3241,13 @@ const Game = {
   },
 
   buildUpgradeOffer() {
-    const stackable = ['shield', 'hp_regen', 'max_hp', 'damage_resist'];
+    const stackable = ['shield', 'hp_regen', 'max_hp', 'damage_resist', 'extra_rerolls'];
     const regenCount = this.player.upgrades.filter(u => u === 'hp_regen').length;
+    const extraRerollCount = this.player.upgrades.filter(u => u === 'extra_rerolls').length;
     const pool = ARENA_UPGRADES.filter(u =>
       (!this.player.upgrades.includes(u.id) || stackable.includes(u.id))
       && !(u.id === 'hp_regen' && regenCount >= 3)
+      && !(u.id === 'extra_rerolls' && extraRerollCount >= 2)
     );
     return U.randSample(pool, CFG.UPGRADES_TO_OFFER);
   },
@@ -3074,6 +3299,7 @@ const Game = {
       if (Input.keys['Digit1']) { this.modifiers.hardMode = !this.modifiers.hardMode; Input.keys['Digit1'] = false; }
       if (Input.keys['Digit2']) { this.modifiers.speedRush = !this.modifiers.speedRush; Input.keys['Digit2'] = false; }
       if (Input.keys['Digit3']) { this.modifiers.fragile = !this.modifiers.fragile; Input.keys['Digit3'] = false; }
+      if (Input.keys['Digit4']) { this.modifiers.doubleEnemies = !this.modifiers.doubleEnemies; Input.keys['Digit4'] = false; }
       if (Input.enter || Input.keys['Space'] || tap) {
         Audio.play('ui_click');
         if (!this.sandbox) localStorage.setItem('oversteer_sandbox', '0');
@@ -3111,7 +3337,7 @@ const Game = {
       this.gameOverTimer -= rawDt;
       if (this.gameOverTimer <= 0 && (Input.enter || Input.keys['Space'])) {
         this.state = STATE.MENU;
-        this.modifiers = { hardMode: false, speedRush: false, fragile: false };
+        this.modifiers = { hardMode: false, speedRush: false, fragile: false, doubleEnemies: false };
         Audio.stopAll();
         Input.keys['Space'] = false;
       }
@@ -3272,13 +3498,72 @@ const Game = {
     Props.checkNearMiss(this.player, this);
     Props.checkEnemyCollision(Waves.enemies);
 
+    // Bomb zone damage (from Bomber enemies)
+    for (const bz of Waves.bombZones) {
+      if (U.dist(this.player.x, this.player.y, bz.x, bz.y) < bz.radius + this.player.radius) {
+        this.player.slowTimer = 0.2;
+        this.player.slowStrength = CFG.BOMB_ZONE_SLOW;
+        if (this.player.invulnTimer <= 0 && this.player.ghostFrameTimer <= 0) {
+          const zoneDmg = Math.round(CFG.BOMB_ZONE_DMG * dt);
+          if (zoneDmg >= 1) {
+            const finalDmg = Math.max(1, Math.round(zoneDmg * (1 - this.player.damageResist)));
+            this.player.hp -= finalDmg;
+            this.player.lastHitTimer = 0;
+          }
+        }
+      }
+    }
+
     // Camera
     Camera.update(dt, this.player.x, this.player.y, this.player.vx, this.player.vy, this.player.speed);
+
+    // Compute trail midpoint for blocker AI
+    if (Trail.count > 10) {
+      let sx = 0, sy = 0, cnt = 0;
+      const step = Math.max(1, Math.floor(Trail.count / 50));
+      for (let i = 0; i < Trail.count; i += step) {
+        const pt = Trail.getPoint(i);
+        sx += pt.x; sy += pt.y; cnt++;
+      }
+      this.player._trailMidpoint = { x: sx / cnt, y: sy / cnt };
+    } else {
+      this.player._trailMidpoint = null;
+    }
 
     // Trail (encirclement)
     Trail.update(dt, this.player);
     if (!this.sandbox) {
       Trail.checkLoop(this.player, Waves.enemies, this);
+    }
+
+    // Trail Burn: trail damages enemies that touch it
+    if (this.player.trailBurn && Trail.count > 0) {
+      for (const e of Waves.enemies) {
+        if (!e.alive) continue;
+        if ((e._trailBurnCooldown || 0) > 0) { e._trailBurnCooldown -= dt; continue; }
+        const step = Math.max(1, Math.floor(Trail.count / 40));
+        for (let ti = 0; ti < Trail.count; ti += step) {
+          const pt = Trail.getPoint(ti);
+          if (U.dist(e.x, e.y, pt.x, pt.y) < 15 + e.radius) {
+            e.health--;
+            e._trailBurnCooldown = 1.0;
+            if (e.health <= 0) {
+              e.alive = false;
+              enemyDeathFX(e.type, e.x, e.y, false);
+              this.enemiesKilled++;
+              this.score += 50 * this.player.scoreMult;
+              Particles.addFloat(e.x, e.y - 20, 'BURN!', '#FF6600', 14);
+            } else {
+              e.armored = false;
+              Particles.spawn(e.x, e.y, '#FF6600', 4, {
+                vxMin: -80, vxMax: 80, vyMin: -80, vyMax: 80,
+                lifeMin: 0.2, lifeMax: 0.4, sizeMin: 2, sizeMax: 4, type: 'spark',
+              });
+            }
+            break;
+          }
+        }
+      }
     }
 
     // Tutorial hint: show during wave 1 when enemies exist and no encirclement yet
@@ -3448,7 +3733,7 @@ const Game = {
     // Check for upgrade break transition
     if (Waves.phase === 'break' && this.state === STATE.PLAYING) {
       this.state = STATE.UPGRADE;
-      this.rerollsLeft = CFG.REROLL_MAX;
+      this.rerollsLeft = CFG.REROLL_MAX + this.player.upgrades.filter(u => u === 'extra_rerolls').length * 2;
       this.upgradeConfirmTimer = CFG.UPGRADE_CONFIRM_TIME;
       this.cardAnimTimer = 0;
       this.upgradeSelectedIndex = -1;
@@ -3494,7 +3779,8 @@ const Game = {
 
         // Determine damage (scales after wave 5)
         const dmgMap = { chaser: CFG.DMG_CHASER, interceptor: CFG.DMG_INTERCEPTOR,
-                         drifter: CFG.DMG_DRIFTER, elite: CFG.DMG_ELITE };
+                         drifter: CFG.DMG_DRIFTER, elite: CFG.DMG_ELITE,
+                         blocker: CFG.DMG_BLOCKER, flanker: CFG.DMG_FLANKER, bomber: CFG.DMG_BOMBER };
         let baseDmg = dmgMap[e.type] || CFG.DMG_CHASER;
         const waveScale = Waves.waveIndex > 5
           ? Math.min(CFG.DMG_SCALE_MAX, 1 + CFG.DMG_SCALE_PER_WAVE * (Waves.waveIndex - 5))
@@ -3743,6 +4029,9 @@ const Game = {
 
     // Boost zones
     Waves.renderBoostZones(ctx);
+
+    // Bomb zones (hazard areas from Bomber enemies)
+    Waves.renderBombZones(ctx);
 
     // Enemies
     Waves.renderEnemies(ctx, this.time);
@@ -3995,24 +4284,38 @@ const Game = {
       U.text(ctx, 'ENEMIES KILLED', CFG.W/2 - col, sy + S(240), { align: 'right', color: '#888', size: 16 });
       U.text(ctx, `${this.enemiesKilled}`, CFG.W/2, sy + S(240), { align: 'left', color: CFG.C_ENEMY, size: 20, bold: true });
 
+      // Active modifiers and score multiplier
+      const activeModNames = [];
+      let totalMult = 1;
+      if (this.modifiers.hardMode) { activeModNames.push('HARD'); totalMult *= 1.5; }
+      if (this.modifiers.speedRush) { activeModNames.push('RUSH'); totalMult *= 1.3; }
+      if (this.modifiers.fragile) { activeModNames.push('FRAGILE'); totalMult *= 1.4; }
+      if (this.modifiers.doubleEnemies) { activeModNames.push('DOUBLE'); totalMult *= 1.6; }
+      if (activeModNames.length > 0) {
+        U.text(ctx, 'MODIFIERS', CFG.W/2 - col, sy + S(270), { align: 'right', color: '#888', size: 16 });
+        U.text(ctx, activeModNames.join(' + ') + ` (${totalMult.toFixed(1)}x)`, CFG.W/2, sy + S(270), { align: 'left', color: CFG.C_ACCENT, size: 16, bold: true });
+      }
+
+      const modOffset = activeModNames.length > 0 ? S(30) : 0;
+
       if (this.newBest) {
-        U.text(ctx, 'NEW BEST!', CFG.W/2, sy + S(275), { align: 'center', color: CFG.C_PICKUP, size: 22, bold: true, shadow: true });
+        U.text(ctx, 'NEW BEST!', CFG.W/2, sy + S(275) + modOffset, { align: 'center', color: CFG.C_PICKUP, size: 22, bold: true, shadow: true });
       }
 
       // Upgrades taken
       const ups = this.player.upgrades;
       if (ups.length > 0) {
-        U.text(ctx, 'UPGRADES:', CFG.W/2, sy + S(305), { align: 'center', color: '#666', size: 12 });
+        U.text(ctx, 'UPGRADES:', CFG.W/2, sy + S(305) + modOffset, { align: 'center', color: '#666', size: 12 });
         const upStr = ups.map(id => {
           const u = ARENA_UPGRADES.find(a => a.id === id);
           return u ? u.icon : '?';
         }).join('  ');
-        U.text(ctx, upStr, CFG.W/2, sy + S(325), { align: 'center', color: CFG.C_ACCENT, size: 20, bold: true });
+        U.text(ctx, upStr, CFG.W/2, sy + S(325) + modOffset, { align: 'center', color: CFG.C_ACCENT, size: 20, bold: true });
       }
 
       // Death cause
       if (this.deathCause) {
-        U.text(ctx, this.deathCause, CFG.W/2, sy + S(345), { align: 'center', color: '#666', size: 13 });
+        U.text(ctx, this.deathCause, CFG.W/2, sy + S(345) + modOffset, { align: 'center', color: '#666', size: 13 });
       }
 
       if (Math.floor(this.menuAnim * 2) % 2 === 0) {
@@ -4213,6 +4516,7 @@ const Game = {
       { key: '1', label: 'HARD MODE', desc: 'Enemies +25% speed, 1.5x score', active: this.modifiers.hardMode },
       { key: '2', label: 'SPEED RUSH', desc: 'Spawns 2x faster, 1.3x score', active: this.modifiers.speedRush },
       { key: '3', label: 'FRAGILE', desc: '50 HP only, 1.4x score', active: this.modifiers.fragile },
+      { key: '4', label: 'DOUBLE ENEMIES', desc: 'Spawns 2x, bursts 2x, 1.6x score', active: this.modifiers.doubleEnemies },
     ];
     for (let i = 0; i < mods.length; i++) {
       const m = mods[i];
