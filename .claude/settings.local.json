@@ -15,7 +15,8 @@
       "Bash(node check_syntax.js)",
       "Bash(grep -n \"^//\" /c/Users/Nick/Documents/GitHub/Oversteer/arena-drifter/index.html | head -50)",
       "Bash(grep -n \"case 'p'\\\\|case 'P'\\\\|case 's'\\\\|case 'S'\\\\|case 'r'\\\\|case 'R'\" /c/Users/Nick/Documents/GitHub/Oversteer/arena-drifter/index.html)",
-      "Bash(grep -n \"type === 'elite'\\\\|type.*elite\\\\|ELITE\\\\|Elite\" /c/Users/Nick/Documents/GitHub/Oversteer/arena-drifter/index.html)"
+      "Bash(grep -n \"type === 'elite'\\\\|type.*elite\\\\|ELITE\\\\|Elite\" /c/Users/Nick/Documents/GitHub/Oversteer/arena-drifter/index.html)",
+      "Bash(git log:*)"
     ]
   }
 }

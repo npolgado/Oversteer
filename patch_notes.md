@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-03-12 - v0.9.6 - Bug Fixes, Mobile Touch & Performance
+- **Another Map!**: use a and d or <- / -> for map selection on a new game 
+- **Pickups**: Fixed a bug where multiple pickups could not be collected at the same time
+- **Speed Demon**: Fixed enemy speed bonus not applying when selecting **Speed Demon** upgrade
+- **Trails**: Fixed trail upgrades (**Wider Trail**, **Trail Echo**) not persisting between waves
+- **Mobile touch**: Tap to start from menu, tap upgrade cards and reroll button during wave breaks
+  - Updated menu hints and start prompt for touch controls
+- **Performance**: Pre-rendered pickup and boost zone glows via **FXCache** (removed `shadowBlur`)
+  - Prop collision now uses chunk-based lookup instead of checking all props
+  - Trail rendering batched into single gradient path draw instead of per-segment strokes
+- **Menu**: Added **Reverse/Handbrake** and **Reroll** to the controls list
+- dev: added unit testing (currently 22/22 passed), pre-push test hook, docs and roadmap files
+
 ## 2026-03-09 - v0.9.5 - Horde and Upgrade Rerolls
 - **Horde event**: At 75% of each combat phase (wave 2+), a ring of enemies spawns around the player with a "HORDE INCOMING!" warning banner and screen shake
   - Base 4 enemies, +0.5 per wave, up to 15 max
