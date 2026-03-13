@@ -43,7 +43,7 @@ patch_notes.md                  Version history
 | Space | Handbrake (alias for S/Down at speed) |
 | P / Escape | Pause |
 | R | Reroll upgrades (during upgrade selection) |
-| 1/2/3 or Numpad 1/2/3 | Select upgrade card / Toggle difficulty modifiers (map select) |
+| 1/2/3/4 or Numpad 1/2/3 | Select upgrade card / Toggle difficulty modifiers (map select) |
 | S (menu only) | Sandbox mode |
 | A/D (map select) | Cycle maps |
 | Escape (map select) | Back to menu |
@@ -74,10 +74,20 @@ Enemies share the same physics engine as the player. Unlocked by score, not wave
 | Chaser | 420 px/s | 200°/s (1.0x) | Drives straight at player | enemy_red, enemy_orange | Always |
 | Interceptor | 460 px/s | 170°/s (0.85x) | Leads player position by 0.5s | police, ambulance | 1000 pts |
 | Drifter | 440 px/s | 220°/s (1.1x) | Alternates normal driving (1.5-3s) and sustained drifts (1-2.5s) | taxi, mini_van | 1500 pts |
+| Blocker | 380 px/s | 140°/s (0.7x) | Targets trail midpoint, holds position to block encirclement | truck, enemy_red | 2000 pts |
+| Flanker | 470 px/s | 180°/s (0.9x) | Approaches perpendicular to player velocity, charges within 120px | police, enemy_orange | 2500 pts |
+| Bomber | 400 px/s | 150°/s (0.75x) | Orbits ahead of player, drops hazard zones every 4s | mini_truck, mini_van | 3000 pts |
 | Elite | 378 px/s | 160°/s (0.8x) | Armored (2 HP), larger hitbox (r=14), 1.5x lifespan | truck, mini_truck | Wave 4+, 12% chance |
 
 Sprites configured via `CFG.ENEMY_SPRITES_BY_TYPE` (per-type sprite pools with random selection).
 Enemies spawn 550px from player, lifespan 10-18s, despawn if offscreen >5s or >1200px away.
+
+### Bomber Hazard Zones
+- Bomber enemies drop hazard zones every `BOMB_ZONE_INTERVAL` (4s) at their current position
+- Zones last `BOMB_ZONE_DURATION` (6s), max `BOMB_ZONE_MAX` (15) active zones
+- Player inside zone: `BOMB_ZONE_DMG` (8) DPS + `BOMB_ZONE_SLOW` (0.6x) speed multiplier
+- Zones cleared on wave break, rendered as pulsing red circles with inner core
+- Damage respects invulnerability, damage_resist, and ghost_frame
 
 ## Wave System
 - **Combat phase**: Starts at 30s, +10s per wave, capped at 120s. Enemies spawn on interval.
@@ -124,11 +134,11 @@ Core mechanic: the player leaves a visible trail. When the trail forms a closed 
 - Both values reset on death/new run via `Trail.reset()`
 - Loop kills trigger shockwave particles + score award
 
-## Upgrades (21 total, no rarity system)
+## Upgrades (26 total, no rarity system)
 Offered during wave break phase (pick 1 of 3). No selection timer — player takes as long as needed.
-- **Rerolls**: Press R to reroll upgrade cards (up to 3 per break, resets each break)
+- **Rerolls**: Press R to reroll upgrade cards (up to 3 per break, resets each break; extra_rerolls adds +2 per stack)
 - **Post-selection**: After choosing, cards disappear and a centered 3-second countdown plays before next wave
-- **Stackable upgrades**: shield, hp_regen (max 3), max_hp, damage_resist can be picked multiple times
+- **Stackable upgrades**: shield, hp_regen (max 3), max_hp, damage_resist, extra_rerolls (max 2) can be picked multiple times
 
 | Upgrade | Effect |
 |---------|--------|
@@ -153,6 +163,11 @@ Offered during wave break phase (pick 1 of 3). No selection timer — player tak
 | combo_heal | Heal 10/15/25 HP at combo milestones 3/5/8 |
 | trail_magnet | Trail points attract scraps within 80px |
 | speed_trail | Trail MAX_POINTS scales with speed (+1 per 100px/s) |
+| dash_burst | Tap brake at speed >300 for 0.2s invuln dash, 3s cooldown |
+| trail_burn | Trail damages enemies that touch it (1 dmg, 1s cooldown per enemy) |
+| chain_lightning | Loop kills chain 1 damage to nearest enemy within 200px |
+| extra_rerolls | +2 rerolls per break (stackable, max 2) |
+| nitro_drift | +30% max speed while drifting |
 
 ## Pickups
 Scraps spawn every 6s during combat. Types determined by cascading random roll:
@@ -211,15 +226,17 @@ Scraps spawn every 6s during combat. Types determined by cascading random roll:
 - **Pause controls**: M=mute, [/]=SFX volume, -/==music volume
 
 ## Difficulty Modifiers
-- Toggled on MAP_SELECT screen with number keys (1/2/3) or touch
+- Toggled on MAP_SELECT screen with number keys (1/2/3/4) or touch
 - Applied in `Game.reset()` after `applyMap()`
 - Reset on GAME_OVER → MENU transition
+- Active modifiers and combined score multiplier displayed on game-over screen
 
 | Modifier | Effect | Score Multiplier |
 |----------|--------|-----------------|
 | Hard Mode | Enemy speed +100 px/s | 1.5x |
 | Speed Rush | Spawn intervals halved | 1.3x |
 | Fragile | 50 HP max | 1.4x |
+| Double Enemies | Spawn intervals halved + burst count doubled (4) | 1.6x |
 
 ## Extended Run Stats
 - Tracked during gameplay: `peakCombo`, `nearMissTotal`, `totalDriftTime`, `enemiesKilled`
@@ -242,10 +259,12 @@ Scraps spawn every 6s during combat. Types determined by cascading random roll:
 - **Drift trail thickness**: Trail `lineWidth` varies per segment based on speed (base + 3×speedFrac)
 
 ## Testing
-- Pure logic extracted to `test/logic.js` (mirrors functions from `index.html`); tests in `*.test.js` files
+- Pure logic extracted to `arena-drifter/logic.js` (mirrors functions from `index.html`); tests in `test/*.test.js` files
 - Run tests: `node --test test/`
-- When adding new game mechanics, extract the testable logic into `test/logic.js` with a matching export, then write tests against it
+- When adding new game mechanics, extract the testable logic into `arena-drifter/logic.js` with a matching export, then write tests against it
 - Tests run in Node (no browser/DOM) — keep test helpers dependency-free
+- Test files: `upgrades.test.js`, `pickups.test.js`, `waves.test.js`, `scoring.test.js`, `trail.test.js`, `enemies.test.js`
+- logic.js exports include: `getEnemyPool`, `shouldSpawnElite`, `computeFlankTarget`, `computeBlockerTarget`, `applyBombZoneDamage`, `computeModifierScoreMult`
 
 ## Coding Conventions
 - Avoid `.filter()` on per-frame arrays (enemies, particles) — use in-place swap-and-pop to reduce GC pressure
