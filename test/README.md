@@ -16,4 +16,4 @@ node --test
 - Wave timing + horde counts (`test/waves.test.js`)
 - Near-miss scoring + streaks (`test/scoring.test.js`)
 
-Logic helpers are mirrored in `test/logic.js` to keep the single-file game intact.
+Logic helpers live in `arena-drifter/logic.js` and are shared by the game and tests.
