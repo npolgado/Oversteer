@@ -2,6 +2,31 @@
 
 ---
 
+## 2026-03-13 - v1.0 - Audio, Stats & Polish
+- **Full audio system**: Procedural sound synthesis — no audio files needed
+  - **Engine hum** rises in pitch and volume with speed
+  - **Drift squeal** plays during drift, intensity follows slip angle
+  - **One-shot SFX**: collision thuds, encirclement chimes, near-miss whooshes, horde alarm, combo stings, UI clicks
+  - **Ambient music**: Low sine pad with LFO modulation during gameplay, ducks on pause, fades on death
+  - Audio controls on pause screen: **[M]** mute, **[ ] ]** SFX volume, **[- =]** music volume
+  - Volume/mute preferences saved to localStorage
+- **Difficulty modifiers**: Toggle on map select with **1/2/3**
+  - **Hard Mode**: enemies +100 px/s speed, 1.5x score
+  - **Speed Rush**: spawn intervals halved, 1.3x score
+  - **Fragile**: 50 HP only, 1.4x score
+- **4 new upgrades** (21 total):
+  - **Drift Shield**: -40% damage while drifting
+  - **Combo Medic**: Heal 10/15/25 HP at combo milestones 3/5/8
+  - **Trail Magnet**: Trail points attract scraps within 80px
+  - **Speed Trail**: Trail capacity grows with speed
+- **Extended run stats** on game-over screen: peak combo, near misses, drift time, enemies killed
+- **Arena boundary glow**: Multi-pass pulsing glow border replaces flat stroke
+- **Wall-riding sparks**: Spark particles along nearest wall when drifting near boundary
+- **Enemy death FX**: Type-specific effects — red sparks (chaser), blue sparks (interceptor), smoke burst (drifter), golden explosion + screen shake (elite)
+- **Directional camera shake**: Collision shake biased toward impact direction
+- **Drift trail thickness**: Trail line width varies with speed per segment
+- dev: 10 new unit tests (32 total) covering stat tracking and new upgrade effects
+
 ## 2026-03-12 - v0.9.6 - Bug Fixes, Mobile Touch & Performance
 - **Another Map!**: use a and d or <- / -> for map selection on a new game 
 - **Pickups**: Fixed a bug where multiple pickups could not be collected at the same time
