@@ -15,6 +15,7 @@ canvas {
   image-rendering: pixelated;
 }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js"></script>
 </head>
 <body>
 <canvas id="c"></canvas>
@@ -208,6 +209,286 @@ const MAPS_BY_ID = Object.fromEntries(MAPS.map(m => [m.id, m]));
 
 // Scale helper: converts reference-resolution pixels to current resolution
 function S(px) { return Math.round(px * CFG.S); }
+
+// ── 1b. AUDIO ─────────────────────────────────────────────────
+const Audio = {
+  ctx: null,
+  masterGain: null,
+  sfxVolume: 0.7,
+  musicVolume: 0.4,
+  muted: false,
+  sounds: {},
+  engineOsc: null, engineGain: null, engineFilter: null, _enginePlaying: false,
+  driftNoise: null, driftGain: null, driftFilter: null, _driftPlaying: false,
+  musicNodes: null, _musicPlaying: false,
+
+  init() {
+    try {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      this.masterGain = this.ctx.createGain();
+      this.masterGain.connect(this.ctx.destination);
+      // Load prefs
+      try {
+        const saved = JSON.parse(localStorage.getItem('oversteer_audio_v1'));
+        if (saved) {
+          this.sfxVolume = saved.sfx ?? 0.7;
+          this.musicVolume = saved.music ?? 0.4;
+          this.muted = saved.muted ?? false;
+        }
+      } catch(e) {}
+      this.masterGain.gain.value = this.muted ? 0 : 1;
+      // Generate one-shot SFX via offline render → Howler
+      this._genAllSounds();
+    } catch(e) {
+      console.warn('AudioManager init failed:', e);
+    }
+  },
+
+  _savePrefs() {
+    localStorage.setItem('oversteer_audio_v1', JSON.stringify({
+      sfx: this.sfxVolume, music: this.musicVolume, muted: this.muted
+    }));
+  },
+
+  _generateWav(fn, dur, sampleRate) {
+    sampleRate = sampleRate || 44100;
+    const len = Math.floor(dur * sampleRate);
+    const buf = new Float32Array(len);
+    fn(buf, sampleRate, len);
+    // Encode as WAV blob URL
+    const numCh = 1, bitsPerSample = 16;
+    const byteRate = sampleRate * numCh * bitsPerSample / 8;
+    const blockAlign = numCh * bitsPerSample / 8;
+    const dataSize = len * blockAlign;
+    const abuf = new ArrayBuffer(44 + dataSize);
+    const v = new DataView(abuf);
+    const writeStr = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    writeStr(0, 'RIFF'); v.setUint32(4, 36 + dataSize, true); writeStr(8, 'WAVE');
+    writeStr(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+    v.setUint16(22, numCh, true); v.setUint32(24, sampleRate, true);
+    v.setUint32(28, byteRate, true); v.setUint16(32, blockAlign, true);
+    v.setUint16(34, bitsPerSample, true); writeStr(36, 'data'); v.setUint32(40, dataSize, true);
+    for (let i = 0; i < len; i++) {
+      const s = Math.max(-1, Math.min(1, buf[i]));
+      v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    }
+    return URL.createObjectURL(new Blob([abuf], { type: 'audio/wav' }));
+  },
+
+  _genAllSounds() {
+    // collision: white noise burst + sine thump 100Hz, 0.15s
+    this.sounds.collision = new Howl({ src: [this._generateWav((b, sr, len) => {
+      for (let i = 0; i < len; i++) {
+        const t = i / sr, env = 1 - t / 0.15;
+        b[i] = (Math.random() * 2 - 1) * 0.3 * env + Math.sin(2 * Math.PI * 100 * t) * 0.5 * env;
+      }
+    }, 0.15)], volume: this.sfxVolume });
+
+    // encircle: ascending sine sweep 400→1200Hz + harmonics, 0.4s
+    this.sounds.encircle = new Howl({ src: [this._generateWav((b, sr, len) => {
+      for (let i = 0; i < len; i++) {
+        const t = i / sr, env = 1 - t / 0.4;
+        const freq = 400 + 800 * (t / 0.4);
+        b[i] = (Math.sin(2 * Math.PI * freq * t) * 0.4 +
+                Math.sin(2 * Math.PI * freq * 1.5 * t) * 0.2 +
+                Math.sin(2 * Math.PI * freq * 2 * t) * 0.1) * env;
+      }
+    }, 0.4)], volume: this.sfxVolume });
+
+    // near_miss: bandpass noise sweep 500→2kHz, 0.15s
+    this.sounds.near_miss = new Howl({ src: [this._generateWav((b, sr, len) => {
+      for (let i = 0; i < len; i++) {
+        const t = i / sr, env = 1 - t / 0.15;
+        const noise = Math.random() * 2 - 1;
+        b[i] = noise * 0.4 * env * Math.sin(2 * Math.PI * (500 + 1500 * t / 0.15) * t);
+      }
+    }, 0.15)], volume: this.sfxVolume });
+
+    // horde_warn: square wave 440Hz, 8Hz on-off pulse, 0.8s
+    this.sounds.horde_warn = new Howl({ src: [this._generateWav((b, sr, len) => {
+      for (let i = 0; i < len; i++) {
+        const t = i / sr;
+        const env = Math.sin(2 * Math.PI * 8 * t) > 0 ? 1 : 0;
+        const sq = Math.sin(2 * Math.PI * 440 * t) > 0 ? 0.35 : -0.35;
+        b[i] = sq * env * (1 - t / 0.8);
+      }
+    }, 0.8)], volume: this.sfxVolume });
+
+    // combo_sting: sine chord (root + fifth + octave), 0.25s
+    this.sounds.combo_sting = new Howl({ src: [this._generateWav((b, sr, len) => {
+      for (let i = 0; i < len; i++) {
+        const t = i / sr, env = 1 - t / 0.25;
+        b[i] = (Math.sin(2 * Math.PI * 440 * t) * 0.3 +
+                Math.sin(2 * Math.PI * 660 * t) * 0.2 +
+                Math.sin(2 * Math.PI * 880 * t) * 0.15) * env;
+      }
+    }, 0.25)], volume: this.sfxVolume });
+
+    // ui_click: sine blip 800Hz fast decay, 0.05s
+    this.sounds.ui_click = new Howl({ src: [this._generateWav((b, sr, len) => {
+      for (let i = 0; i < len; i++) {
+        const t = i / sr, env = 1 - t / 0.05;
+        b[i] = Math.sin(2 * Math.PI * 800 * t) * 0.3 * env * env;
+      }
+    }, 0.05)], volume: this.sfxVolume });
+  },
+
+  play(id) {
+    if (!this.sounds[id]) return;
+    this.sounds[id].volume(this.muted ? 0 : this.sfxVolume);
+    this.sounds[id].play();
+  },
+
+  // --- Engine (live oscillator) ---
+  startEngine() {
+    if (!this.ctx || this._enginePlaying) return;
+    this._resumeCtx();
+    this.engineOsc = this.ctx.createOscillator();
+    this.engineOsc.type = 'sawtooth';
+    this.engineOsc.frequency.value = 80;
+    this.engineFilter = this.ctx.createBiquadFilter();
+    this.engineFilter.type = 'lowpass';
+    this.engineFilter.frequency.value = 800;
+    this.engineGain = this.ctx.createGain();
+    this.engineGain.gain.value = this.muted ? 0 : 0.1 * this.sfxVolume;
+    this.engineOsc.connect(this.engineFilter);
+    this.engineFilter.connect(this.engineGain);
+    this.engineGain.connect(this.masterGain);
+    this.engineOsc.start();
+    this._enginePlaying = true;
+  },
+  stopEngine() {
+    if (!this._enginePlaying) return;
+    try { this.engineOsc.stop(); } catch(e) {}
+    this._enginePlaying = false;
+    this.engineOsc = null; this.engineGain = null; this.engineFilter = null;
+  },
+  setEngineSpeed(speedFrac) {
+    if (!this._enginePlaying || !this.engineOsc) return;
+    const f = Math.max(0, Math.min(1, speedFrac));
+    this.engineOsc.frequency.value = 80 + 120 * f;
+    this.engineGain.gain.value = this.muted ? 0 : (0.1 + 0.3 * f) * this.sfxVolume;
+  },
+
+  // --- Drift squeal (live noise) ---
+  startDrift() {
+    if (!this.ctx || this._driftPlaying) return;
+    this._resumeCtx();
+    // White noise buffer
+    const bufSize = this.ctx.sampleRate * 2;
+    const noiseBuf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
+    const data = noiseBuf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+    this.driftNoise = this.ctx.createBufferSource();
+    this.driftNoise.buffer = noiseBuf;
+    this.driftNoise.loop = true;
+    this.driftFilter = this.ctx.createBiquadFilter();
+    this.driftFilter.type = 'highpass';
+    this.driftFilter.frequency.value = 2000;
+    this.driftGain = this.ctx.createGain();
+    this.driftGain.gain.value = 0;
+    this.driftNoise.connect(this.driftFilter);
+    this.driftFilter.connect(this.driftGain);
+    this.driftGain.connect(this.masterGain);
+    this.driftNoise.start();
+    this._driftPlaying = true;
+  },
+  stopDrift() {
+    if (!this._driftPlaying) return;
+    try { this.driftNoise.stop(); } catch(e) {}
+    this._driftPlaying = false;
+    this.driftNoise = null; this.driftGain = null; this.driftFilter = null;
+  },
+  setDriftIntensity(slip) {
+    if (!this.ctx) return;
+    if (slip > 0 && !this._driftPlaying) this.startDrift();
+    if (slip <= 0 && this._driftPlaying) { this.stopDrift(); return; }
+    if (this._driftPlaying && this.driftGain) {
+      this.driftGain.gain.value = this.muted ? 0 : Math.min(1, slip) * 0.25 * this.sfxVolume;
+    }
+  },
+
+  // --- Music (live oscillators) ---
+  startMusic() {
+    if (!this.ctx || this._musicPlaying) return;
+    this._resumeCtx();
+    const g = this.ctx.createGain();
+    g.gain.value = this.muted ? 0 : this.musicVolume * 0.3;
+    const osc1 = this.ctx.createOscillator();
+    osc1.type = 'sine'; osc1.frequency.value = 110;
+    const osc2 = this.ctx.createOscillator();
+    osc2.type = 'sine'; osc2.frequency.value = 165;
+    // LFO for subtle modulation
+    const lfo = this.ctx.createOscillator();
+    lfo.type = 'sine'; lfo.frequency.value = 0.3;
+    const lfoGain = this.ctx.createGain();
+    lfoGain.gain.value = 5;
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc1.frequency);
+    lfoGain.connect(osc2.frequency);
+    const filt = this.ctx.createBiquadFilter();
+    filt.type = 'lowpass'; filt.frequency.value = 300;
+    osc1.connect(filt); osc2.connect(filt);
+    filt.connect(g); g.connect(this.masterGain);
+    osc1.start(); osc2.start(); lfo.start();
+    this.musicNodes = { osc1, osc2, lfo, lfoGain, filter: filt, gain: g };
+    this._musicPlaying = true;
+  },
+  stopMusic() {
+    if (!this._musicPlaying || !this.musicNodes) return;
+    try { this.musicNodes.osc1.stop(); } catch(e) {}
+    try { this.musicNodes.osc2.stop(); } catch(e) {}
+    try { this.musicNodes.lfo.stop(); } catch(e) {}
+    this._musicPlaying = false;
+    this.musicNodes = null;
+  },
+  fadeOutMusic(dur) {
+    if (!this._musicPlaying || !this.musicNodes) return;
+    const g = this.musicNodes.gain;
+    g.gain.setValueAtTime(g.gain.value, this.ctx.currentTime);
+    g.gain.linearRampToValueAtTime(0, this.ctx.currentTime + dur);
+    const nodes = this.musicNodes;
+    this._musicPlaying = false;
+    this.musicNodes = null;
+    setTimeout(() => {
+      try { nodes.osc1.stop(); } catch(e) {}
+      try { nodes.osc2.stop(); } catch(e) {}
+      try { nodes.lfo.stop(); } catch(e) {}
+    }, dur * 1000 + 50);
+  },
+
+  stopAll() {
+    this.stopEngine();
+    this.stopDrift();
+    this.stopMusic();
+  },
+
+  setMuted(val) {
+    this.muted = val;
+    if (this.masterGain) this.masterGain.gain.value = val ? 0 : 1;
+    this._savePrefs();
+  },
+
+  setVolume(type, val) {
+    val = Math.max(0, Math.min(1, Math.round(val * 10) / 10));
+    if (type === 'sfx') {
+      this.sfxVolume = val;
+      if (this._enginePlaying && this.engineGain) {
+        this.engineGain.gain.value = this.muted ? 0 : this.sfxVolume * 0.2;
+      }
+    } else if (type === 'music') {
+      this.musicVolume = val;
+      if (this._musicPlaying && this.musicNodes) {
+        this.musicNodes.gain.gain.value = this.muted ? 0 : this.musicVolume * 0.3;
+      }
+    }
+    this._savePrefs();
+  },
+
+  _resumeCtx() {
+    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+  },
+};
 
 // ── PRE-RENDERED FX CACHES ──────────────────────────────────
 const FXCache = {
@@ -484,6 +765,7 @@ const Input = {
   init() {
     document.addEventListener('keydown', e => {
       Input.keys[e.code] = true;
+      Audio._resumeCtx();
       e.preventDefault();
     });
     document.addEventListener('keyup', e => {
@@ -491,7 +773,7 @@ const Input = {
     });
     // Touch controls
     const cv = document.getElementById('c');
-    cv.addEventListener('touchstart', e => { e.preventDefault(); Input._touchStart(e); }, { passive: false });
+    cv.addEventListener('touchstart', e => { e.preventDefault(); Audio._resumeCtx(); Input._touchStart(e); }, { passive: false });
     cv.addEventListener('touchmove', e => { e.preventDefault(); Input._touchMove(e); }, { passive: false });
     cv.addEventListener('touchend', e => { e.preventDefault(); Input._touchEnd(e); }, { passive: false });
     cv.addEventListener('touchcancel', e => { e.preventDefault(); Input._touchEnd(e); }, { passive: false });
@@ -751,6 +1033,10 @@ class Player {
     this.speedDemon = false;
     this.encircleScoreBonus = 1;
     this.damageResist = 0;
+    this.driftShield = false;
+    this.comboHeal = false;
+    this.trailMagnet = false;
+    this.speedTrail = false;
     // Handbrake
     this.handbrakeTimer = 0;
     // Speed boost
@@ -831,6 +1117,9 @@ class Player {
     this.driftJustStarted = false;
     updatePhysics(this, dt, turnInput, Input.up, Input.down, Input.drift, true);
 
+    // Audio: engine pitch follows speed
+    Audio.setEngineSpeed(this.speed / this.maxSpeed);
+
     this.turnRate = origTurn;
     this.maxSpeed = origMaxSpeed;
 
@@ -858,6 +1147,15 @@ class Player {
       const boost = CFG.WALL_RIDE_SPEED_BONUS * (this.maxSpeed || CFG.MAX_SPEED) * dt;
       this.vx += fwd.x * boost;
       this.vy += fwd.y * boost;
+      // Wall-riding sparks along nearest wall
+      if (Math.random() < 0.5) {
+        const sx = this.x < pad + wd ? pad : this.x > CFG.WORLD_W - pad - wd ? CFG.WORLD_W - pad : this.x;
+        const sy = this.y < pad + wd ? pad : this.y > CFG.WORLD_H - pad - wd ? CFG.WORLD_H - pad : this.y;
+        Particles.spawn(sx, sy, CFG.C_ACCENT, U.randInt(1, 2), {
+          vxMin: -80, vxMax: 80, vyMin: -80, vyMax: 80,
+          lifeMin: 0.1, lifeMax: 0.25, sizeMin: 2, sizeMax: 4, type: 'spark',
+        });
+      }
     }
 
     // Drift time tracking + drift chaining
@@ -873,6 +1171,9 @@ class Player {
       const comboDecay = this.comboMaster ? 1.0 : 2.0;
       this.comboLevel = Math.max(0, this.comboLevel - dt * comboDecay);
     }
+
+    // Audio: drift squeal intensity
+    Audio.setDriftIntensity(this.drifting ? Math.min(1, this.speed / this.maxSpeed) : 0);
 
     // Invulnerability
     if (this.invulnTimer > 0) this.invulnTimer -= dt;
@@ -1570,6 +1871,51 @@ const Particles = {
   },
 };
 
+// ── 8c. ENEMY DEATH FX (type-specific) ──────────────────────
+function enemyDeathFX(type, x, y, isElite) {
+  switch (type) {
+    case 'chaser':
+      Particles.spawn(x, y, '#FF4444', isElite ? 14 : 8, {
+        vxMin: -300, vxMax: 300, vyMin: -300, vyMax: 300,
+        lifeMin: 0.2, lifeMax: 0.5, sizeMin: 2, sizeMax: 6, type: 'spark',
+      });
+      break;
+    case 'interceptor':
+      Particles.spawn(x, y, '#4488FF', isElite ? 14 : 8, {
+        vxMin: -250, vxMax: 250, vyMin: -250, vyMax: 250,
+        lifeMin: 0.3, lifeMax: 0.6, sizeMin: 3, sizeMax: 7, type: 'spark',
+      });
+      break;
+    case 'drifter':
+      Particles.spawn(x, y, '#888888', 10, {
+        vxMin: -100, vxMax: 100, vyMin: -100, vyMax: 100,
+        lifeMin: 0.4, lifeMax: 0.8, sizeMin: 5, sizeMax: 12, type: 'smoke',
+      });
+      Particles.spawn(x, y, '#333', 4, {
+        vxMin: -30, vxMax: 30, vyMin: -30, vyMax: 30,
+        lifeMin: 0.8, lifeMax: 1.5, sizeMin: 2, sizeMax: 4, type: 'shard',
+      });
+      break;
+    case 'elite':
+      Particles.spawn(x, y, '#FFD700', 16, {
+        vxMin: -350, vxMax: 350, vyMin: -350, vyMax: 350,
+        lifeMin: 0.4, lifeMax: 0.9, sizeMin: 5, sizeMax: 14, type: 'shard',
+      });
+      Particles.spawn(x, y, '#fff', 8, {
+        vxMin: -200, vxMax: 200, vyMin: -200, vyMax: 200,
+        lifeMin: 0.2, lifeMax: 0.5, sizeMin: 3, sizeMax: 7, type: 'spark',
+      });
+      ScreenFX.shake(6, 0.25);
+      break;
+    default:
+      Particles.spawn(x, y, '#FF6688', 6, {
+        vxMin: -200, vxMax: 200, vyMin: -200, vyMax: 200,
+        lifeMin: 0.3, lifeMax: 0.7, sizeMin: 4, sizeMax: 10, type: 'shard',
+      });
+  }
+  Particles.addRing(x, y, type === 'elite' ? '#FFD700' : CFG.C_ACCENT);
+}
+
 // ── 9. SCREEN FX ────────────────────────────────────────────
 const ScreenFX = {
   shakeIntensity: 0,
@@ -1588,10 +1934,12 @@ const ScreenFX = {
   desatTarget: 0,
   freezeTimer: 0,
 
-  shake(intensity, dur) {
+  shake(intensity, dur, dirX, dirY) {
     this.shakeIntensity = intensity;
     this.shakeDuration = dur;
     this.shakeTimer = dur;
+    this._shakeDirX = dirX || 0;
+    this._shakeDirY = dirY || 0;
   },
 
   flash(color, alpha, dur) {
@@ -1652,13 +2000,17 @@ const ScreenFX = {
   },
 
   applyPre(ctx) {
-    // Shake
+    // Shake (with optional directional bias)
     let ox = 0, oy = 0;
     if (this.shakeTimer > 0) {
       const frac = this.shakeTimer / this.shakeDuration;
       const mag = this.shakeIntensity * frac;
       ox = U.randFloat(-mag, mag);
       oy = U.randFloat(-mag, mag);
+      if (this._shakeDirX || this._shakeDirY) {
+        ox = ox * 0.3 + this._shakeDirX * mag * 0.7;
+        oy = oy * 0.3 + this._shakeDirY * mag * 0.7;
+      }
     }
 
     ctx.save();
@@ -1759,15 +2111,16 @@ const Trail = {
   reset() {
     this.clear();
     this.MAX_POINTS = 400;
+    this._baseMaxPoints = 0;
     this.CLOSE_DIST = 40;
   },
 
-  push(x, y) {
+  push(x, y, speed) {
     if (this.count < this.MAX_POINTS) {
-      this.points.push({ x, y });
+      this.points.push({ x, y, speed: speed || 0 });
       this.count++;
     } else {
-      this.points[this.head] = { x, y };
+      this.points[this.head] = { x, y, speed: speed || 0 };
     }
     this.head = (this.head + 1) % this.MAX_POINTS;
   },
@@ -1794,9 +2147,15 @@ const Trail = {
       // Default cyan
       this._trailR = 53; this._trailG = 242; this._trailB = 208;
     }
+    // Speed trail: dynamically grow trail capacity with speed
+    if (player.speedTrail) {
+      const baseMax = this._baseMaxPoints || this.MAX_POINTS;
+      if (!this._baseMaxPoints) this._baseMaxPoints = this.MAX_POINTS;
+      this.MAX_POINTS = baseMax + Math.floor(player.speed / 100);
+    }
     this.recordTimer -= dt;
     if (this.recordTimer <= 0) {
-      this.push(player.x, player.y);
+      this.push(player.x, player.y, player.speed || 0);
       this.recordTimer = this.RECORD_INTERVAL;
     }
     // Flash polygon timer
@@ -1854,23 +2213,14 @@ const Trail = {
             e.alive = false;
             const isElite = e.type === 'elite';
             killCount += isElite ? 3 : 1; // Elite worth 3x
-            // Enhanced kill FX: red-to-white flash shards spinning outward
-            const dirFromCenter = Math.atan2(e.y - loopCY, e.x - loopCX);
-            Particles.spawn(e.x, e.y, '#FF6688', isElite ? 12 : 6, {
-              vxMin: -200, vxMax: 200, vyMin: -200, vyMax: 200,
-              lifeMin: 0.3, lifeMax: 0.7, sizeMin: 4, sizeMax: isElite ? 14 : 10, type: 'shard',
-            });
-            Particles.spawn(e.x, e.y, '#fff', 5, {
-              vxMin: Math.cos(dirFromCenter) * 100, vxMax: Math.cos(dirFromCenter) * 250,
-              vyMin: Math.sin(dirFromCenter) * 100, vyMax: Math.sin(dirFromCenter) * 250,
-              lifeMin: 0.2, lifeMax: 0.5, sizeMin: 3, sizeMax: 7, type: 'shard',
-            });
-            Particles.addRing(e.x, e.y, CFG.C_ACCENT);
+            // Type-specific death FX
+            enemyDeathFX(e.type, e.x, e.y, isElite);
             if (isElite) Particles.addRing(e.x, e.y, CFG.C_RARE); // Extra ring for elite
           }
         }
 
         if (killCount > 0) {
+          Audio.play('encircle');
           const comboMult = Math.max(1, Math.floor(player.comboLevel + 1));
           const baseScore = 100 * killCount;
           const bonus = killCount >= 2 ? 50 * killCount : 0;
@@ -1879,7 +2229,9 @@ const Trail = {
           game.score += total * player.scoreMult;
           // Award combo levels for encirclement
           player.comboLevel = Math.min(CFG.MAX_COMBO, player.comboLevel + 2 * killCount);
+          game.peakCombo = Math.max(game.peakCombo, Math.floor(player.comboLevel));
           game.encircleCount += killCount;
+          game.enemiesKilled += killCount;
           const label = killCount >= 2 ? `ENCIRCLE x${killCount}! +${total}` : `ENCIRCLE! +${total}`;
           Particles.addFloat(px, py - 40, label, CFG.C_ACCENT, 18);
           // Flash the enclosed polygon briefly
@@ -1949,24 +2301,29 @@ const Trail = {
     }
     ctx.stroke();
 
-    // Sharp trail on top
-    ctx.lineWidth = trailW;
+    // Sharp trail on top (width varies with speed)
     const alphaBoost = nearLoop ? 0.15 : 0;
     const mainStartAlpha = Math.min(1, 0.08 + alphaBoost);
     const mainEndAlpha = Math.min(1, 0.38 + alphaBoost);
     const mainStartR = Math.round(tr * 0.4);
     const mainStartG = Math.round(tg * 0.4);
     const mainStartB = Math.round(tb * 0.55);
-    const mainGrad = ctx.createLinearGradient(start.x, start.y, end.x, end.y);
-    mainGrad.addColorStop(0, `rgba(${mainStartR},${mainStartG},${mainStartB},${mainStartAlpha})`);
-    mainGrad.addColorStop(1, `rgba(${tr},${tg},${tb},${mainEndAlpha})`);
-    ctx.strokeStyle = mainGrad;
-    ctx.beginPath();
-    for (let i = 0; i < this.count; i++) {
-      const p = this.getPoint(i);
-      if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+    const maxSpd = CFG.MAX_SPEED || 500;
+    for (let i = 1; i < this.count; i++) {
+      const p0 = this.getPoint(i - 1), p1 = this.getPoint(i);
+      const frac = i / (this.count - 1);
+      const a = mainStartAlpha + (mainEndAlpha - mainStartAlpha) * frac;
+      const cr = Math.round(mainStartR + (tr - mainStartR) * frac);
+      const cg = Math.round(mainStartG + (tg - mainStartG) * frac);
+      const cb = Math.round(mainStartB + (tb - mainStartB) * frac);
+      const speedFrac = Math.min(1, (p1.speed || 0) / maxSpd);
+      ctx.lineWidth = trailW + 3 * speedFrac;
+      ctx.strokeStyle = `rgba(${cr},${cg},${cb},${a})`;
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.y);
+      ctx.lineTo(p1.x, p1.y);
+      ctx.stroke();
     }
-    ctx.stroke();
     ctx.restore();
 
     // Flash polygon from encirclement kill
@@ -2170,6 +2527,7 @@ const Waves = {
         this.hordeTriggered = true;
         this.hordeSpawnTimer = CFG.HORDE_DELAY;
         game.hordeAnnounceTimer = CFG.HORDE_DELAY + 0.5;
+        Audio.play('horde_warn');
       }
       // Horde spawn countdown
       if (this.hordeSpawnTimer > 0) {
@@ -2239,6 +2597,19 @@ const Waves = {
           const pull = 200 * dt / Math.max(d, 1);
           s.x += (player.x - s.x) * pull;
           s.y += (player.y - s.y) * pull;
+        }
+      }
+      // Trail magnet: trail points attract scraps
+      if (player.trailMagnet && Trail.count > 0) {
+        for (let ti = 0; ti < Trail.count; ti += 5) {
+          const tp = Trail.getPoint(ti);
+          const tdx = tp.x - s.x, tdy = tp.y - s.y;
+          const td = Math.hypot(tdx, tdy);
+          if (td < 80 && td > 1) {
+            s.x += (tdx / td) * 60 * dt;
+            s.y += (tdy / td) * 60 * dt;
+            break;
+          }
         }
       }
       // Collection
@@ -2381,10 +2752,24 @@ const Waves = {
       ctx.globalAlpha = 1;
     }
 
-    // World boundary line (always drawn)
-    ctx.strokeStyle = CFG.C_PANEL;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(CFG.ARENA_PAD, CFG.ARENA_PAD, CFG.WORLD_W - CFG.ARENA_PAD*2, CFG.WORLD_H - CFG.ARENA_PAD*2);
+    // World boundary line — multi-pass glow
+    {
+      const bx = CFG.ARENA_PAD, by = CFG.ARENA_PAD;
+      const bw = CFG.WORLD_W - CFG.ARENA_PAD * 2, bh = CFG.WORLD_H - CFG.ARENA_PAD * 2;
+      const pulse = 0.6 + 0.4 * Math.sin(time * 2);
+      const passes = [
+        { width: 14, alpha: 0.08 * pulse },
+        { width: 8,  alpha: 0.15 * pulse },
+        { width: 2,  alpha: 0.6 + 0.4 * pulse },
+      ];
+      for (const p of passes) {
+        ctx.strokeStyle = CFG.C_ACCENT;
+        ctx.globalAlpha = p.alpha;
+        ctx.lineWidth = p.width;
+        ctx.strokeRect(bx, by, bw, bh);
+      }
+      ctx.globalAlpha = 1;
+    }
 
     // Vignette is rendered in screen space (after applyPost)
   },
@@ -2517,9 +2902,14 @@ const ARENA_UPGRADES = [
     apply(p) { p.maxHp += 30; p.hp += 30; } },
   { id: 'damage_resist', name: 'Armor Plating', desc: 'Take 25% less damage', icon: 'V',
     apply(p) { p.damageResist = 1 - (1 - p.damageResist) * 0.75; } },
-  // Future: { id: 'extra_rerolls', name: 'Lucky Draw', icon: 'R',
-  //   desc: '+2 upgrade rerolls per break', apply(p) {} },
-  // Implementation: break transition adds player.upgrades.filter(u => u === 'extra_rerolls').length * 2 to rerollsLeft
+  { id: 'drift_shield', name: 'Drift Shield', desc: '-40% damage while drifting', icon: 'DS',
+    apply(p) { p.driftShield = true; } },
+  { id: 'combo_heal', name: 'Combo Medic', desc: 'Heal at combo milestones 3/5/8', icon: 'CH',
+    apply(p) { p.comboHeal = true; } },
+  { id: 'trail_magnet', name: 'Trail Magnet', desc: 'Trail points attract scraps', icon: 'TM',
+    apply(p) { p.trailMagnet = true; } },
+  { id: 'speed_trail', name: 'Speed Trail', desc: 'Trail grows with speed', icon: 'ST',
+    apply(p) { p.speedTrail = true; } },
 ];
 
 // ── 12. HUD / UI ────────────────────────────────────────────
@@ -2789,8 +3179,14 @@ const Game = {
   hordeAnnounceTimer: 0,
   // Death cause
   deathCause: '',
+  // Extended stats
+  peakCombo: 0,
+  nearMissTotal: 0,
+  totalDriftTime: 0,
+  enemiesKilled: 0,
   // Touch UI
   sandbox: false,
+  modifiers: { hardMode: false, speedRush: false, fragile: false },
   touchDriftBtn: { x: CFG.W - S(70), y: CFG.H - S(80), r: S(40) },
 
   applyMap(id) {
@@ -2853,6 +3249,10 @@ const Game = {
     this.waveAnnounceNum = 0;
     this.hordeAnnounceTimer = 0;
     this.deathCause = '';
+    this.peakCombo = 0;
+    this.nearMissTotal = 0;
+    this.totalDriftTime = 0;
+    this.enemiesKilled = 0;
     Particles.clear();
     ScreenFX.reset();
     Trail.reset();
@@ -2860,6 +3260,21 @@ const Game = {
     Props.reset();
     Props.generate();
     Camera.reset(this.player.x, this.player.y);
+    // Apply difficulty modifiers
+    if (this.modifiers.hardMode) {
+      this.speedBonus += 100;
+      this.player.scoreMult *= 1.5;
+    }
+    if (this.modifiers.speedRush) {
+      CFG.SPAWN_INTERVAL_INITIAL *= 0.5;
+      CFG.SPAWN_INTERVAL_MIN *= 0.5;
+      this.player.scoreMult *= 1.3;
+    }
+    if (this.modifiers.fragile) {
+      this.player.maxHp = 50;
+      this.player.hp = 50;
+      this.player.scoreMult *= 1.4;
+    }
     if (!this.sandbox) {
       Waves.startWave(this.player);
       this.waveAnnounceTimer = 2.0;
@@ -2895,10 +3310,12 @@ const Game = {
     if (this.state === STATE.MENU) {
       const tap = Input.consumeTap();
       if (Input.enter || Input.keys['Space'] || tap) {
+        Audio.play('ui_click');
         this.state = STATE.MAP_SELECT;
         Input.keys['Space'] = false;
       }
       if (Input.keys['KeyS']) {
+        Audio.play('ui_click');
         this.sandbox = true;
         localStorage.setItem('oversteer_sandbox', '1');
         this.state = STATE.MAP_SELECT;
@@ -2919,13 +3336,19 @@ const Game = {
         Input.keys['ArrowRight'] = false;
         Input.keys['KeyD'] = false;
       }
+      if (Input.keys['Digit1']) { this.modifiers.hardMode = !this.modifiers.hardMode; Input.keys['Digit1'] = false; }
+      if (Input.keys['Digit2']) { this.modifiers.speedRush = !this.modifiers.speedRush; Input.keys['Digit2'] = false; }
+      if (Input.keys['Digit3']) { this.modifiers.fragile = !this.modifiers.fragile; Input.keys['Digit3'] = false; }
       if (Input.enter || Input.keys['Space'] || tap) {
+        Audio.play('ui_click');
         if (!this.sandbox) localStorage.setItem('oversteer_sandbox', '0');
         this.reset();
         this.state = STATE.PLAYING;
+        Audio.startEngine(); Audio.startMusic();
         Input.keys['Space'] = false;
       }
       if (Input.keys['Escape']) {
+        Audio.play('ui_click');
         this.state = STATE.MENU;
         Input.keys['Escape'] = false;
       }
@@ -2933,7 +3356,19 @@ const Game = {
     }
 
     if (this.state === STATE.PAUSED) {
-      if (Input.pause) this.state = STATE.PLAYING;
+      // Audio controls in pause
+      if (Input.keys['KeyM']) { Audio.setMuted(!Audio.muted); Input.keys['KeyM'] = false; }
+      if (Input.keys['BracketLeft']) { Audio.setVolume('sfx', Audio.sfxVolume - 0.1); Input.keys['BracketLeft'] = false; }
+      if (Input.keys['BracketRight']) { Audio.setVolume('sfx', Audio.sfxVolume + 0.1); Input.keys['BracketRight'] = false; }
+      if (Input.keys['Minus']) { Audio.setVolume('music', Audio.musicVolume - 0.1); Input.keys['Minus'] = false; }
+      if (Input.keys['Equal']) { Audio.setVolume('music', Audio.musicVolume + 0.1); Input.keys['Equal'] = false; }
+      if (Input.pause) {
+        this.state = STATE.PLAYING;
+        Audio.startEngine();
+        if (Audio._musicPlaying && Audio.musicNodes) {
+          Audio.musicNodes.gain.gain.value = Audio.muted ? 0 : Audio.musicVolume * 0.3;
+        }
+      }
       return;
     }
 
@@ -2941,6 +3376,8 @@ const Game = {
       this.gameOverTimer -= rawDt;
       if (this.gameOverTimer <= 0 && (Input.enter || Input.keys['Space'])) {
         this.state = STATE.MENU;
+        this.modifiers = { hardMode: false, speedRush: false, fragile: false };
+        Audio.stopAll();
         Input.keys['Space'] = false;
       }
       // R to quick restart
@@ -2949,6 +3386,7 @@ const Game = {
         this.sandbox = false;
         this.reset();
         this.state = STATE.PLAYING;
+        Audio.startEngine(); Audio.startMusic();
       }
       return;
     }
@@ -3013,6 +3451,7 @@ const Game = {
       if (Input.keys['KeyR'] && !Waves.upgradeChosen && this.rerollsLeft > 0) {
         const newCards = this.buildUpgradeOffer();
         if (newCards.length > 0) {
+          Audio.play('ui_click');
           this.rerollsLeft--;
           Waves.upgradeCards = newCards;
           this.cardAnimTimer = 0;
@@ -3031,6 +3470,7 @@ const Game = {
         } else if (within(tap, this.upgradeRerollBounds) && this.rerollsLeft > 0) {
           const newCards = this.buildUpgradeOffer();
           if (newCards.length > 0) {
+            Audio.play('ui_click');
             this.rerollsLeft--;
             Waves.upgradeCards = newCards;
             this.cardAnimTimer = 0;
@@ -3049,6 +3489,7 @@ const Game = {
           this.waveAnnounceNum = Waves.waveIndex;
           this._resetTiming = true;
           this.state = STATE.PLAYING;
+          Audio.startEngine();
         }
       }
 
@@ -3062,6 +3503,7 @@ const Game = {
           this.waveAnnounceNum = Waves.waveIndex;
           this._resetTiming = true;
           this.state = STATE.PLAYING;
+          Audio.startEngine();
         }
       }
 
@@ -3072,13 +3514,21 @@ const Game = {
     }
 
     // PLAYING
-    if (Input.pause) { this.state = STATE.PAUSED; return; }
+    if (Input.pause) {
+      this.state = STATE.PAUSED;
+      Audio.stopEngine(); Audio.stopDrift();
+      if (Audio._musicPlaying && Audio.musicNodes) {
+        Audio.musicNodes.gain.gain.value = Audio.muted ? 0 : Audio.musicVolume * 0.3 * 0.3;
+      }
+      return;
+    }
 
     const dt = ScreenFX.update(rawDt);
     this.time += dt;
 
     // Player
     this.player.update(dt);
+    if (this.player.drifting) this.totalDriftTime += dt;
 
     // Props collision
     const propHits = Props.checkPlayerCollision(this.player);
@@ -3241,17 +3691,14 @@ const Game = {
         if (Camera.isVisible(e.x, e.y, 50)) {
           e.alive = false;
           bombKills++;
-          Particles.spawn(e.x, e.y, CFG.C_ENEMY, 8, {
-            vxMin: -200, vxMax: 200, vyMin: -200, vyMax: 200,
-            lifeMin: 0.3, lifeMax: 0.6, sizeMin: 3, sizeMax: 8, type: 'shard',
-          });
-          Particles.addRing(e.x, e.y, CFG.C_ENEMY);
+          enemyDeathFX(e.type, e.x, e.y, false);
         }
       }
       ScreenFX.flash('#fff', 0.3, 0.2);
       ScreenFX.shake(12, 0.4);
       Particles.addFloat(this.player.x, this.player.y - 30, `BOMB! x${bombKills}`, '#FF4444', 22);
       this.score += bombKills * 50 * this.player.scoreMult;
+      this.enemiesKilled += bombKills;
       } else if (event === 'boost') {
       this.player.speedBoostTimer = CFG.BOOST_ZONE_DURATION;
       Particles.spawn(this.player.x, this.player.y, CFG.C_ACCENT, 12, {
@@ -3387,21 +3834,30 @@ const Game = {
     const milestones = [3, 5, 8];
     for (const m of milestones) {
       if (Math.floor(oldLevel) < m && Math.floor(newLevel) >= m) {
+        Audio.play('combo_sting');
         Particles.addRing(this.player.x, this.player.y, m >= 8 ? '#FFD700' : m >= 5 ? CFG.C_RARE : CFG.C_ACCENT);
         ScreenFX.flash(CFG.C_ACCENT, 0.12, 0.1);
         Particles.addFloat(this.player.x, this.player.y - 50, `x${m} COMBO!`,
           m >= 8 ? '#FFD700' : m >= 5 ? CFG.C_RARE : CFG.C_ACCENT, 22);
         ScreenFX.zoom(1.05, 0.15);
+        if (this.player.comboHeal) {
+          const healAmt = m >= 8 ? 25 : m >= 5 ? 15 : 10;
+          this.player.hp = Math.min(this.player.maxHp, this.player.hp + healAmt);
+          Particles.addFloat(this.player.x, this.player.y - 60, `+${healAmt} HP`, '#44FF44', 16);
+        }
         break;
       }
     }
   },
 
   nearMiss(target, type) {
+    Audio.play('near_miss');
+    this.nearMissTotal++;
     const pts = type === 'enemy' ? CFG.NEAR_MISS_ENEMY_PTS : CFG.NEAR_MISS_HAZARD_PTS;
     this.score += pts * this.player.scoreMult;
     const oldCombo = this.player.comboLevel;
     this.player.comboLevel = Math.min(CFG.MAX_COMBO, this.player.comboLevel + 1);
+    this.peakCombo = Math.max(this.peakCombo, Math.floor(this.player.comboLevel));
     this.checkComboMilestone(oldCombo, this.player.comboLevel);
 
     // Near-miss streak
@@ -3451,20 +3907,23 @@ const Game = {
 
     // FX
     ScreenFX.flash(CFG.C_SHIELD, 0.2, 0.15);
-    ScreenFX.shake(6, 0.22);
+    ScreenFX.shake(6, 0.22, dx / d, dy / d);
     Particles.spawn(this.player.x, this.player.y, CFG.C_SHIELD, 12, {
       vxMin: -150, vxMax: 150, vyMin: -150, vyMax: 150,
       lifeMin: 0.3, lifeMax: 0.6, sizeMin: 3, sizeMax: 6, type: 'spark',
     });
     Particles.addFloat(this.player.x, this.player.y - 30, 'SHIELD BREAK!', CFG.C_SHIELD, 18);
+    Audio.play('collision');
   },
 
   playerHit(source, dmg) {
     // Apply damage resistance
     dmg = Math.round(dmg * (1 - (this.player.damageResist || 0)));
+    if (this.player.driftShield && this.player.drifting) dmg = Math.round(dmg * 0.6);
     dmg = Math.max(dmg, 1);
 
     this.player.hp -= dmg;
+    Audio.play('collision');
     this.player.invulnTimer = CFG.HIT_INVULN;
     this.player.lastHitTimer = 0;
 
@@ -3477,7 +3936,7 @@ const Game = {
 
     // FX
     ScreenFX.flash(CFG.C_ENEMY, 0.15, 0.12);
-    ScreenFX.shake(7, 0.18);
+    ScreenFX.shake(7, 0.18, dx / d, dy / d);
     ScreenFX.slowmo(0.9, 0.1);
     Particles.spawn(this.player.x, this.player.y, CFG.C_ENEMY, 6, {
       vxMin: -100, vxMax: 100, vyMin: -100, vyMax: 100,
@@ -3495,6 +3954,7 @@ const Game = {
 
   die() {
     this.state = STATE.DYING;
+    Audio.stopEngine(); Audio.stopDrift(); Audio.fadeOutMusic(0.5);
     this.deathPhase = 0;
     this.deathTimer = CFG.FREEZE_TIME;
     ScreenFX.freeze(CFG.FREEZE_TIME);
@@ -3506,6 +3966,7 @@ const Game = {
   selectUpgradeCard(index) {
     if (index < 0 || index >= Waves.upgradeCards.length) return;
     if (Waves.upgradeChosen) return;
+    Audio.play('ui_click');
     this.applyUpgrade(Waves.upgradeCards[index]);
     Waves.upgradeChosen = true;
     this.upgradeSelectedIndex = index;
@@ -3740,6 +4201,27 @@ const Game = {
           align: 'center', color: '#555', size: 11
         });
       }
+
+      // Audio controls
+      const audioY = CFG.H - S(90);
+      U.text(ctx, `[M] MUTE: ${Audio.muted ? 'ON' : 'OFF'}`, CFG.W/2, audioY, {
+        align: 'center', color: Audio.muted ? CFG.C_ENEMY : '#888', size: 12
+      });
+      // SFX volume bar
+      const barW = S(100), barH = S(10), barX = CFG.W/2 - barW/2;
+      U.text(ctx, 'SFX  [ ] ]', CFG.W/2 - S(80), audioY + S(20), { align: 'left', color: '#666', size: 11 });
+      ctx.fillStyle = '#333';
+      ctx.fillRect(barX, audioY + S(16), barW, barH);
+      ctx.fillStyle = CFG.C_ACCENT;
+      ctx.fillRect(barX, audioY + S(16), barW * Audio.sfxVolume, barH);
+      U.text(ctx, `${Math.round(Audio.sfxVolume * 100)}%`, CFG.W/2 + barW/2 + S(10), audioY + S(20), { align: 'left', color: '#888', size: 10 });
+      // Music volume bar
+      U.text(ctx, 'MUSIC  - =', CFG.W/2 - S(80), audioY + S(38), { align: 'left', color: '#666', size: 11 });
+      ctx.fillStyle = '#333';
+      ctx.fillRect(barX, audioY + S(34), barW, barH);
+      ctx.fillStyle = CFG.C_ACCENT;
+      ctx.fillRect(barX, audioY + S(34), barW * Audio.musicVolume, barH);
+      U.text(ctx, `${Math.round(Audio.musicVolume * 100)}%`, CFG.W/2 + barW/2 + S(10), audioY + S(38), { align: 'left', color: '#888', size: 10 });
     }
 
     // Game over
@@ -3766,24 +4248,36 @@ const Game = {
       U.text(ctx, 'TIME', CFG.W/2 - col, sy + S(120), { align: 'right', color: '#888', size: 16 });
       U.text(ctx, `${Math.floor(this.time)}s`, CFG.W/2, sy + S(120), { align: 'left', color: CFG.C_TEXT, size: 20, bold: true });
 
+      U.text(ctx, 'PEAK COMBO', CFG.W/2 - col, sy + S(150), { align: 'right', color: '#888', size: 16 });
+      U.text(ctx, `x${this.peakCombo}`, CFG.W/2, sy + S(150), { align: 'left', color: CFG.C_ACCENT, size: 20, bold: true });
+
+      U.text(ctx, 'NEAR MISSES', CFG.W/2 - col, sy + S(180), { align: 'right', color: '#888', size: 16 });
+      U.text(ctx, `${this.nearMissTotal}`, CFG.W/2, sy + S(180), { align: 'left', color: CFG.C_TEXT, size: 20, bold: true });
+
+      U.text(ctx, 'DRIFT TIME', CFG.W/2 - col, sy + S(210), { align: 'right', color: '#888', size: 16 });
+      U.text(ctx, `${Math.floor(this.totalDriftTime)}s`, CFG.W/2, sy + S(210), { align: 'left', color: CFG.C_TEXT, size: 20, bold: true });
+
+      U.text(ctx, 'ENEMIES KILLED', CFG.W/2 - col, sy + S(240), { align: 'right', color: '#888', size: 16 });
+      U.text(ctx, `${this.enemiesKilled}`, CFG.W/2, sy + S(240), { align: 'left', color: CFG.C_ENEMY, size: 20, bold: true });
+
       if (this.newBest) {
-        U.text(ctx, 'NEW BEST!', CFG.W/2, sy + S(155), { align: 'center', color: CFG.C_PICKUP, size: 22, bold: true, shadow: true });
+        U.text(ctx, 'NEW BEST!', CFG.W/2, sy + S(275), { align: 'center', color: CFG.C_PICKUP, size: 22, bold: true, shadow: true });
       }
 
       // Upgrades taken
       const ups = this.player.upgrades;
       if (ups.length > 0) {
-        U.text(ctx, 'UPGRADES:', CFG.W/2, sy + S(185), { align: 'center', color: '#666', size: 12 });
+        U.text(ctx, 'UPGRADES:', CFG.W/2, sy + S(305), { align: 'center', color: '#666', size: 12 });
         const upStr = ups.map(id => {
           const u = ARENA_UPGRADES.find(a => a.id === id);
           return u ? u.icon : '?';
         }).join('  ');
-        U.text(ctx, upStr, CFG.W/2, sy + S(205), { align: 'center', color: CFG.C_ACCENT, size: 20, bold: true });
+        U.text(ctx, upStr, CFG.W/2, sy + S(325), { align: 'center', color: CFG.C_ACCENT, size: 20, bold: true });
       }
 
       // Death cause
       if (this.deathCause) {
-        U.text(ctx, this.deathCause, CFG.W/2, sy + S(225), { align: 'center', color: '#666', size: 13 });
+        U.text(ctx, this.deathCause, CFG.W/2, sy + S(345), { align: 'center', color: '#666', size: 13 });
       }
 
       if (Math.floor(this.menuAnim * 2) % 2 === 0) {
@@ -3977,6 +4471,21 @@ const Game = {
     U.text(ctx, '[ ESC ] back', CFG.W/2, CFG.H * 0.85, {
       align: 'center', size: 12, color: '#555',
     });
+    // Difficulty modifiers
+    const modY = CFG.H * 0.65;
+    U.text(ctx, 'MODIFIERS', CFG.W/2, modY, { align: 'center', color: '#888', size: 14, bold: true });
+    const mods = [
+      { key: '1', label: 'HARD MODE', desc: 'Enemies +25% speed, 1.5x score', active: this.modifiers.hardMode },
+      { key: '2', label: 'SPEED RUSH', desc: 'Spawns 2x faster, 1.3x score', active: this.modifiers.speedRush },
+      { key: '3', label: 'FRAGILE', desc: '50 HP only, 1.4x score', active: this.modifiers.fragile },
+    ];
+    for (let i = 0; i < mods.length; i++) {
+      const m = mods[i];
+      const my = modY + S(22) + i * S(22);
+      const color = m.active ? CFG.C_ACCENT : '#555';
+      U.text(ctx, `[${m.key}] ${m.label}`, CFG.W/2 - S(80), my, { color, size: 13, bold: m.active });
+      U.text(ctx, m.desc, CFG.W/2 + S(80), my, { color: m.active ? '#aaa' : '#444', size: 11 });
+    }
   },
 
   renderTouchUI(ctx) {
@@ -4034,6 +4543,7 @@ const Game = {
   window.addEventListener('resize', resize);
   resize();
 
+  Audio.init();
   FXCache.init();
   Game.init();
 

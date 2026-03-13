@@ -105,6 +105,58 @@ function applyNearMiss(score, player, type) {
   };
 }
 
+// --- Stat tracking helpers (mirrors Game logic) ---
+
+function updateRunStats(stats, event) {
+  switch (event.type) {
+    case 'near_miss': {
+      stats.nearMissTotal++;
+      const newCombo = Math.min(CFG.MAX_COMBO, (event.comboLevel || 0) + 1);
+      stats.peakCombo = Math.max(stats.peakCombo, Math.floor(newCombo));
+      return { comboLevel: newCombo };
+    }
+    case 'encircle': {
+      const killCount = event.killCount || 0;
+      stats.enemiesKilled += killCount;
+      const newCombo = Math.min(CFG.MAX_COMBO, (event.comboLevel || 0) + 2 * killCount);
+      stats.peakCombo = Math.max(stats.peakCombo, Math.floor(newCombo));
+      return { comboLevel: newCombo };
+    }
+    case 'drift_tick': {
+      if (event.drifting) stats.totalDriftTime += event.dt;
+      return {};
+    }
+    case 'bomb': {
+      stats.enemiesKilled += event.killCount || 0;
+      return {};
+    }
+  }
+  return {};
+}
+
+function makeRunStats() {
+  return { peakCombo: 0, nearMissTotal: 0, totalDriftTime: 0, enemiesKilled: 0 };
+}
+
+// --- Upgrade effect helpers ---
+
+function applyDriftShield(dmg, drifting, hasDriftShield) {
+  if (hasDriftShield && drifting) return Math.max(1, Math.round(dmg * 0.6));
+  return dmg;
+}
+
+function applyComboHeal(oldLevel, newLevel, hasComboHeal, hp, maxHp) {
+  if (!hasComboHeal) return hp;
+  const milestones = [3, 5, 8];
+  for (const m of milestones) {
+    if (Math.floor(oldLevel) < m && Math.floor(newLevel) >= m) {
+      const healAmt = m >= 8 ? 25 : m >= 5 ? 15 : 10;
+      return Math.min(maxHp, hp + healAmt);
+    }
+  }
+  return hp;
+}
+
 module.exports = {
   CFG,
   U,
@@ -115,4 +167,8 @@ module.exports = {
   shouldTriggerHorde,
   pointInPoly,
   applyNearMiss,
+  updateRunStats,
+  makeRunStats,
+  applyDriftShield,
+  applyComboHeal,
 };
