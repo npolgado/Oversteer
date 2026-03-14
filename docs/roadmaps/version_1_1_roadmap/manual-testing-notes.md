@@ -9,6 +9,7 @@
     - Afterburn and Drift king make this better
 - Known issue/behavior: the mud collision reduce the players accelerations for a little too long, really rough recovery
 - Near misses, drift, and damage tick text messages on top of the player is obscuring the vision of the gameplay a little too much, might feel nicer to have a sort of log of events scrolling as they occur on either side of the screen, sort of like a chat
+- general HUD cleanup needed (see screenshots/)
 
 
 TODO:

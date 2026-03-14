@@ -259,10 +259,12 @@ const U = {
     ctx.font = `${bold ? 'bold ' : ''}${sz}px 'Courier New', monospace`;
     ctx.textAlign = align;
     ctx.textBaseline = 'middle';
-    if (shadow) {
-      ctx.fillStyle = 'rgba(0,0,0,0.7)';
-      ctx.fillText(str, x + S(2), y + S(2));
-    }
+    ctx.lineJoin = 'round';
+    // Outline pass
+    ctx.strokeStyle = 'rgba(0,0,0,0.95)';
+    ctx.lineWidth = Math.max(1, sz * 0.18);
+    ctx.strokeText(str, x, y);
+    // Fill pass
     ctx.fillStyle = color;
     ctx.fillText(str, x, y);
   },
@@ -271,17 +273,27 @@ const U = {
     ctx.font = `${sz}px 'Courier New', monospace`;
     ctx.textAlign = opts.align || 'left';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = opts.color || '#fff';
+    ctx.lineJoin = 'round';
     const words = text.split(' ');
     let line = '', ly = y;
     for (const w of words) {
       const test = line + (line ? ' ' : '') + w;
       if (ctx.measureText(test).width > maxW && line) {
+        ctx.strokeStyle = 'rgba(0,0,0,0.95)';
+        ctx.lineWidth = Math.max(1, sz * 0.18);
+        ctx.strokeText(line, x, ly);
+        ctx.fillStyle = opts.color || '#fff';
         ctx.fillText(line, x, ly);
         line = w; ly += lineH;
       } else line = test;
     }
-    if (line) ctx.fillText(line, x, ly);
+    if (line) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.95)';
+      ctx.lineWidth = Math.max(1, sz * 0.18);
+      ctx.strokeText(line, x, ly);
+      ctx.fillStyle = opts.color || '#fff';
+      ctx.fillText(line, x, ly);
+    }
   },
 };
 

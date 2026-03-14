@@ -205,18 +205,26 @@
       U.roundRect(ctx, cx, y, cardW, cardH, S(8));
       ctx.stroke();
 
+      // Card content: cursor-based layout within the card
+      const padX = S(12);
+      const lineGap = S(18);
+      let cy = y + S(20);
+
       // Key hint
-      U.text(ctx, `[${i + 1}]`, cx + cardW/2, y + S(20), { align: 'center', color: CFG.C_ACCENT, size: 14, bold: true });
+      U.text(ctx, `[${i + 1}]`, cx + cardW/2, cy, { align: 'center', color: CFG.C_ACCENT, size: 14, bold: true });
+      cy += S(32);
 
       // Icon
-      U.text(ctx, card.icon, cx + cardW/2, y + S(55), { align: 'center', color: CFG.C_TEXT, size: 36, bold: true });
+      U.text(ctx, card.icon, cx + cardW/2, cy, { align: 'center', color: CFG.C_TEXT, size: 30, bold: true });
+      cy += S(33);
 
       // Name
-      U.text(ctx, card.name, cx + cardW/2, y + S(90), { align: 'center', color: CFG.C_TEXT, size: 14, bold: true });
+      U.text(ctx, card.name, cx + cardW/2, cy, { align: 'center', color: CFG.C_TEXT, size: 16, bold: true });
+      cy += S(22);
 
       // Desc
       ctx.textBaseline = 'top';
-      U.wrapText(ctx, card.desc, cx + S(12), y + S(110), cardW - S(24), S(16), { size: 12, color: '#aaa' });
+      U.wrapText(ctx, card.desc, cx + padX, cy, cardW - padX * 2, lineGap, { size: 13, color: '#ccc' });
 
       ctx.globalAlpha = 1;
       ctx.restore();
@@ -224,9 +232,9 @@
       cx += cardW + gap;
     }
 
-    U.text(ctx, 'Press 1 / 2 / 3 or tap a card', CFG.W/2, CFG.H - S(60), { align: 'center', color: '#666', size: 13 });
-    const rerollColor = rerollsLeft > 0 ? '#888' : '#444';
-    U.text(ctx, `Press [R] to reroll (${rerollsLeft} left)`, CFG.W/2, CFG.H - S(35), { align: 'center', color: rerollColor, size: 13 });
+    U.text(ctx, 'Press 1 / 2 / 3 or tap a card', CFG.W/2, CFG.H - S(60), { align: 'center', color: '#ccc', size: 15 });
+    const rerollColor = rerollsLeft > 0 ? '#ddd' : '#666';
+    U.text(ctx, `Press [R] to reroll (${rerollsLeft} left)`, CFG.W/2, CFG.H - S(35), { align: 'center', color: rerollColor, size: 15 });
     bounds.rerollBounds = { x: CFG.W/2 - S(170), y: CFG.H - S(50), w: S(340), h: S(28) };
     return bounds;
   }
@@ -487,6 +495,7 @@
         if (Input.keys['Equal']) { Audio.setVolume('music', Audio.musicVolume + 0.1); Input.keys['Equal'] = false; }
         if (Input.pause) {
           this.state = STATE.PLAYING;
+          this._resetTiming = true;
           Audio.startEngine();
           if (Audio._musicPlaying && Audio.musicNodes) {
             Audio.musicNodes.gain.gain.value = Audio.muted ? 0 : Audio.musicVolume * 0.3;
@@ -606,11 +615,11 @@
         if (Waves.upgradeChosen) {
           this.upgradeConfirmTimer -= rawDt;
           if (this.upgradeConfirmTimer <= 0) {
+            this._resetTiming = true;
             Waves.startWave(this.player);
             this.player.frozen = false;
             this.waveAnnounceTimer = 2.0;
             this.waveAnnounceNum = Waves.waveIndex;
-            this._resetTiming = true;
             this.state = STATE.PLAYING;
             Audio.startEngine();
           }
@@ -620,11 +629,11 @@
         if (!Waves.upgradeChosen && Waves.upgradeCards.length === 0) {
           this.upgradeConfirmTimer -= rawDt;
           if (this.upgradeConfirmTimer <= 0) {
+            this._resetTiming = true;
             Waves.startWave(this.player);
             this.player.frozen = false;
             this.waveAnnounceTimer = 2.0;
             this.waveAnnounceNum = Waves.waveIndex;
-            this._resetTiming = true;
             this.state = STATE.PLAYING;
             Audio.startEngine();
           }
@@ -895,6 +904,7 @@
       // Check for upgrade break transition
       if (Waves.phase === 'break' && this.state === STATE.PLAYING) {
         this.state = STATE.UPGRADE;
+        Audio.stopEngine(); Audio.stopDrift();
         this.rerollsLeft = CFG.REROLL_MAX + this.player.upgrades.filter(u => u === 'extra_rerolls').length * 2;
         this.upgradeConfirmTimer = CFG.UPGRADE_CONFIRM_TIME;
         this.cardAnimTimer = 0;
@@ -1450,34 +1460,25 @@
 
         U.text(ctx, 'GAME OVER', CFG.W/2, CFG.H * 0.25, { align: 'center', color: CFG.C_ENEMY, size: 48, bold: true, shadow: true });
 
-        const sy = CFG.H * 0.4;
-        const col = S(60);
-        U.text(ctx, 'SCORE', CFG.W/2 - col, sy, { align: 'right', color: '#888', size: 16 });
-        U.text(ctx, Math.floor(this.score).toLocaleString(), CFG.W/2, sy, { align: 'left', color: CFG.C_TEXT, size: 20, bold: true });
+        const col = S(70);
+        const rowH = S(34);
+        const statLabelSize = 18, statValueSize = 22;
+        let gy = CFG.H * 0.4;
+        const statRow = (label, value, vColor) => {
+          U.text(ctx, label, CFG.W/2 - col, gy, { align: 'right', color: '#ccc', size: statLabelSize });
+          U.text(ctx, value, CFG.W/2, gy, { align: 'left', color: vColor, size: statValueSize, bold: true });
+          gy += rowH;
+        };
 
-        U.text(ctx, 'BEST', CFG.W/2 - col, sy + S(30), { align: 'right', color: '#888', size: 16 });
-        U.text(ctx, this.highScore.toLocaleString(), CFG.W/2, sy + S(30), { align: 'left', color: this.newBest ? CFG.C_PICKUP : CFG.C_TEXT, size: 20, bold: true });
-
-        U.text(ctx, 'WAVE', CFG.W/2 - col, sy + S(60), { align: 'right', color: '#888', size: 16 });
-        U.text(ctx, `${this.waveIndex}`, CFG.W/2, sy + S(60), { align: 'left', color: CFG.C_TEXT, size: 20, bold: true });
-
-        U.text(ctx, 'ENCIRCLED', CFG.W/2 - col, sy + S(90), { align: 'right', color: '#888', size: 16 });
-        U.text(ctx, `${this.encircleCount}`, CFG.W/2, sy + S(90), { align: 'left', color: CFG.C_ACCENT, size: 20, bold: true });
-
-        U.text(ctx, 'TIME', CFG.W/2 - col, sy + S(120), { align: 'right', color: '#888', size: 16 });
-        U.text(ctx, `${Math.floor(this.time)}s`, CFG.W/2, sy + S(120), { align: 'left', color: CFG.C_TEXT, size: 20, bold: true });
-
-        U.text(ctx, 'PEAK COMBO', CFG.W/2 - col, sy + S(150), { align: 'right', color: '#888', size: 16 });
-        U.text(ctx, `x${this.peakCombo}`, CFG.W/2, sy + S(150), { align: 'left', color: CFG.C_ACCENT, size: 20, bold: true });
-
-        U.text(ctx, 'NEAR MISSES', CFG.W/2 - col, sy + S(180), { align: 'right', color: '#888', size: 16 });
-        U.text(ctx, `${this.nearMissTotal}`, CFG.W/2, sy + S(180), { align: 'left', color: CFG.C_TEXT, size: 20, bold: true });
-
-        U.text(ctx, 'DRIFT TIME', CFG.W/2 - col, sy + S(210), { align: 'right', color: '#888', size: 16 });
-        U.text(ctx, `${Math.floor(this.totalDriftTime)}s`, CFG.W/2, sy + S(210), { align: 'left', color: CFG.C_TEXT, size: 20, bold: true });
-
-        U.text(ctx, 'ENEMIES KILLED', CFG.W/2 - col, sy + S(240), { align: 'right', color: '#888', size: 16 });
-        U.text(ctx, `${this.enemiesKilled}`, CFG.W/2, sy + S(240), { align: 'left', color: CFG.C_ENEMY, size: 20, bold: true });
+        statRow('SCORE',         Math.floor(this.score).toLocaleString(), CFG.C_TEXT);
+        statRow('BEST',          this.highScore.toLocaleString(),          this.newBest ? CFG.C_PICKUP : CFG.C_TEXT);
+        statRow('WAVE',          `${this.waveIndex}`,                      CFG.C_TEXT);
+        statRow('ENCIRCLED',     `${this.encircleCount}`,                  CFG.C_ACCENT);
+        statRow('TIME',          `${Math.floor(this.time)}s`,              CFG.C_TEXT);
+        statRow('PEAK COMBO',    `x${this.peakCombo}`,                     CFG.C_ACCENT);
+        statRow('NEAR MISSES',   `${this.nearMissTotal}`,                  CFG.C_TEXT);
+        statRow('DRIFT TIME',    `${Math.floor(this.totalDriftTime)}s`,    CFG.C_TEXT);
+        statRow('ENEMIES KILLED',`${this.enemiesKilled}`,                  CFG.C_ENEMY);
 
         // Active modifiers and score multiplier
         const activeModNames = [];
@@ -1487,30 +1488,32 @@
         if (this.modifiers.fragile) { activeModNames.push('FRAGILE'); totalMult *= 1.4; }
         if (this.modifiers.doubleEnemies) { activeModNames.push('DOUBLE'); totalMult *= 1.6; }
         if (activeModNames.length > 0) {
-          U.text(ctx, 'MODIFIERS', CFG.W/2 - col, sy + S(270), { align: 'right', color: '#888', size: 16 });
-          U.text(ctx, activeModNames.join(' + ') + ` (${totalMult.toFixed(1)}x)`, CFG.W/2, sy + S(270), { align: 'left', color: CFG.C_ACCENT, size: 16, bold: true });
+          statRow('MODIFIERS', activeModNames.join(' + ') + ` (${totalMult.toFixed(1)}x)`, CFG.C_ACCENT);
         }
 
-        const modOffset = activeModNames.length > 0 ? S(30) : 0;
+        gy += rowH * 0.25; // small gap before extras
 
         if (this.newBest) {
-          U.text(ctx, 'NEW BEST!', CFG.W/2, sy + S(275) + modOffset, { align: 'center', color: CFG.C_PICKUP, size: 22, bold: true, shadow: true });
+          U.text(ctx, 'NEW BEST!', CFG.W/2, gy, { align: 'center', color: CFG.C_PICKUP, size: 22, bold: true, shadow: true });
+          gy += rowH;
         }
 
         // Upgrades taken
         const ups = this.player.upgrades;
         if (ups.length > 0) {
-          U.text(ctx, 'UPGRADES:', CFG.W/2, sy + S(305) + modOffset, { align: 'center', color: '#666', size: 12 });
+          U.text(ctx, 'UPGRADES:', CFG.W/2, gy, { align: 'center', color: '#bbb', size: 14 });
+          gy += rowH * 0.75;
           const upStr = ups.map(id => {
             const u = ARENA_UPGRADES.find(a => a.id === id);
             return u ? u.icon : '?';
           }).join('  ');
-          U.text(ctx, upStr, CFG.W/2, sy + S(325) + modOffset, { align: 'center', color: CFG.C_ACCENT, size: 20, bold: true });
+          U.text(ctx, upStr, CFG.W/2, gy, { align: 'center', color: CFG.C_ACCENT, size: 20, bold: true });
+          gy += rowH;
         }
 
         // Death cause
         if (this.deathCause) {
-          U.text(ctx, this.deathCause, CFG.W/2, sy + S(345) + modOffset, { align: 'center', color: '#666', size: 13 });
+          U.text(ctx, this.deathCause, CFG.W/2, gy, { align: 'center', color: '#bbb', size: 14 });
         }
 
         if (Math.floor(this.menuAnim * 2) % 2 === 0) {
