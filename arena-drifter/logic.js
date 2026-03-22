@@ -1,7 +1,7 @@
 // Shared gameplay logic and config for browser + Node tests.
 (function() {
 const CFG = {
-  W: 1920, H: 1080,
+  W: 1600, H: 900,
   // UI scale factor (reference: 1280x720)
   get S() { return Math.min(this.W / 1280, this.H / 720); },
   // Physics

@@ -358,7 +358,7 @@
                   lifeMin: 0.3, lifeMax: 0.6, sizeMin: 3, sizeMax: 6, type: 'shard',
                 });
                 Particles.addRing(e.x, e.y, CFG.C_RARE);
-                Particles.addFloat(e.x, e.y - 25, 'ARMOR BROKEN!', CFG.C_RARE, 16);
+                window.EventLog.add('ARMOR BROKEN!', CFG.C_RARE);
                 ScreenFX.shake(4, 0.15);
                 continue;
               }
@@ -385,7 +385,7 @@
             game.encircleCount += killCount;
             game.enemiesKilled += killCount;
             const label = killCount >= 2 ? `ENCIRCLE x${killCount}! +${total}` : `ENCIRCLE! +${total}`;
-            Particles.addFloat(px, py - 40, label, CFG.C_ACCENT, 18);
+            window.EventLog.add(label, CFG.C_ACCENT);
             // Flash the enclosed polygon briefly
             this._flashPoly = poly.slice();
             this._flashPolyTimer = 0.3;

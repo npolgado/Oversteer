@@ -146,14 +146,12 @@
     skidMarks: [],
     _skidHead: 0,  // ring buffer write index
     MAX_SKIDS: 600,
-    floatingTexts: [],
     rings: [],
 
     clear() {
       this.list = [];
       this.skidMarks = [];
       this._skidHead = 0;
-      this.floatingTexts = [];
       this.rings = [];
     },
 
@@ -181,10 +179,6 @@
       }
     },
 
-    addFloat(x, y, text, color, size) {
-      this.floatingTexts.push({ x, y, text, color, size: size || 16, life: 0.6, vy: -45 });
-    },
-
     addRing(x, y, color) {
       this.rings.push({ x, y, color, radius: 0, maxRadius: 80, life: 0.3 });
     },
@@ -206,14 +200,6 @@
       // Skid marks fade (ring buffer — old marks overwritten automatically)
       for (let i = this.skidMarks.length - 1; i >= 0; i--) {
         this.skidMarks[i].age += dt;
-      }
-
-      // Floating texts (swap-and-pop)
-      for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
-        const ft = this.floatingTexts[i];
-        ft.y += ft.vy * dt;
-        ft.life -= dt;
-        if (ft.life <= 0) { this.floatingTexts[i] = this.floatingTexts[this.floatingTexts.length - 1]; this.floatingTexts.pop(); }
       }
 
       // Rings (swap-and-pop)
@@ -262,14 +248,6 @@
         } else {
           ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
         }
-      }
-      ctx.globalAlpha = 1;
-    },
-
-    renderFloats(ctx) {
-      for (const ft of this.floatingTexts) {
-        ctx.globalAlpha = U.clamp(ft.life / 0.3, 0, 1);
-        U.text(ctx, ft.text, ft.x, ft.y, { color: ft.color, size: ft.size, align: 'center', bold: true, shadow: true });
       }
       ctx.globalAlpha = 1;
     },
@@ -456,9 +434,60 @@
     },
   };
 
+  // ── EVENT LOG ────────────────────────────────────────────────
+  const EventLog = {
+    entries: [],          // { text, color, age }
+    MAX_ENTRIES: 7,
+    LIFETIME: 3.5,        // seconds before fully gone
+    FADE_START: 2.2,      // seconds before fade begins
+
+    add(text, color) {
+      this.entries.unshift({ text, color: color || '#fff', age: 0 });
+      if (this.entries.length > this.MAX_ENTRIES) this.entries.length = this.MAX_ENTRIES;
+    },
+
+    update(dt) {
+      for (let i = this.entries.length - 1; i >= 0; i--) {
+        this.entries[i].age += dt;
+        if (this.entries[i].age >= this.LIFETIME) this.entries.splice(i, 1);
+      }
+    },
+
+    clear() { this.entries = []; },
+
+    render(ctx, scoreH) {
+      if (this.entries.length === 0) return;
+      const x = S(12);
+      const rowH = S(17);
+      const padV = S(5), padH = S(7);
+      const rows = this.entries.length;
+      const panelH = rows * rowH + padV * 2;
+      const panelY = scoreH + S(40);   // 8px gap below HP bar bottom
+
+      // Background
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.beginPath();
+      ctx.roundRect(x, panelY, S(110), panelH, S(4));
+      ctx.fill();
+
+      // Entries (newest = index 0 = top row)
+      for (let i = 0; i < rows; i++) {
+        const e = this.entries[i];
+        const alpha = e.age < this.FADE_START
+          ? 1
+          : 1 - (e.age - this.FADE_START) / (this.LIFETIME - this.FADE_START);
+        ctx.globalAlpha = Math.max(0, alpha);
+        const ey = panelY + padV + rowH * i + rowH / 2;
+        U.text(ctx, e.text, x + padH, ey, { color: e.color, size: 11, align: 'left' });
+      }
+      ctx.globalAlpha = 1;
+    },
+  };
+
   window.FXCache = FXCache;
   window.PerfMon = PerfMon;
   window.Particles = Particles;
   window.ScreenFX = ScreenFX;
   window.Camera = Camera;
+  window.EventLog = EventLog;
 })();

@@ -18,7 +18,8 @@
       "Bash(grep -n \"type === 'elite'\\\\|type.*elite\\\\|ELITE\\\\|Elite\" /c/Users/Nick/Documents/GitHub/Oversteer/arena-drifter/index.html)",
       "Bash(git log:*)",
       "Bash(npm test:*)",
-      "Bash(cd \"C:/Users/Nick/Documents/GitHub/Oversteer\" && node --test test/*.test.js 2>&1)"
+      "mcp__mcp-obsidian__obsidian_append_content",
+      "Bash(wc:*)"
     ]
   }
 }

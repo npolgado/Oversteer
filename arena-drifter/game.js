@@ -55,6 +55,9 @@
       U.text(ctx, `${Math.ceil(player.hp)}/${player.maxHp}`, barX + barW + S(4), hpY + S(12), { color: CFG.C_TEXT, size: 9, shadow: true });
     }
 
+    // Event log (below HP bar)
+    window.EventLog.render(ctx, scoreH);
+
     // Wave timer (top-center)
     if (phase === 'combat') {
       const frac = U.clamp(waveTimer / (Waves.currentCombatDuration || CFG.WAVE_COMBAT), 0, 1);
@@ -364,6 +367,7 @@
       this.totalDriftTime = 0;
       this.enemiesKilled = 0;
       Particles.clear();
+      window.EventLog.clear();
       ScreenFX.reset();
       Trail.reset();
       Waves.reset();
@@ -527,6 +531,7 @@
         this.deathTimer -= rawDt;
         const dt = ScreenFX.update(rawDt);
         Particles.update(dt || rawDt);
+        window.EventLog.update(dt || rawDt);
 
         if (this.deathPhase === 0 && this.deathTimer <= 0) {
           // Freeze done → slow-mo + shatter
@@ -641,6 +646,7 @@
 
         const dt = ScreenFX.update(rawDt);
         Particles.update(dt);
+        window.EventLog.update(dt);
         Camera.update(dt, this.player.x, this.player.y, this.player.vx, this.player.vy, this.player.speed);
         return;
       }
@@ -723,7 +729,7 @@
                 enemyDeathFX(e.type, e.x, e.y, false);
                 this.enemiesKilled++;
                 this.score += 50 * this.player.scoreMult;
-                Particles.addFloat(e.x, e.y - 20, 'BURN!', '#FF6600', 14);
+                window.EventLog.add('BURN!', '#FF6600');
               } else {
                 e.armored = false;
                 Particles.spawn(e.x, e.y, '#FF6600', 4, {
@@ -812,14 +818,14 @@
           });
           if (this.player.driftChain >= 1) {
             const chainLabel = this.player.driftChain >= 2 ? 'CHAIN x2!' : 'CHAIN!';
-            Particles.addFloat(this.player.x, this.player.y - 35, chainLabel, chainColor, 14);
+            window.EventLog.add(chainLabel, chainColor);
           }
         }
       }
 
       // Drift denied text
       if (this.player.driftDeniedTimer > 0 && this.player.driftDeniedTimer > 0.1) {
-        Particles.addFloat(this.player.x, this.player.y - 30, 'NEED SPEED', CFG.C_PICKUP, 12);
+        window.EventLog.add('NEED SPEED', CFG.C_PICKUP);
         this.player.driftDeniedTimer = 0; // only once
       }
 
@@ -858,14 +864,14 @@
           vxMin: -60, vxMax: 60, vyMin: -60, vyMax: 60,
           lifeMin: 0.2, lifeMax: 0.5, sizeMin: 2, sizeMax: 4, type: 'spark',
         });
-        Particles.addFloat(this.player.x, this.player.y - 20, '+SCRAP', CFG.C_PICKUP, 14);
+        window.EventLog.add('+SCRAP', CFG.C_PICKUP);
         } else if (event === 'speed_pickup') {
         this.player.speedBoostTimer = CFG.BOOST_ZONE_DURATION;
         Particles.spawn(this.player.x, this.player.y, CFG.C_ACCENT, 10, {
           vxMin: -70, vxMax: 70, vyMin: -70, vyMax: 70,
           lifeMin: 0.3, lifeMax: 0.5, sizeMin: 2, sizeMax: 4, type: 'spark',
         });
-        Particles.addFloat(this.player.x, this.player.y - 20, 'SPEED!', CFG.C_ACCENT, 16);
+        window.EventLog.add('SPEED!', CFG.C_ACCENT);
         } else if (event === 'trail_boost') {
         // Temporarily increase trail length
         Trail.MAX_POINTS = Math.min(800, Trail.MAX_POINTS + 200);
@@ -873,7 +879,7 @@
           vxMin: -60, vxMax: 60, vyMin: -60, vyMax: 60,
           lifeMin: 0.3, lifeMax: 0.5, sizeMin: 2, sizeMax: 5, type: 'spark',
         });
-        Particles.addFloat(this.player.x, this.player.y - 20, 'TRAIL+', CFG.C_RARE, 16);
+        window.EventLog.add('TRAIL+', CFG.C_RARE);
         } else if (event === 'bomb') {
         // Kill all on-screen enemies
         let bombKills = 0;
@@ -887,7 +893,7 @@
         }
         ScreenFX.flash('#fff', 0.3, 0.2);
         ScreenFX.shake(12, 0.4);
-        Particles.addFloat(this.player.x, this.player.y - 30, `BOMB! x${bombKills}`, '#FF4444', 22);
+        window.EventLog.add(`BOMB! x${bombKills}`, '#FF4444');
         this.score += bombKills * 50 * this.player.scoreMult;
         this.enemiesKilled += bombKills;
         } else if (event === 'boost') {
@@ -896,7 +902,7 @@
           vxMin: -80, vxMax: 80, vyMin: -80, vyMax: 80,
           lifeMin: 0.3, lifeMax: 0.6, sizeMin: 2, sizeMax: 5, type: 'spark',
         });
-        Particles.addFloat(this.player.x, this.player.y - 20, 'SPEED BOOST!', CFG.C_ACCENT, 16);
+        window.EventLog.add('SPEED BOOST!', CFG.C_ACCENT);
         ScreenFX.zoom(1.04, 0.15);
       }
       }
@@ -931,7 +937,6 @@
           const pts = CFG.DRIFT_COMBO_BASE * Math.floor(this.player.comboLevel + 1);
           this.score += pts;
           this.lastDriftComboTick = ticks;
-          Particles.addFloat(this.player.x, this.player.y - 25, `+${pts}`, CFG.C_ACCENT, 14);
         }
       } else {
         this.lastDriftComboTick = 0;
@@ -1021,6 +1026,7 @@
 
       // Particles
       Particles.update(dt);
+      window.EventLog.update(dt);
     },
 
     checkComboMilestone(oldLevel, newLevel) {
@@ -1033,13 +1039,12 @@
           Audio.play('combo_sting');
           Particles.addRing(this.player.x, this.player.y, m >= 8 ? '#FFD700' : m >= 5 ? CFG.C_RARE : CFG.C_ACCENT);
           ScreenFX.flash(CFG.C_ACCENT, 0.12, 0.1);
-          Particles.addFloat(this.player.x, this.player.y - 50, `x${m} COMBO!`,
-            m >= 8 ? '#FFD700' : m >= 5 ? CFG.C_RARE : CFG.C_ACCENT, 22);
+          window.EventLog.add(`x${m} COMBO!`, m >= 8 ? '#FFD700' : m >= 5 ? CFG.C_RARE : CFG.C_ACCENT);
           ScreenFX.zoom(1.05, 0.15);
           if (this.player.comboHeal) {
             const healAmt = m >= 8 ? 25 : m >= 5 ? 15 : 10;
             this.player.hp = Math.min(this.player.maxHp, this.player.hp + healAmt);
-            Particles.addFloat(this.player.x, this.player.y - 60, `+${healAmt} HP`, '#44FF44', 16);
+            window.EventLog.add(`+${healAmt} HP`, '#44FF44');
           }
           break;
         }
@@ -1068,7 +1073,7 @@
         const streakBonus = 50 * this.player.consecutiveNearMisses;
         this.score += streakBonus * this.player.scoreMult;
         this.player.invulnTimer = Math.max(this.player.invulnTimer, 0.3);
-        Particles.addFloat(this.player.x, this.player.y - 50, `STREAK x${this.player.consecutiveNearMisses}! +${streakBonus}`, '#FFD700', 18);
+        window.EventLog.add(`STREAK x${this.player.consecutiveNearMisses}! +${streakBonus}`, '#FFD700');
         ScreenFX.flash('#FFD700', 0.15, 0.1);
       }
 
@@ -1077,8 +1082,7 @@
       const ringColor = type === 'enemy' ? CFG.C_ENEMY : CFG.C_PICKUP;
       Particles.addRing(this.player.x, this.player.y, ringColor);
       ScreenFX.flash('#fff', 0.1, 0.08);
-      Particles.addFloat(this.player.x, this.player.y - 30,
-        `+${pts} CLOSE!`, ringColor, 16);
+      window.EventLog.add(`+${pts} CLOSE!`, ringColor);
 
       // Ghost frame upgrade
       if (this.player.upgrades.includes('ghost_frame')) {
@@ -1117,7 +1121,7 @@
         vxMin: -150, vxMax: 150, vyMin: -150, vyMax: 150,
         lifeMin: 0.3, lifeMax: 0.6, sizeMin: 3, sizeMax: 6, type: 'spark',
       });
-      Particles.addFloat(this.player.x, this.player.y - 30, 'SHIELD BREAK!', CFG.C_SHIELD, 18);
+      window.EventLog.add('SHIELD BREAK!', CFG.C_SHIELD);
       Audio.play('collision');
     },
 
@@ -1151,7 +1155,7 @@
         vxMin: -100, vxMax: 100, vyMin: -100, vyMax: 100,
         lifeMin: 0.2, lifeMax: 0.5, sizeMin: 2, sizeMax: 5, type: 'spark',
       });
-      Particles.addFloat(this.player.x, this.player.y - 30, `-${dmg}`, CFG.C_ENEMY, 16);
+      window.EventLog.add(`-${dmg}`, CFG.C_ENEMY);
 
       // Check death
       if (this.player.hp <= 0) {
@@ -1171,9 +1175,6 @@
       this.deathPhase = 0;
       this.deathTimer = CFG.FREEZE_TIME;
       ScreenFX.freeze(CFG.FREEZE_TIME);
-      if (this.deathCause) {
-        Particles.addFloat(this.player.x, this.player.y - 40, this.deathCause, CFG.C_ENEMY, 16);
-      }
     },
 
     selectUpgradeCard(index) {
@@ -1249,7 +1250,6 @@
       // Particles
       Particles.renderParticles(ctx);
       Particles.renderRings(ctx);
-      Particles.renderFloats(ctx);
 
       ctx.restore(); // end camera transform
 

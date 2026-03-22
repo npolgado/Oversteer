@@ -1,22 +1,33 @@
 # Oversteer
 
 ## Project Overview
-Oversteer is a top-down arena drifting game. The entire game lives in a single self-contained HTML/Canvas/JS file.
+Oversteer is a top-down arena drifting game. The game is split across 9 JS modules loaded by a thin HTML shell.
 
-- **Source of truth**: `arena-drifter/index.html` (~4600 lines)
+- **Source of truth**: `arena-drifter/` — 9 JS modules + `index.html` bootstrap
 - **Run**: `npx serve arena-drifter`
 - **Game**: Arena-based (fixed 3000x3000 world), wave-based enemy spawning, drift combos, near-miss scoring, trail encirclement kills, delta-time physics (px/sec)
+- **Reference resolution**: 1600×900 (`CFG.W`/`CFG.H`); UI scale factor `S()` uses 1280×720 as base
 
 ## Project Structure
 ```
 arena-drifter/
-  index.html                    The game (single-file, self-contained)
+  index.html                    Bootstrap (~76 lines): loads scripts, sizes canvas, runs game loop
+  logic.js                      Shared config (CFG), utilities (U, S), pure exported functions
+  audio.js                      AudioManager — Web Audio oscillators + Howler one-shot SFX
+  fx.js                         FXCache, PerfMon, Particles, ScreenFX, Camera, EventLog
+  input.js                      Assets loader, keyboard/touch Input handler
+  physics.js                    Shared physics update (player + enemy)
+  entities.js                   Player, Enemy classes, enemyDeathFX
+  world.js                      Props (procedural scatter + collision), Trail (encirclement)
+  waves.js                      Waves (spawning, pickups, boost zones), ARENA_UPGRADES
+  game.js                       Game state machine, HUD, menus, upgrade UI
   assets/                       PNG sprites (cars, props)
     backgrounds/                Background images per map
     cars/                       Car sprites (point UP in PNG, rotated +90° in code to face RIGHT)
     props/                      Prop sprites (trees, rocks, mud, etc.)
-test/                           Node tests (logic mirrored from index.html)
+test/                           Node tests (logic mirrored from logic.js)
 docs/roadmaps/                  PRD, TDD, version roadmaps
+docs/reviews/                   Code review snapshots
 scripts/                        install-hooks
 .githooks/                      pre-push (runs tests before push)
 references/reference_mock.png   Visual inspiration
@@ -25,6 +36,21 @@ CLAUDE.md                       This file
 HISTORY.md                      Removed code history
 patch_notes.md                  Version history
 ```
+
+### Module Load Order & Exports
+Modules communicate via `window.*` globals, resolved at call-time (not at import). Load order = script tag order in `index.html`.
+
+| Order | File | Key `window.*` Exports |
+|-------|------|------------------------|
+| 1 | `logic.js` | `OversteerLogic` (CFG, U, S, pure functions) |
+| 2 | `audio.js` | `Audio` |
+| 3 | `fx.js` | `FXCache`, `PerfMon`, `Particles`, `ScreenFX`, `Camera`, `EventLog` |
+| 4 | `input.js` | `Assets`, `Input` |
+| 5 | `physics.js` | `updatePhysics` |
+| 6 | `entities.js` | `Player`, `Enemy`, `enemyDeathFX` |
+| 7 | `world.js` | `Props`, `Trail` |
+| 8 | `waves.js` | `Waves`, `ARENA_UPGRADES` |
+| 9 | `game.js` | `STATE`, `Game` |
 
 ## Game States
 `MENU` → `MAP_SELECT` → `PLAYING` (combat/break phases) → `UPGRADE` → `PLAYING` → `DYING` → `GAME_OVER` → `MENU`
@@ -252,6 +278,7 @@ Scraps spawn every 6s during combat. Types determined by cascading random roll:
   - **Directional shake**: `shake(intensity, dur, dirX, dirY)` — 70% biased toward direction, 30% random
 - **FXCache**: Pre-renders vignette overlay and per-type prop glows to offscreen canvases
 - **Particles**: Shard (death/explosions), smoke (enemy despawn), ring (milestones/encirclement), spark (wall-riding)
+- **EventLog** (`fx.js`): Screen-anchored HUD panel (below HP bar) showing game events — pickups, combos, encirclements, shield breaks, near-miss streaks, etc. Max 7 entries. Entries fade out over 3.5s. Replaced the old world-space `floatingTexts` system.
 - **Death sequence**: 0.10s freeze → 0.35× slowmo for 0.35s, 10-14 shard particles, screen flash + vignette
 - **Enemy death FX**: Type-specific via `enemyDeathFX()` — red sparks (chaser), blue sparks (interceptor), smoke burst (drifter), golden explosion + screen shake (elite)
 - **Arena boundary**: Multi-pass glow (3 passes: lineWidth 14/8/2, pulsing with `sin(time*2)`) using `CFG.C_ACCENT`
@@ -259,7 +286,7 @@ Scraps spawn every 6s during combat. Types determined by cascading random roll:
 - **Drift trail thickness**: Trail `lineWidth` varies per segment based on speed (base + 3×speedFrac)
 
 ## Testing
-- Pure logic extracted to `arena-drifter/logic.js` (mirrors functions from `index.html`); tests in `test/*.test.js` files
+- Pure logic lives in `arena-drifter/logic.js`; tests in `test/*.test.js` files
 - Run tests: `node --test test/`
 - When adding new game mechanics, extract the testable logic into `arena-drifter/logic.js` with a matching export, then write tests against it
 - Tests run in Node (no browser/DOM) — keep test helpers dependency-free
