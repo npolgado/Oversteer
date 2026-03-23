@@ -177,3 +177,35 @@ test('encircle outcome scales with combo and bonus', () => {
   assert.equal(result.scoreDelta, 300);
   assert.equal(result.comboLevel, 4);
 });
+
+test('encircle outcome applies encircleScoreBonus multiplier', () => {
+  // killCount=2, comboLevel=0, scoreMult=1, encircleScoreBonus=1.5
+  // baseScore=200, bonus=100, comboMult=1, total=floor(300*1.5)=450
+  const result = computeEncircleOutcome(2, 0, 1, 1.5);
+  assert.equal(result.scoreDelta, 450);
+});
+
+test('encircle outcome applies scoreMult', () => {
+  // killCount=1, comboLevel=0, scoreMult=2, encircleScoreBonus=1
+  // baseScore=100, bonus=0, total=100*2=200
+  const result = computeEncircleOutcome(1, 0, 2, 1);
+  assert.equal(result.scoreDelta, 200);
+});
+
+test('encircle combo clamps at max', () => {
+  // comboLevel=7, killCount=2 → 7 + 4 = 11, clamped to 8
+  const result = computeEncircleOutcome(2, 7, 1, 1);
+  assert.equal(result.comboLevel, 8);
+});
+
+test('applyPlayerDamage with no modifiers deducts exact damage', () => {
+  const player = { hp: 100, damageResist: 0, driftShield: false, invulnTimer: 0, lastHitTimer: 3 };
+  const dmg = applyPlayerDamage(player, 15, false);
+  assert.equal(dmg, 15);
+  assert.equal(player.hp, 85);
+});
+
+test('applyComboDecay clamps at zero', () => {
+  assert.equal(applyComboDecay(0.5, false, 1.0), 0);
+  assert.equal(applyComboDecay(0, false, 1.0), 0);
+});

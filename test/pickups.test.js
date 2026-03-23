@@ -72,3 +72,14 @@ test('pickup type roll respects thresholds', () => {
   assert.equal(selectPickupType(6, 0.18), 'speed_pickup');
   assert.equal(selectPickupType(6, 0.5), 'scrap');
 });
+
+test('bomb threshold boundary: roll=0.04 on wave 5 is trail_boost not bomb', () => {
+  // bomb requires roll < 0.04; at exactly 0.04 it falls through to trail_boost check
+  assert.equal(selectPickupType(5, 0.04), 'trail_boost');
+});
+
+test('bomb does not spawn before wave 5', () => {
+  // Even with low roll, wave 4 can't produce a bomb
+  assert.equal(selectPickupType(4, 0.01), 'trail_boost');
+  assert.equal(selectPickupType(0, 0.0), 'trail_boost');
+});
