@@ -28,17 +28,28 @@ A top-down arena drifting game built entirely in a single HTML/Canvas/JS file. D
 
 ## Setup
 
-Requires [Node.js](https://nodejs.org/) (for the static file server).
+Requires [Node.js](https://nodejs.org/).
+
+### New architecture (PixiJS + TypeScript + Vite)
 
 ```bash
-git clone https://github.com/your-username/Oversteer.git
+git clone https://github.com/npolgado/Oversteer.git
 cd Oversteer
+npm install
+npm run dev
+```
+
+Vite opens the browser automatically. The new stack lives in `src/`.
+
+### Legacy (vanilla JS)
+
+The original game in `arena-drifter/` is still runnable:
+
+```bash
 npx serve arena-drifter
 ```
 
 Then open the URL shown in your terminal (usually `http://localhost:3000`).
-
-No build step, no dependencies, no bundler — just a static file server serving a single HTML file.
 
 ## Developers
 
@@ -56,17 +67,21 @@ chmod +x .githooks/pre-push scripts/install-hooks
 
 ## Project Structure
 
-
 ```
-arena-drifter/
-  index.html          The entire game (~3800 lines)
-  assets/
-    cars/             Car sprites (player + enemies)
-    props/            Environment sprites (trees, rocks, mud, etc.)
+src/                  New PixiJS + TypeScript architecture
+  core/               Config, utils, RNG, event bus, save manager
+  render/             PixiJS app setup, camera
+  audio/              AudioManager (Howler + Web Audio)
+  input/              InputManager (keyboard, touch, gamepad stub)
+  scenes/             Scene manager, boot scene, playground scene
+  logic/              Pure function re-exports for testing
+arena-drifter/        Legacy vanilla JS game (9 modules + index.html)
+  assets/             PNG sprites (cars, props, backgrounds)
+test/                 Old test suite (node:test)
 ```
 
 See [patch_notes.md](patch_notes.md) for version history.
 
 ## License
-
+im trying to use only CC0 content for the beta's and transistion to original assets 
 CC0

@@ -6,12 +6,14 @@ After Phase 0-1 delivers a playable PixiJS + TypeScript port of core gameplay, t
 
 ---
 
-## Phase 2 — Game Feel + Visual Polish
+## Phase 2 — Game Feel + Visual Polish - dev_1.2.0
 
 ### Goal
+
 Turn the functional port into something that looks and feels premium.
 
 ### Scope
+
 - Full particle system via PixiJS particle containers
   - Sparks (wall-riding, collisions)
   - Smoke (enemy despawn, drift)
@@ -33,20 +35,34 @@ Turn the functional port into something that looks and feels premium.
 - Enemy-specific death FX (red sparks, blue sparks, smoke burst, golden explosion)
 - Drift trail thickness variation based on speed
 
+### Issue #6 — FPS / Performance
+
+Phase 2 is the first time the full visual stack is running. Before layering effects, establish a baseline FPS benchmark vs. the vanilla JS build. Fix any regressions here rather than deferring them to Phase 8.
+
+Checklist:
+- Benchmark Phase 1 build (no effects) vs. `arena-drifter/` vanilla baseline
+- Profile PixiJS draw calls — especially trail rendering (400+ segments/frame)
+- Fix any regressions found before adding effects on top
+- Full optimization pass remains in Phase 8
+
 ### Success Criteria
+
 - First 30 seconds feel exciting
 - Kills feel rewarding with clear visual/audio feedback
 - Visuals support clarity, not clutter
 - Stable 60fps with effects active
+- No FPS regression vs. vanilla JS baseline (issue #6)
 
 ---
 
-## Phase 3 — Full Content Port
+## Phase 3 — Full Content Port - dev_1.3.0
 
 ### Goal
+
 Port everything from the original game that was deferred in Phase 1.
 
 ### Scope
+
 - Remaining 5 enemy types
   - Drifter (alternates normal driving and sustained drifts)
   - Blocker (targets trail midpoint to block encirclement)
@@ -66,18 +82,21 @@ Port everything from the original game that was deferred in Phase 1.
 - Expanded test suite for all enemy AI behaviors
 
 ### Success Criteria
+
 - All original game features present in the new stack
 - Feature parity with `arena-drifter/` vanilla JS version
 - Performance maintained with full enemy roster
 
 ---
 
-## Phase 4 — New Content + World System
+## Phase 4 — New Content + World System - dev_1.4.0
 
 ### Goal
+
 Expand beyond the original game with a world/biome system and new content.
 
 ### Scope
+
 - World/biome framework — each world defines:
   - Background art layers and lighting palette
   - Fog/post-processing settings
@@ -96,18 +115,21 @@ Expand beyond the original game with a world/biome system and new content.
 - Route branching / risk-reward decisions between worlds
 
 ### Success Criteria
+
 - Worlds feel meaningfully different (visuals AND gameplay)
 - Gameplay changes per world, not just visuals
 - Loading and switching worlds is clean
 
 ---
 
-## Phase 5 — Three.js Integration
+## Phase 5 — Three.js Integration - dev_1.5.0
 
 ### Goal
+
 Add atmospheric depth and cinematic presentation using Three.js for non-gameplay layers.
 
 ### Scope
+
 - Add Three.js dependency
 - Three.js for atmospheric 3D backgrounds
   - Parallax depth layers
@@ -121,25 +143,30 @@ Add atmospheric depth and cinematic presentation using Three.js for non-gameplay
 - Custom shaders / post-processing for bloom, glow, fog, distortion, heat haze, color grading
 
 ### Implementation Note
+
 PixiJS and Three.js are two separate rendering contexts. Options:
+
 1. Two canvases layered via CSS (simpler, may have compositing overhead)
 2. Three.js renders to texture, displayed as PixiJS sprite (more integrated, more complex)
 
 Evaluate both approaches. Start with option 1 for simplicity.
 
 ### Success Criteria
+
 - Menu and backgrounds feel cinematic and atmospheric
 - No performance regression on gameplay (Three.js only renders non-gameplay layers)
 - Clean separation between gameplay rendering (PixiJS) and atmosphere (Three.js)
 
 ---
 
-## Phase 6 — Steam Wrapper + Platform Features
+## Phase 6 — Steam Wrapper + Platform Features - dev_1.6.0
 
 ### Goal
+
 Package the game for Steam distribution with platform-specific features.
 
 ### Scope
+
 - **Desktop wrapper** — evaluate Electron vs Tauri
   - Electron: Chromium-based, battle-tested for web games, larger binary (~150MB)
   - Tauri: System webview, much smaller (~10MB), less proven for games, may have audio/rendering quirks
@@ -167,6 +194,7 @@ Package the game for Steam distribution with platform-specific features.
   - Steam upload via Steamworks SDK
 
 ### Success Criteria
+
 - Game runs as a native desktop app
 - Steam overlay works
 - Achievements trigger correctly
@@ -175,12 +203,14 @@ Package the game for Steam distribution with platform-specific features.
 
 ---
 
-## Phase 7 — Meta-Progression + Narrative
+## Phase 7 — Meta-Progression + Narrative - dev_1.7.0
 
 ### Goal
+
 Add long-term replay value and lightweight story.
 
 ### Scope
+
 - **Persistent progression**
   - Persistent currency earned per run
   - Vehicle unlocks (new cars with different stats/visuals)
@@ -205,6 +235,7 @@ Add long-term replay value and lightweight story.
   - Migration from localStorage to structured save format
 
 ### Success Criteria
+
 - Players feel motivated to do "one more run"
 - Distinct builds are viable and rewarding
 - Narrative supports atmosphere without slowing pace
@@ -212,12 +243,15 @@ Add long-term replay value and lightweight story.
 
 ---
 
-## Phase 8 — Final Polish + Steam Release
+## Phase 8 — Final Polish + Steam Release - beta_2.0.0
+this will be beta 2.0 instead of prod 1.0.0 for testing, any addition scope, and iterative feedback and design from testing.
 
 ### Goal
+
 Ship-quality game ready for Steam Early Access or full release.
 
 ### Scope
+
 - **Performance optimization pass**
   - GPU profiling for PixiJS + Three.js
   - Memory allocation audit (GC pressure)
@@ -252,6 +286,7 @@ Ship-quality game ready for Steam Early Access or full release.
   - Community feedback pipeline
 
 ### Success Criteria
+
 - Game feels premium and polished
 - No major bugs or performance issues
 - Store page is compelling
@@ -263,15 +298,17 @@ Ship-quality game ready for Steam Early Access or full release.
 
 These phases are sequential but overlap is expected. Rough sizing:
 
-| Phase | Effort | Dependencies |
-|---|---|---|
-| Phase 2: Visual Polish | Medium | Phase 1 complete |
-| Phase 3: Full Content Port | Medium | Phase 1 complete (can parallel with Phase 2) |
-| Phase 4: New Worlds | Large | Phases 2-3 complete |
-| Phase 5: Three.js | Medium | Phase 2 complete (visual foundation) |
-| Phase 6: Steam Wrapper | Medium | Phase 1 complete (can start early) |
-| Phase 7: Meta-Progression | Large | Phase 4 complete (worlds exist) |
-| Phase 8: Polish + Release | Medium-Large | All phases complete |
+
+| Phase                      | Effort       | Dependencies                                 |
+| -------------------------- | ------------ | -------------------------------------------- |
+| Phase 2: Visual Polish     | Medium       | Phase 1 complete                             |
+| Phase 3: Full Content Port | Medium       | Phase 1 complete (can parallel with Phase 2) |
+| Phase 4: New Worlds        | Large        | Phases 2-3 complete                          |
+| Phase 5: Three.js          | Medium       | Phase 2 complete (visual foundation)         |
+| Phase 6: Steam Wrapper     | Medium       | Phase 1 complete (can start early)           |
+| Phase 7: Meta-Progression  | Large        | Phase 4 complete (worlds exist)              |
+| Phase 8: Polish + Beta Release  | Medium-Large | All phases complete                          |
+
 
 Phase 6 (Steam wrapper) can start as early as Phase 1 completion — wrapping the game in Electron/Tauri doesn't require visual polish. Getting Steam builds running early allows continuous testing on the target platform.
 
@@ -283,3 +320,4 @@ Phase 6 (Steam wrapper) can start as early as Phase 1 completion — wrapping th
 - **Multiplayer** — out of scope for 1.0. Could be explored post-launch.
 - **Mobile app store release** — the web version works on mobile browsers. Native mobile is a separate effort.
 - **Level editor / modding** — potential post-launch feature, not 1.0 scope.
+
