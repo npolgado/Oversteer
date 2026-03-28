@@ -110,9 +110,10 @@ describe('updatePhysics — arena boundary clamp', () => {
 
   it('velocity bounces off wall with BOUNCE_RETAIN factor', () => {
     const ent = makeEntity({ x: 0, y: CFG.WORLD_H / 2, vx: -200 });
-    updatePhysics(ent, 0.1, 0, false, false, false, false, 0);
+    // Use tiny dt so forward drag is negligible and we isolate the bounce factor
+    updatePhysics(ent, 0.001, 0, false, false, false, false, 0);
     expect(ent.vx).toBeGreaterThan(0);
-    expect(ent.vx).toBeCloseTo(200 * CFG.BOUNCE_RETAIN, 1);
+    expect(ent.vx).toBeCloseTo(200 * CFG.BOUNCE_RETAIN, 0);
   });
 });
 

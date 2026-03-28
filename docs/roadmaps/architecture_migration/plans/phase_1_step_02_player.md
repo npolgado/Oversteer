@@ -47,7 +47,7 @@ Step 1 delivered `updatePhysics()` and pure logic functions. This step splits th
      // Upgrades (flags)
      tightTurns: boolean; driftKing: boolean; magnetRange: number;
      scoreMult: number; thickPlating: boolean; afterburner: boolean;
-     comboMaster: boolean; speedDemon: boolean; encircleScoreBonus: boolean;
+     comboMaster: boolean; speedDemon: boolean; encircleScoreBonus: number;
      damageResist: number; driftShield: boolean; comboHeal: boolean;
      trailMagnet: boolean; speedTrail: boolean; dashBurst: boolean;
      dashCooldown: number; trailBurn: boolean; chainLightning: boolean;
