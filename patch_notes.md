@@ -2,7 +2,19 @@
 
 ---
 
-## 2026-03-13 - v1.0 - Audio, Stats & Polish
+## 2026-03-13 - v1.0 - Beta Launch
+- **3 new enemy types** (7 total):
+  - **Blocker** (2000 pts): Targets trail midpoint, holds position to block encirclement. 380 px/s
+  - **Flanker** (2500 pts): Approaches perpendicular to player velocity, charges within 120px. 470 px/s
+  - **Bomber** (3000 pts): Orbits ahead of player, drops hazard zones every 4s. 400 px/s
+    - Hazard zones: 8 DPS + 0.6x slow, last 6s, max 15 active, cleared on wave break
+- **5 new upgrades** (26 total):
+  - **Dash Burst**: Tap brake at speed >300 for 0.2s invuln dash, 3s cooldown
+  - **Trail Burn**: Trail damages enemies on contact (1 dmg, 1s cooldown per enemy)
+  - **Chain Lightning**: Loop kills chain 1 damage to nearest enemy within 200px
+  - **Lucky Dice**: +2 rerolls per break (stackable, max 2)
+  - **Nitro Drift**: +30% max speed while drifting
+- **4th difficulty modifier**: Double Enemies — spawn intervals halved + burst count doubled (4), 1.6x score
 - **Full audio system**: Procedural sound synthesis — no audio files needed
   - **Engine hum** rises in pitch and volume with speed
   - **Drift squeal** plays during drift, intensity follows slip angle
@@ -10,22 +22,27 @@
   - **Ambient music**: Low sine pad with LFO modulation during gameplay, ducks on pause, fades on death
   - Audio controls on pause screen: **[M]** mute, **[ ] ]** SFX volume, **[- =]** music volume
   - Volume/mute preferences saved to localStorage
-- **Difficulty modifiers**: Toggle on map select with **1/2/3**
+- **Difficulty modifiers**: Toggle on map select with **1/2/3/4**
   - **Hard Mode**: enemies +100 px/s speed, 1.5x score
   - **Speed Rush**: spawn intervals halved, 1.3x score
   - **Fragile**: 50 HP only, 1.4x score
-- **4 new upgrades** (21 total):
+  - **Double Enemies**: spawn intervals halved + burst count doubled, 1.6x score
+- **4 new upgrades** from pre-release (21 total before this batch):
   - **Drift Shield**: -40% damage while drifting
   - **Combo Medic**: Heal 10/15/25 HP at combo milestones 3/5/8
   - **Trail Magnet**: Trail points attract scraps within 80px
   - **Speed Trail**: Trail capacity grows with speed
+- **EventLog HUD**: Replaced world-space floating texts with a screen-anchored HUD panel (below HP bar)
+  - Shows up to 7 entries; entries fade out over 3.5s
 - **Extended run stats** on game-over screen: peak combo, near misses, drift time, enemies killed
+- **Game-over screen**: Shows active difficulty modifiers and combined score multiplier
 - **Arena boundary glow**: Multi-pass pulsing glow border replaces flat stroke
 - **Wall-riding sparks**: Spark particles along nearest wall when drifting near boundary
 - **Enemy death FX**: Type-specific effects — red sparks (chaser), blue sparks (interceptor), smoke burst (drifter), golden explosion + screen shake (elite)
 - **Directional camera shake**: Collision shake biased toward impact direction
 - **Drift trail thickness**: Trail line width varies with speed per segment
-- dev: 10 new unit tests (32 total) covering stat tracking and new upgrade effects
+- **Modular code split**: Game refactored from single index.html into 9 JS modules
+- dev: 58 total unit tests across 7 test files
 
 ## 2026-03-12 - v0.9.6 - Bug Fixes, Mobile Touch & Performance
 - **Another Map!**: use a and d or <- / -> for map selection on a new game 

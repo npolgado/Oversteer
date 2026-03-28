@@ -27,9 +27,11 @@ arena-drifter/
     props/                      Prop sprites (trees, rocks, mud, etc.)
 test/                           Node tests (logic mirrored from logic.js)
 docs/roadmaps/                  PRD, TDD, version roadmaps
-docs/reviews/                   Code review snapshots
+docs/code-reviews/              Code review snapshots
+docs/game-reviews/              Game review snapshots
+docs/unit-testing/              Unit testing docs
 scripts/                        install-hooks
-.githooks/                      pre-push (runs tests before push)
+.githooks/                      pre-push, pre-push.cmd (runs tests before push)
 references/reference_mock.png   Visual inspiration
 .gitignore                      Repo config
 CLAUDE.md                       This file
@@ -238,7 +240,7 @@ Scraps spawn every 6s during combat. Types determined by cascading random roll:
 - Sprites drawn into square bounding box via `drawImage(img, -s/2, -s/2, s, s)`
 - `Assets.load()` creates Image elements; `Assets.preload()` loads all configured paths at init
 - FXCache pre-renders expensive effects (vignette, prop glows) to offscreen canvases
-- Responsive canvas scaling via `S()` helper function (reference resolution 1920×1080)
+- Responsive canvas scaling via `S()` helper function (reference resolution 1280×720)
 
 ## Audio System
 - **Dependency**: Howler.js 2.2.4 (CDN) for one-shot SFX; Web Audio API for continuous sounds
@@ -290,7 +292,7 @@ Scraps spawn every 6s during combat. Types determined by cascading random roll:
 - Run tests: `node --test test/`
 - When adding new game mechanics, extract the testable logic into `arena-drifter/logic.js` with a matching export, then write tests against it
 - Tests run in Node (no browser/DOM) — keep test helpers dependency-free
-- Test files: `upgrades.test.js`, `pickups.test.js`, `waves.test.js`, `scoring.test.js`, `trail.test.js`, `enemies.test.js`
+- Test files: `upgrades.test.js`, `pickups.test.js`, `waves.test.js`, `scoring.test.js`, `trail.test.js`, `enemies.test.js`, `utility.test.js`
 - logic.js exports include: `getEnemyPool`, `shouldSpawnElite`, `computeFlankTarget`, `computeBlockerTarget`, `applyBombZoneDamage`, `computeModifierScoreMult`
 
 ## Coding Conventions
