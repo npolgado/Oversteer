@@ -3,3 +3,6 @@
 export { CFG, MAPS, MAPS_BY_ID, S, applyMap } from '@core/config';
 export * from '@core/utils';
 export { makeRng, randFloat } from '@core/rng';
+export { updatePhysics } from '@gameplay/physics';
+export type { PhysicsEntity } from '@gameplay/physics';
+export * from '@gameplay/pureLogic';
