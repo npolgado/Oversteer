@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { computeWaveTiming, computeHordeCount, shouldTriggerHorde } = require('./logic');
+const { computeWaveTiming, computeHordeCount, shouldTriggerHorde, rollHordeTrigger, makeRng } = require('../arena-drifter/logic');
 
 test('wave 1 uses initial timings and no bursts', () => {
   const timing = computeWaveTiming(1);
@@ -35,9 +35,19 @@ test('horde count scales with wave index', () => {
   assert.equal(computeHordeCount(5), 7);
 });
 
+test('horde count caps at maximum', () => {
+  assert.equal(computeHordeCount(200), 40);
+});
+
 test('horde trigger threshold fires at expected time', () => {
   const combatDuration = 30;
   const hordeTrigger = 0.75;
   assert.equal(shouldTriggerHorde(22.5, combatDuration, hordeTrigger), true);
   assert.equal(shouldTriggerHorde(22.4, combatDuration, hordeTrigger), false);
+});
+
+test('seeded horde trigger roll stays within range', () => {
+  const rng = makeRng(1234);
+  const roll = rollHordeTrigger(rng);
+  assert.ok(roll >= 0.60 && roll <= 0.85);
 });

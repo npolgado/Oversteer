@@ -1,30 +1,58 @@
 # Oversteer
 
 ## Project Overview
-Oversteer is a top-down arena drifting game. The entire game lives in a single self-contained HTML/Canvas/JS file.
+Oversteer is a top-down arena drifting game. The game is split across 9 JS modules loaded by a thin HTML shell.
 
-- **Source of truth**: `arena-drifter/index.html` (~4000 lines)
+- **Source of truth**: `arena-drifter/` — 9 JS modules + `index.html` bootstrap
 - **Run**: `npx serve arena-drifter`
 - **Game**: Arena-based (fixed 3000x3000 world), wave-based enemy spawning, drift combos, near-miss scoring, trail encirclement kills, delta-time physics (px/sec)
+- **Reference resolution**: 1600×900 (`CFG.W`/`CFG.H`); UI scale factor `S()` uses 1280×720 as base
 
 ## Project Structure
 ```
 arena-drifter/
-  index.html                    The game (single-file, self-contained)
+  index.html                    Bootstrap (~76 lines): loads scripts, sizes canvas, runs game loop
+  logic.js                      Shared config (CFG), utilities (U, S), pure exported functions
+  audio.js                      AudioManager — Web Audio oscillators + Howler one-shot SFX
+  fx.js                         FXCache, PerfMon, Particles, ScreenFX, Camera, EventLog
+  input.js                      Assets loader, keyboard/touch Input handler
+  physics.js                    Shared physics update (player + enemy)
+  entities.js                   Player, Enemy classes, enemyDeathFX
+  world.js                      Props (procedural scatter + collision), Trail (encirclement)
+  waves.js                      Waves (spawning, pickups, boost zones), ARENA_UPGRADES
+  game.js                       Game state machine, HUD, menus, upgrade UI
   assets/                       PNG sprites (cars, props)
     backgrounds/                Background images per map
     cars/                       Car sprites (point UP in PNG, rotated +90° in code to face RIGHT)
     props/                      Prop sprites (trees, rocks, mud, etc.)
-test/                           Node tests (logic mirrored from index.html)
+test/                           Node tests (logic mirrored from logic.js)
 docs/roadmaps/                  PRD, TDD, version roadmaps
+docs/code-reviews/              Code review snapshots
+docs/game-reviews/              Game review snapshots
+docs/unit-testing/              Unit testing docs
 scripts/                        install-hooks
-.githooks/                      pre-push (runs tests before push)
+.githooks/                      pre-push, pre-push.cmd (runs tests before push)
 references/reference_mock.png   Visual inspiration
 .gitignore                      Repo config
 CLAUDE.md                       This file
 HISTORY.md                      Removed code history
 patch_notes.md                  Version history
 ```
+
+### Module Load Order & Exports
+Modules communicate via `window.*` globals, resolved at call-time (not at import). Load order = script tag order in `index.html`.
+
+| Order | File | Key `window.*` Exports |
+|-------|------|------------------------|
+| 1 | `logic.js` | `OversteerLogic` (CFG, U, S, pure functions) |
+| 2 | `audio.js` | `Audio` |
+| 3 | `fx.js` | `FXCache`, `PerfMon`, `Particles`, `ScreenFX`, `Camera`, `EventLog` |
+| 4 | `input.js` | `Assets`, `Input` |
+| 5 | `physics.js` | `updatePhysics` |
+| 6 | `entities.js` | `Player`, `Enemy`, `enemyDeathFX` |
+| 7 | `world.js` | `Props`, `Trail` |
+| 8 | `waves.js` | `Waves`, `ARENA_UPGRADES` |
+| 9 | `game.js` | `STATE`, `Game` |
 
 ## Game States
 `MENU` → `MAP_SELECT` → `PLAYING` (combat/break phases) → `UPGRADE` → `PLAYING` → `DYING` → `GAME_OVER` → `MENU`
@@ -43,11 +71,14 @@ patch_notes.md                  Version history
 | Space | Handbrake (alias for S/Down at speed) |
 | P / Escape | Pause |
 | R | Reroll upgrades (during upgrade selection) |
-| 1/2/3 or Numpad 1/2/3 | Select upgrade card |
+| 1/2/3/4 or Numpad 1/2/3 | Select upgrade card / Toggle difficulty modifiers (map select) |
 | S (menu only) | Sandbox mode |
 | A/D (map select) | Cycle maps |
 | Escape (map select) | Back to menu |
 | Enter | Confirm / Start |
+| M (pause) | Toggle mute |
+| [ / ] (pause) | SFX volume down/up |
+| - / = (pause) | Music volume down/up |
 
 ### Touch (mobile browsers)
 - **Left side**: Virtual analog stick (appears on first touch)
@@ -71,10 +102,20 @@ Enemies share the same physics engine as the player. Unlocked by score, not wave
 | Chaser | 420 px/s | 200°/s (1.0x) | Drives straight at player | enemy_red, enemy_orange | Always |
 | Interceptor | 460 px/s | 170°/s (0.85x) | Leads player position by 0.5s | police, ambulance | 1000 pts |
 | Drifter | 440 px/s | 220°/s (1.1x) | Alternates normal driving (1.5-3s) and sustained drifts (1-2.5s) | taxi, mini_van | 1500 pts |
+| Blocker | 380 px/s | 140°/s (0.7x) | Targets trail midpoint, holds position to block encirclement | truck, enemy_red | 2000 pts |
+| Flanker | 470 px/s | 180°/s (0.9x) | Approaches perpendicular to player velocity, charges within 120px | police, enemy_orange | 2500 pts |
+| Bomber | 400 px/s | 150°/s (0.75x) | Orbits ahead of player, drops hazard zones every 4s | mini_truck, mini_van | 3000 pts |
 | Elite | 378 px/s | 160°/s (0.8x) | Armored (2 HP), larger hitbox (r=14), 1.5x lifespan | truck, mini_truck | Wave 4+, 12% chance |
 
 Sprites configured via `CFG.ENEMY_SPRITES_BY_TYPE` (per-type sprite pools with random selection).
 Enemies spawn 550px from player, lifespan 10-18s, despawn if offscreen >5s or >1200px away.
+
+### Bomber Hazard Zones
+- Bomber enemies drop hazard zones every `BOMB_ZONE_INTERVAL` (4s) at their current position
+- Zones last `BOMB_ZONE_DURATION` (6s), max `BOMB_ZONE_MAX` (15) active zones
+- Player inside zone: `BOMB_ZONE_DMG` (8) DPS + `BOMB_ZONE_SLOW` (0.6x) speed multiplier
+- Zones cleared on wave break, rendered as pulsing red circles with inner core
+- Damage respects invulnerability, damage_resist, and ghost_frame
 
 ## Wave System
 - **Combat phase**: Starts at 30s, +10s per wave, capped at 120s. Enemies spawn on interval.
@@ -121,11 +162,11 @@ Core mechanic: the player leaves a visible trail. When the trail forms a closed 
 - Both values reset on death/new run via `Trail.reset()`
 - Loop kills trigger shockwave particles + score award
 
-## Upgrades (17 total, no rarity system)
+## Upgrades (26 total, no rarity system)
 Offered during wave break phase (pick 1 of 3). No selection timer — player takes as long as needed.
-- **Rerolls**: Press R to reroll upgrade cards (up to 3 per break, resets each break)
+- **Rerolls**: Press R to reroll upgrade cards (up to 3 per break, resets each break; extra_rerolls adds +2 per stack)
 - **Post-selection**: After choosing, cards disappear and a centered 3-second countdown plays before next wave
-- **Stackable upgrades**: shield, hp_regen (max 3), max_hp, damage_resist can be picked multiple times
+- **Stackable upgrades**: shield, hp_regen (max 3), max_hp, damage_resist, extra_rerolls (max 2) can be picked multiple times
 
 | Upgrade | Effect |
 |---------|--------|
@@ -146,6 +187,15 @@ Offered during wave break phase (pick 1 of 3). No selection timer — player tak
 | hp_regen | +3 HP/sec regen after 2s without damage (stackable, max 3) |
 | max_hp | +30 max HP, heals +30 immediately (stackable) |
 | damage_resist | Take 25% less damage, diminishing per stack: 1-(1-x)×0.75 |
+| drift_shield | -40% damage while drifting |
+| combo_heal | Heal 10/15/25 HP at combo milestones 3/5/8 |
+| trail_magnet | Trail points attract scraps within 80px |
+| speed_trail | Trail MAX_POINTS scales with speed (+1 per 100px/s) |
+| dash_burst | Tap brake at speed >300 for 0.2s invuln dash, 3s cooldown |
+| trail_burn | Trail damages enemies that touch it (1 dmg, 1s cooldown per enemy) |
+| chain_lightning | Loop kills chain 1 damage to nearest enemy within 200px |
+| extra_rerolls | +2 rerolls per break (stackable, max 2) |
+| nitro_drift | +30% max speed while drifting |
 
 ## Pickups
 Scraps spawn every 6s during combat. Types determined by cascading random roll:
@@ -190,7 +240,36 @@ Scraps spawn every 6s during combat. Types determined by cascading random roll:
 - Sprites drawn into square bounding box via `drawImage(img, -s/2, -s/2, s, s)`
 - `Assets.load()` creates Image elements; `Assets.preload()` loads all configured paths at init
 - FXCache pre-renders expensive effects (vignette, prop glows) to offscreen canvases
-- Responsive canvas scaling via `S()` helper function (reference resolution 1920×1080)
+- Responsive canvas scaling via `S()` helper function (reference resolution 1280×720)
+
+## Audio System
+- **Dependency**: Howler.js 2.2.4 (CDN) for one-shot SFX; Web Audio API for continuous sounds
+- **AudioManager** (`Audio` object): Hybrid approach — live Web Audio oscillators for engine/drift/music, Howler for one-shots
+- **Procedural synthesis**: All sounds generated at init as WAV blob URLs (no audio files needed)
+- **Live sounds**: Engine (sawtooth 80-200Hz, pitch follows speed), drift squeal (high-pass noise), music (sine pad 110+165Hz with LFO)
+- **One-shot SFX**: collision, encircle, near_miss, horde_warn, combo_sting, ui_click
+- **Lifecycle**: Engine+music start on PLAYING, stop on pause/death/menu. Music ducks to 30% on pause, fades out on death.
+- **AudioContext resume**: Called on first keydown/touchstart to satisfy browser autoplay policy
+- **Persistence**: Volume/mute prefs saved to `localStorage` as `oversteer_audio_v1`
+- **Pause controls**: M=mute, [/]=SFX volume, -/==music volume
+
+## Difficulty Modifiers
+- Toggled on MAP_SELECT screen with number keys (1/2/3/4) or touch
+- Applied in `Game.reset()` after `applyMap()`
+- Reset on GAME_OVER → MENU transition
+- Active modifiers and combined score multiplier displayed on game-over screen
+
+| Modifier | Effect | Score Multiplier |
+|----------|--------|-----------------|
+| Hard Mode | Enemy speed +100 px/s | 1.5x |
+| Speed Rush | Spawn intervals halved | 1.3x |
+| Fragile | 50 HP max | 1.4x |
+| Double Enemies | Spawn intervals halved + burst count doubled (4) | 1.6x |
+
+## Extended Run Stats
+- Tracked during gameplay: `peakCombo`, `nearMissTotal`, `totalDriftTime`, `enemiesKilled`
+- Reset in `Game.reset()`
+- Displayed on game-over screen below existing stats
 
 ## Visual Effects
 - **ScreenFX**: Manages slowmo, dynamic zoom, screen shake, flash, and freeze effects
@@ -198,9 +277,29 @@ Scraps spawn every 6s during combat. Types determined by cascading random roll:
   - Damage taken: 0.9× slowmo for 0.1s
   - Combo: 0.9× slowmo
   - Dynamic zoom: ±4% based on speed, +1-4% boost on drift chains
+  - **Directional shake**: `shake(intensity, dur, dirX, dirY)` — 70% biased toward direction, 30% random
 - **FXCache**: Pre-renders vignette overlay and per-type prop glows to offscreen canvases
-- **Particles**: Shard (death/explosions), smoke (enemy despawn), ring (milestones/encirclement)
+- **Particles**: Shard (death/explosions), smoke (enemy despawn), ring (milestones/encirclement), spark (wall-riding)
+- **EventLog** (`fx.js`): Screen-anchored HUD panel (below HP bar) showing game events — pickups, combos, encirclements, shield breaks, near-miss streaks, etc. Max 7 entries. Entries fade out over 3.5s. Replaced the old world-space `floatingTexts` system.
 - **Death sequence**: 0.10s freeze → 0.35× slowmo for 0.35s, 10-14 shard particles, screen flash + vignette
+- **Enemy death FX**: Type-specific via `enemyDeathFX()` — red sparks (chaser), blue sparks (interceptor), smoke burst (drifter), golden explosion + screen shake (elite)
+- **Arena boundary**: Multi-pass glow (3 passes: lineWidth 14/8/2, pulsing with `sin(time*2)`) using `CFG.C_ACCENT`
+- **Wall-riding sparks**: 1-2 spark particles emitted along nearest wall when drifting near boundary
+- **Drift trail thickness**: Trail `lineWidth` varies per segment based on speed (base + 3×speedFrac)
+
+## Testing
+- Pure logic lives in `arena-drifter/logic.js`; tests in `test/*.test.js` files
+- Run tests: `node --test test/`
+- When adding new game mechanics, extract the testable logic into `arena-drifter/logic.js` with a matching export, then write tests against it
+- Tests run in Node (no browser/DOM) — keep test helpers dependency-free
+- Test files: `upgrades.test.js`, `pickups.test.js`, `waves.test.js`, `scoring.test.js`, `trail.test.js`, `enemies.test.js`, `utility.test.js`
+- logic.js exports include: `getEnemyPool`, `shouldSpawnElite`, `computeFlankTarget`, `computeBlockerTarget`, `applyBombZoneDamage`, `computeModifierScoreMult`
+
+## Coding Conventions
+- Avoid `.filter()` on per-frame arrays (enemies, particles) — use in-place swap-and-pop to reduce GC pressure
+- Reset `lastTime = timestamp` in the game loop when transitioning between states (e.g. UPGRADE→PLAYING) to prevent dt spikes
+- When adding new upgrades, always initialize their player flags explicitly in the Player constructor — relying on `undefined`-is-falsy creates inconsistency bugs
+- `startWave()` must clean up scraps, boostZones, and `_burstQueue` — these don't auto-reset between waves
 
 ## Tutorial
 - Activates on wave 1 when enemies exist and the player hasn't encircled yet
