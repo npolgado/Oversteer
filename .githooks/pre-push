@@ -1,5 +1,5 @@
-﻿#!/bin/sh
+#!/bin/sh
 echo "Running old test suite..."
-node --test $(find test -name '*.test.js') || exit 1
+node --test test/enemies.test.js test/pickups.test.js test/scoring.test.js test/trail.test.js test/upgrades.test.js test/utility.test.js test/waves.test.js || exit 1
 echo "Running new test suite..."
 npx vitest run || exit 1

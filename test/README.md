@@ -4,8 +4,10 @@ Minimal unit tests live in `test/` and use the built-in Node test runner.
 
 ## Run
 
+Legacy suite is **only** the seven `*.test.js` files in this folder (listed in `npm run test:old`). New work uses Vitest under `src/` (`npm test`).
+
 ```bash
-node --test
+npm run test:old
 ```
 
 ## Coverage Summary
