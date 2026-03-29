@@ -16,6 +16,7 @@ export function updateEnemy(
   player: PlayerState,
   dt: number,
   gameClock: number,
+  isVisible: (x: number, y: number, margin: number) => boolean,
 ): EnemyUpdateResult {
   // Compute target position
   let tx = player.x;
@@ -35,6 +36,10 @@ export function updateEnemy(
   const dy = state.y - player.y;
   const distToPlayer = Math.hypot(dx, dy);
 
+  // Reset per-frame flags before physics (mirrors playerUpdate.ts)
+  state.wallHit = false;
+  state.driftJustStarted = false;
+
   // isPlayer=false, braking=false, wantDrift=false
   updatePhysics(state, dt, turnInput, true, false, false, false, gameClock);
 
@@ -45,13 +50,8 @@ export function updateEnemy(
   const remaining = state.lifespan - state.age;
   state.fadeAlpha = remaining < 2 ? Math.max(0, remaining / 2) : 1;
 
-  // Offscreen detection via world boundary
-  const MARGIN = 300;
-  const offscreen =
-    state.x < -MARGIN ||
-    state.x > CFG.WORLD_W + MARGIN ||
-    state.y < -MARGIN ||
-    state.y > CFG.WORLD_H + MARGIN;
+  // Offscreen detection via camera viewport (matches original Camera.isVisible check)
+  const offscreen = !isVisible(state.x, state.y, 40);
 
   if (offscreen) {
     state.offscreenTimer += dt;

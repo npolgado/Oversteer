@@ -159,7 +159,8 @@ export function collectPickupEvents(
     }
     if (dist(s.x, s.y, player.x, player.y) < CFG.SCRAP_RADIUS + player.radius + 10) {
       events.push(s.type ?? 'scrap');
-      scraps.splice(i, 1);
+      scraps[i] = scraps[scraps.length - 1];
+      scraps.pop();
     }
   }
 
@@ -167,7 +168,8 @@ export function collectPickupEvents(
     const bz = boostZones[i];
     if (dist(bz.x, bz.y, player.x, player.y) < CFG.BOOST_ZONE_RADIUS + player.radius) {
       events.push('boost');
-      boostZones.splice(i, 1);
+      boostZones[i] = boostZones[boostZones.length - 1];
+      boostZones.pop();
     }
   }
 
@@ -206,12 +208,15 @@ export function updateScraps(
       }
     }
     if (dist(s.x, s.y, player.x, player.y) < CFG.SCRAP_RADIUS + player.radius + 10) {
-      const pType = s.type ?? 'scrap';
-      scraps.splice(i, 1);
-      events.push(pType);
+      events.push(s.type ?? 'scrap');
+      scraps[i] = scraps[scraps.length - 1];
+      scraps.pop();
       continue;
     }
-    if (s.life <= 0) scraps.splice(i, 1);
+    if (s.life <= 0) {
+      scraps[i] = scraps[scraps.length - 1];
+      scraps.pop();
+    }
   }
   return events;
 }
@@ -226,11 +231,15 @@ export function updateBoostZones(
     const bz = boostZones[i];
     bz.life -= dt;
     if (dist(bz.x, bz.y, player.x, player.y) < CFG.BOOST_ZONE_RADIUS + player.radius) {
-      boostZones.splice(i, 1);
       events.push('boost');
+      boostZones[i] = boostZones[boostZones.length - 1];
+      boostZones.pop();
       continue;
     }
-    if (bz.life <= 0) boostZones.splice(i, 1);
+    if (bz.life <= 0) {
+      boostZones[i] = boostZones[boostZones.length - 1];
+      boostZones.pop();
+    }
   }
   return events;
 }

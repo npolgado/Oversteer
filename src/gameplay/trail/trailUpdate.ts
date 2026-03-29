@@ -120,6 +120,7 @@ function _detectLoop(
       } else {
         e.alive = false;
         killedEnemies.push(e);
+        // TODO (Phase 3): elites count as 3 kills for scoring (original world.js:367)
         encircleCount++;
       }
     }
@@ -130,7 +131,7 @@ function _detectLoop(
     const baseScore = 100 * encircleCount + (encircleCount >= 2 ? 50 * encircleCount : 0);
 
     state.flashPoly = poly.slice();
-    state.flashPolyTimer = 0.4;
+    state.flashPolyTimer = 0.3;
 
     return { killedEnemies, polygon: poly, score: baseScore, encircleCount };
   }

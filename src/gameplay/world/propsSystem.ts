@@ -187,8 +187,8 @@ export function checkEnemyPropCollision(state: PropsState, enemy: EnemyForProp):
     const ny = dy / d;
     const dot = enemy.vx * nx + enemy.vy * ny;
     if (dot < 0) {
-      enemy.vx -= (1 + 0.4) * dot * nx;
-      enemy.vy -= (1 + 0.4) * dot * ny;
+      enemy.vx -= (1 + CFG.BOUNCE_RETAIN) * dot * nx;
+      enemy.vy -= (1 + CFG.BOUNCE_RETAIN) * dot * ny;
     }
     enemy.wallHit = true;
   }

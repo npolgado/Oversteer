@@ -58,7 +58,7 @@ export class GameplayScene implements Scene {
     this._propsRenderer = new PropsRenderer({ propsLayer });
     this._propsRenderer.setProps(this._propsState.allProps);
 
-    // Spawn 2 test enemies near the player
+    // TODO: replace with wave spawner (Step 7)
     this._enemies = [];
     this._enemies.push(makeEnemyState('chaser', 1700, 1500, 0));
     this._enemies.push(makeEnemyState('interceptor', 1500, 1700, 0));
@@ -120,6 +120,7 @@ export class GameplayScene implements Scene {
         this._playerState,
         dt,
         this._gameClock,
+        context.camera.isVisible,
       );
       if (result.despawned) {
         this._enemies[i] = this._enemies[this._enemies.length - 1];

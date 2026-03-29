@@ -37,7 +37,7 @@ export class TrailRenderer {
 
     // Flash polygon after encirclement
     if (state.flashPoly !== null && state.flashPolyTimer > 0) {
-      const flashAlpha = (state.flashPolyTimer / 0.4) * 0.25;
+      const flashAlpha = (state.flashPolyTimer / 0.3) * 0.25;
       const pts = state.flashPoly;
       this._gfx.moveTo(pts[0].x, pts[0].y);
       for (let i = 1; i < pts.length; i++) {

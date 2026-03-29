@@ -1,9 +1,6 @@
 @echo off
 echo Running old test suite...
-setlocal enabledelayedexpansion
-set FILES=
-for %%f in (test\*.test.js) do set FILES=!FILES! %%f
-node --test %FILES%
+node --test test\enemies.test.js test\pickups.test.js test\scoring.test.js test\trail.test.js test\upgrades.test.js test\utility.test.js test\waves.test.js
 if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 echo Running new test suite...
 npx vitest run

@@ -141,11 +141,14 @@ describe('getEnemySpeed', () => {
 
 // ── updateEnemy ────────────────────────────────────────────────
 
+const alwaysVisible = () => true;
+const alwaysOffscreen = () => false;
+
 describe('updateEnemy', () => {
   it('despawned = false normally', () => {
     const e = makeEnemyState('chaser', 1550, 1500, 0);
     const player = makePlayerState();
-    const result = updateEnemy(e, player, 0.016, 0);
+    const result = updateEnemy(e, player, 0.016, 0, alwaysVisible);
     expect(result.despawned).toBe(false);
   });
 
@@ -153,7 +156,7 @@ describe('updateEnemy', () => {
     const e = makeEnemyState('chaser', 1500, 1500, 0);
     e.lifespan = 0.01;
     const player = makePlayerState();
-    const result = updateEnemy(e, player, 0.1, 0);
+    const result = updateEnemy(e, player, 0.1, 0, alwaysVisible);
     expect(result.despawned).toBe(true);
   });
 
@@ -162,8 +165,48 @@ describe('updateEnemy', () => {
     const player = makePlayerState();
     e.x = player.x + CFG.ENEMY_FAR_DESPAWN_DIST + 100;
     e.y = player.y;
-    const result = updateEnemy(e, player, 0.016, 0);
+    const result = updateEnemy(e, player, 0.016, 0, alwaysVisible);
     expect(result.despawned).toBe(true);
+  });
+
+  it('despawned = true after offscreen timer exceeds threshold', () => {
+    const e = makeEnemyState('chaser', 1500, 1500, 0);
+    const player = makePlayerState();
+    // Simulate enough frames offscreen to exceed despawn timer
+    let despawned = false;
+    for (let i = 0; i < 500; i++) {
+      const r = updateEnemy(e, player, 0.016, i * 0.016, alwaysOffscreen);
+      if (r.despawned) { despawned = true; break; }
+    }
+    expect(despawned).toBe(true);
+  });
+
+  it('offscreen speed boost applied when not visible', () => {
+    const e = makeEnemyState('chaser', 1500, 1500, 0);
+    const player = makePlayerState();
+    const baseSpeed = e.baseMaxSpeed;
+    updateEnemy(e, player, 0.016, 0, alwaysOffscreen);
+    expect(e.maxSpeed).toBeCloseTo(baseSpeed * CFG.ENEMY_OFFSCREEN_BOOST);
+  });
+
+  it('offscreen speed resets when visible again', () => {
+    const e = makeEnemyState('chaser', 1500, 1500, 0);
+    const player = makePlayerState();
+    const baseSpeed = e.baseMaxSpeed;
+    updateEnemy(e, player, 0.016, 0, alwaysOffscreen);
+    updateEnemy(e, player, 0.016, 0.016, alwaysVisible);
+    expect(e.maxSpeed).toBe(baseSpeed);
+  });
+
+  it('wallHit and driftJustStarted reset to false each frame', () => {
+    const e = makeEnemyState('chaser', 1500, 1500, 0);
+    e.wallHit = true;
+    e.driftJustStarted = true;
+    const player = makePlayerState();
+    updateEnemy(e, player, 0.016, 0, alwaysVisible);
+    // After updatePhysics, wallHit may be set again by boundary; but reset happens before physics
+    // The key is that the reset line executes — verified by checking driftJustStarted (physics never sets it for non-player)
+    expect(e.driftJustStarted).toBe(false);
   });
 
   it('enemy moves toward player over time (chaser)', () => {
@@ -172,7 +215,7 @@ describe('updateEnemy', () => {
     const initialDist = Math.hypot(e.x - player.x, e.y - player.y);
 
     for (let i = 0; i < 180; i++) {
-      updateEnemy(e, player, 0.016, i * 0.016);
+      updateEnemy(e, player, 0.016, i * 0.016, alwaysVisible);
     }
 
     const finalDist = Math.hypot(e.x - player.x, e.y - player.y);
@@ -184,7 +227,7 @@ describe('updateEnemy', () => {
     e.lifespan = 1.0;
     e.age = 0.5;
     const player = makePlayerState();
-    updateEnemy(e, player, 0.016, 0);
+    updateEnemy(e, player, 0.016, 0, alwaysVisible);
     expect(e.fadeAlpha).toBeLessThan(1);
   });
 
@@ -192,7 +235,7 @@ describe('updateEnemy', () => {
     const e = makeEnemyState('chaser', 1500, 1500, 0);
     e.nearMissCooldown = 1.0;
     const player = makePlayerState();
-    updateEnemy(e, player, 0.1, 0);
+    updateEnemy(e, player, 0.1, 0, alwaysVisible);
     expect(e.nearMissCooldown).toBeCloseTo(0.9);
   });
 });
