@@ -289,7 +289,9 @@ Scraps spawn every 6s during combat. Types determined by cascading random roll:
 
 ## Testing
 - Pure logic lives in `arena-drifter/logic.js`; tests in `test/*.test.js` files
-- Run tests: `node --test test/`
+- Run legacy tests: `node --test $(find test -name '*.test.js')`
+- Run new tests: `npx vitest run`
+- Both must pass before committing/pushing
 - When adding new game mechanics, extract the testable logic into `arena-drifter/logic.js` with a matching export, then write tests against it
 - Tests run in Node (no browser/DOM) — keep test helpers dependency-free
 - Test files: `upgrades.test.js`, `pickups.test.js`, `waves.test.js`, `scoring.test.js`, `trail.test.js`, `enemies.test.js`, `utility.test.js`
