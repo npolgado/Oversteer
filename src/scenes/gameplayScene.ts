@@ -24,6 +24,25 @@ import { makeEnemyState, type EnemyState } from '@gameplay/enemies/enemyState';
 import { updateEnemy } from '@gameplay/enemies/enemyUpdate';
 import { EnemyRenderer } from '@gameplay/enemies/enemyRenderer';
 import { getDeathParticles, type EnemyDeathEvent } from '@gameplay/enemies/enemyDeathFx';
+import { checkPlayerEnemyCollision, checkNearMiss } from '@gameplay/combat/collision';
+import { processPlayerHit } from '@gameplay/combat/damage';
+import { processNearMiss } from '@gameplay/combat/nearMiss';
+import {
+  updateNearMissStreak,
+  applyHpRegen,
+  updateScraps,
+  type ScrapPickup,
+} from '@gameplay/pureLogic';
+import { getPlayerRadius } from '@gameplay/player/playerState';
+import {
+  makeWaveState,
+  startWave,
+  updateWave,
+  tickScrapSpawn,
+  type WaveState,
+} from '@gameplay/spawning/waveManager';
+import { getTrailPoint } from '@gameplay/trail/trailState';
+import { clamp } from '@core/utils';
 import { eventBus } from '@core/eventBus';
 
 export class GameplayScene implements Scene {
@@ -36,6 +55,8 @@ export class GameplayScene implements Scene {
   private _enemies: EnemyState[] = [];
   private _enemyRenderer: EnemyRenderer | null = null;
   private _gameClock = 0;
+  private _score = 0;
+  private _waveState: WaveState | null = null;
 
   enter(context: GameContext): void {
     const {
@@ -58,12 +79,12 @@ export class GameplayScene implements Scene {
     this._propsRenderer = new PropsRenderer({ propsLayer });
     this._propsRenderer.setProps(this._propsState.allProps);
 
-    // TODO: replace with wave spawner (Step 7)
     this._enemies = [];
-    this._enemies.push(makeEnemyState('chaser', 1700, 1500, 0));
-    this._enemies.push(makeEnemyState('interceptor', 1500, 1700, 0));
     this._enemyRenderer = new EnemyRenderer({ enemiesLayer });
     this._enemyRenderer.sync(this._enemies);
+    this._waveState = makeWaveState();
+    startWave(this._waveState);
+    eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
 
     context.camera.reset(this._playerState.x, this._playerState.y);
     this._gameClock = 0;
@@ -83,7 +104,8 @@ export class GameplayScene implements Scene {
       !this._playerRenderer ||
       !this._trailState ||
       !this._trailRenderer ||
-      !this._propsState
+      !this._propsState ||
+      !this._waveState
     )
       return;
 
@@ -101,6 +123,67 @@ export class GameplayScene implements Scene {
     });
 
     let enemiesChanged = false;
+
+    // --- Wave manager ---
+    const waveEvents = updateWave(this._waveState, dt, this._score, this._enemies.length);
+    for (const ev of waveEvents) {
+      if (ev.type === 'spawn') {
+        for (const req of ev.requests) {
+          const angle = req.angle;
+          const rawX = this._playerState.x + Math.cos(angle) * req.distance;
+          const rawY = this._playerState.y + Math.sin(angle) * req.distance;
+          const x = clamp(rawX, 10, CFG.WORLD_W - 10);
+          const y = clamp(rawY, 10, CFG.WORLD_H - 10);
+          this._enemies.push(makeEnemyState(req.type, x, y, this._waveState.speedBonus));
+          enemiesChanged = true;
+        }
+      } else if (ev.type === 'wave_end') {
+        // Clear enemies (scraps persist into break)
+        for (const e of this._enemies) e.alive = false;
+        this._enemies.length = 0;
+        enemiesChanged = true;
+        eventBus.emit('waveEnded', { wave: this._waveState.waveIndex });
+      } else if (ev.type === 'break_end') {
+        startWave(this._waveState);
+        eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
+      }
+    }
+    if (enemiesChanged) this._enemyRenderer?.sync(this._enemies);
+
+    // --- Scrap spawning ---
+    const scrapPos = tickScrapSpawn(
+      this._waveState,
+      dt,
+      this._playerState.x,
+      this._playerState.y,
+    );
+    if (scrapPos) {
+      this._waveState.scraps.push({ x: scrapPos.x, y: scrapPos.y, life: 15, type: 'scrap' });
+    }
+
+    // --- Scrap collection (near-miss scrap spawning deferred to Step 7 TODO) ---
+    const trailPointsForScraps = Array.from(
+      { length: this._trailState.count },
+      (_, i) => getTrailPoint(this._trailState!, i),
+    );
+    const pickupForPlayer = {
+      x: this._playerState.x,
+      y: this._playerState.y,
+      radius: getPlayerRadius(this._playerState),
+      magnetRange: this._playerState.magnetRange,
+      trailMagnet: this._playerState.trailMagnet,
+    };
+    const scrapEvents = updateScraps(
+      this._waveState.scraps,
+      pickupForPlayer,
+      dt,
+      trailPointsForScraps,
+    );
+    for (const ev of scrapEvents) {
+      if (ev === 'scrap') {
+        this._score += 10;
+      }
+    }
 
     const propHits = checkPlayerPropCollision(this._propsState, this._playerState);
     const propEvents = handlePropCollisions(propHits, this._playerState);
@@ -128,6 +211,41 @@ export class GameplayScene implements Scene {
         enemiesChanged = true;
       }
     }
+
+    // --- Combat: near-miss + collision (before trail update so encirclement doesn't remove enemies first) ---
+    for (let i = this._enemies.length - 1; i >= 0; i--) {
+      const enemy = this._enemies[i];
+      if (!enemy.alive) continue;
+
+      // Near-miss check before collision (collision would put enemy out of near-miss range)
+      if (checkNearMiss(this._playerState, enemy)) {
+        const nmResult = processNearMiss(this._playerState, enemy, this._score);
+        this._score = nmResult.score;
+        this._playerState.comboLevel = nmResult.comboLevel;
+        eventBus.emit('nearMiss', { x: enemy.x, y: enemy.y });
+      }
+
+      // Collision check
+      if (checkPlayerEnemyCollision(this._playerState, enemy)) {
+        const dmgResult = processPlayerHit(this._playerState, enemy, this._waveState.waveIndex);
+        if (dmgResult.type === 'hit') {
+          eventBus.emit('playerDamaged', {
+            amount: dmgResult.finalDamage,
+            x: this._playerState.x,
+            y: this._playerState.y,
+          });
+        }
+        if (this._playerState.hp <= 0) {
+          eventBus.emit('playerDied', {});
+          // TODO: transition to death state (Step 11/12)
+        }
+        enemiesChanged = true;
+      }
+    }
+
+    // Per-frame player timers
+    updateNearMissStreak(this._playerState, dt);
+    applyHpRegen(this._playerState, dt);
 
     const loopResult = updateTrail(this._trailState, this._playerState, this._enemies, dt);
     if (loopResult !== null) {
@@ -192,6 +310,7 @@ export class GameplayScene implements Scene {
     this._propsState = null;
     this._enemyRenderer = null;
     this._enemies = [];
+    this._waveState = null;
 
     const { backgroundLayer, playerLayer, trailLayer, propsLayer, enemiesLayer } =
       context.pixiApp;
