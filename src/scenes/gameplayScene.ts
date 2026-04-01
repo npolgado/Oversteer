@@ -3,7 +3,7 @@
 
 import { Sprite, Assets } from 'pixi.js';
 import type { Scene, GameContext } from './sceneManager';
-import { CFG } from '@core/config';
+import { CFG, S } from '@core/config';
 import { makePlayerState, getPlayerSpeed, type PlayerState } from '@gameplay/player/playerState';
 import { updatePlayer } from '@gameplay/player/playerUpdate';
 import { PlayerRenderer } from '@gameplay/player/playerRenderer';
@@ -26,14 +26,18 @@ import { EnemyRenderer } from '@gameplay/enemies/enemyRenderer';
 import { getDeathParticles, type EnemyDeathEvent } from '@gameplay/enemies/enemyDeathFx';
 import { checkPlayerEnemyCollision, checkNearMiss } from '@gameplay/combat/collision';
 import { processPlayerHit } from '@gameplay/combat/damage';
-import { processNearMiss } from '@gameplay/combat/nearMiss';
+import { processNearMiss, processHazardNearMiss } from '@gameplay/combat/nearMiss';
 import {
   updateNearMissStreak,
   applyHpRegen,
   updateScraps,
+  computeEncircleOutcome,
+  applyComboHeal,
   type ScrapPickup,
 } from '@gameplay/pureLogic';
 import { getPlayerRadius } from '@gameplay/player/playerState';
+import { makeScoringState, updateScoring, addScore, type ScoringState } from '@gameplay/scoring';
+import { saveManager } from '@core/saveManager';
 import {
   makeWaveState,
   startWave,
@@ -44,6 +48,8 @@ import {
 import { getTrailPoint } from '@gameplay/trail/trailState';
 import { clamp } from '@core/utils';
 import { eventBus } from '@core/eventBus';
+import { HudManager, type HudData } from '@ui/hud/hudManager';
+import { EventLog } from '@ui/hud/eventLog';
 
 export class GameplayScene implements Scene {
   private _playerState: PlayerState | null = null;
@@ -55,8 +61,11 @@ export class GameplayScene implements Scene {
   private _enemies: EnemyState[] = [];
   private _enemyRenderer: EnemyRenderer | null = null;
   private _gameClock = 0;
-  private _score = 0;
+  private _scoringState: ScoringState | null = null;
   private _waveState: WaveState | null = null;
+  private _hudManager: HudManager | null = null;
+  private _eventLog: EventLog | null = null;
+  private _evListeners: Array<() => void> = [];
 
   enter(context: GameContext): void {
     const {
@@ -85,6 +94,34 @@ export class GameplayScene implements Scene {
     this._waveState = makeWaveState();
     startWave(this._waveState);
     eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
+    this._scoringState = makeScoringState(saveManager.getHighScore());
+
+    // --- HUD ---
+    const scoreH = S(42); // initial panel height (no newBest yet)
+    const eventLogY = scoreH + S(12) + S(20) + S(8); // below HP bar
+    this._hudManager = new HudManager(context.pixiApp.hudLayer);
+    this._eventLog = new EventLog(context.pixiApp.eventLogLayer, eventLogY);
+
+    // Subscribe to eventBus for log messages; store removers for cleanup
+    const onNearMiss = () => this._eventLog?.add('NEAR MISS +25', 0xffff00);
+    const onDamaged = (data: { amount: number; x: number; y: number }) =>
+      this._eventLog?.add(`HIT -${data.amount}HP`, 0xff4444);
+    const onEncircle = (data: { count: number; x: number; y: number }) =>
+      this._eventLog?.add(`ENCIRCLE x${data.count}!`, 0x00ffcc);
+    const onWave = (data: { wave: number }) =>
+      this._eventLog?.add(`WAVE ${data.wave}`, 0x35f2d0);
+
+    eventBus.on('nearMiss', onNearMiss);
+    eventBus.on('playerDamaged', onDamaged);
+    eventBus.on('encirclement', onEncircle);
+    eventBus.on('waveStarted', onWave);
+
+    this._evListeners = [
+      () => eventBus.off('nearMiss', onNearMiss),
+      () => eventBus.off('playerDamaged', onDamaged),
+      () => eventBus.off('encirclement', onEncircle),
+      () => eventBus.off('waveStarted', onWave),
+    ];
 
     context.camera.reset(this._playerState.x, this._playerState.y);
     this._gameClock = 0;
@@ -105,7 +142,8 @@ export class GameplayScene implements Scene {
       !this._trailState ||
       !this._trailRenderer ||
       !this._propsState ||
-      !this._waveState
+      !this._waveState ||
+      !this._scoringState
     )
       return;
 
@@ -122,10 +160,24 @@ export class GameplayScene implements Scene {
       drift: input.drift,
     });
 
+    // --- Per-frame scoring: base score, drift combo, combo decay ---
+    // Sync combo from player into scoring state first (near-miss may have changed it last frame)
+    this._scoringState.comboLevel = this._playerState.comboLevel;
+    updateScoring(
+      this._scoringState,
+      this._playerState.drifting,
+      this._playerState.driftTime,
+      this._playerState.scoreMult,
+      this._playerState.comboMaster,
+      dt,
+    );
+    // Sync combo back to player (decay may have reduced it)
+    this._playerState.comboLevel = this._scoringState.comboLevel;
+
     let enemiesChanged = false;
 
     // --- Wave manager ---
-    const waveEvents = updateWave(this._waveState, dt, this._score, this._enemies.length);
+    const waveEvents = updateWave(this._waveState, dt, this._scoringState.score, this._enemies.length);
     for (const ev of waveEvents) {
       if (ev.type === 'spawn') {
         for (const req of ev.requests) {
@@ -181,7 +233,8 @@ export class GameplayScene implements Scene {
     );
     for (const ev of scrapEvents) {
       if (ev === 'scrap') {
-        this._score += 10;
+        addScore(this._scoringState, 10); // +10 per scrap (intentional improvement over original)
+        eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: 10 });
       }
     }
 
@@ -193,8 +246,13 @@ export class GameplayScene implements Scene {
       }
     }
     updatePropCooldowns(this._propsState, dt);
-    // Near-miss prop: result will be used by scoring system in a later step
-    checkNearMissProp(this._propsState, this._playerState);
+    if (checkNearMissProp(this._propsState, this._playerState)) {
+      const hmResult = processHazardNearMiss(this._playerState, this._scoringState.score);
+      this._scoringState.score = hmResult.score;
+      this._scoringState.comboLevel = hmResult.comboLevel;
+      this._playerState.comboLevel = hmResult.comboLevel;
+      eventBus.emit('nearMiss', { x: this._playerState.x, y: this._playerState.y });
+    }
 
     // Update enemies — swap-and-pop despawn
     for (let i = this._enemies.length - 1; i >= 0; i--) {
@@ -219,9 +277,21 @@ export class GameplayScene implements Scene {
 
       // Near-miss check before collision (collision would put enemy out of near-miss range)
       if (checkNearMiss(this._playerState, enemy)) {
-        const nmResult = processNearMiss(this._playerState, enemy, this._score);
-        this._score = nmResult.score;
+        const oldCombo = this._scoringState.comboLevel;
+        const nmResult = processNearMiss(this._playerState, enemy, this._scoringState.score);
+        this._scoringState.score = nmResult.score;
+        this._scoringState.comboLevel = nmResult.comboLevel;
         this._playerState.comboLevel = nmResult.comboLevel;
+        // Combo_heal at milestones 3/5/8 (intentional: also fires from near-miss like original)
+        this._playerState.hp = applyComboHeal(
+          oldCombo, nmResult.comboLevel,
+          this._playerState.comboHeal,
+          this._playerState.hp, this._playerState.maxHp,
+        );
+        // Near-miss scrap spawn: 35% chance (matches original game.js)
+        if (Math.random() < CFG.SCRAP_NEAR_MISS_CHANCE) {
+          this._waveState.scraps.push({ x: enemy.x, y: enemy.y, life: 15, type: 'scrap' });
+        }
         eventBus.emit('nearMiss', { x: enemy.x, y: enemy.y });
       }
 
@@ -249,6 +319,27 @@ export class GameplayScene implements Scene {
 
     const loopResult = updateTrail(this._trailState, this._playerState, this._enemies, dt);
     if (loopResult !== null) {
+      const killCount = loopResult.killedEnemies.length;
+      if (killCount > 0) {
+        const oldCombo = this._scoringState.comboLevel;
+        const encircleResult = computeEncircleOutcome(
+          killCount,
+          this._scoringState.comboLevel,
+          this._playerState.scoreMult,
+          this._playerState.encircleScoreBonus,
+        );
+        addScore(this._scoringState, encircleResult.scoreDelta);
+        this._scoringState.comboLevel = encircleResult.comboLevel;
+        this._playerState.comboLevel = encircleResult.comboLevel;
+        // Combo_heal at milestones (intentional improvement: also fires from encirclement)
+        this._playerState.hp = applyComboHeal(
+          oldCombo, encircleResult.comboLevel,
+          this._playerState.comboHeal,
+          this._playerState.hp, this._playerState.maxHp,
+        );
+        eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: encircleResult.scoreDelta });
+      }
+
       eventBus.emit('encirclement', {
         count: loopResult.encircleCount,
         x: loopResult.polygon[0].x,
@@ -287,6 +378,32 @@ export class GameplayScene implements Scene {
     this._trailRenderer.update(this._trailState);
     this._playerRenderer.update(this._playerState);
 
+    // --- HUD ---
+    if (this._hudManager && this._eventLog) {
+      const hudData: HudData = {
+        score: this._scoringState.score,
+        newBest: this._scoringState.newBest,
+        hp: this._playerState.hp,
+        maxHp: this._playerState.maxHp,
+        lastHitTimer: this._playerState.lastHitTimer,
+        comboLevel: this._scoringState.comboLevel,
+        drifting: this._playerState.drifting,
+        driftTime: this._playerState.driftTime,
+        speed: getPlayerSpeed(this._playerState),
+        maxSpeed: this._playerState.maxSpeed,
+        waveIndex: this._waveState.waveIndex,
+        enemyCount: this._enemies.length,
+        phase: this._waveState.phase,
+        waveTimer: this._waveState.waveTimer,
+        combatDuration: this._waveState.currentCombatDuration,
+      };
+      this._hudManager.update(hudData);
+      // Keep EventLog Y in sync with score panel height
+      const logPanelY = (hudData.newBest ? S(56) : S(42)) + S(12) + S(20) + S(8);
+      this._eventLog.setPanelY(logPanelY);
+      this._eventLog.update(dt);
+    }
+
     context.camera.update(
       dt,
       this._playerState.x,
@@ -311,6 +428,13 @@ export class GameplayScene implements Scene {
     this._enemyRenderer = null;
     this._enemies = [];
     this._waveState = null;
+    this._scoringState = null;
+    this._hudManager?.destroy();
+    this._hudManager = null;
+    this._eventLog?.destroy();
+    this._eventLog = null;
+    for (const remove of this._evListeners) remove();
+    this._evListeners = [];
 
     const { backgroundLayer, playerLayer, trailLayer, propsLayer, enemiesLayer } =
       context.pixiApp;
