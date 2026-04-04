@@ -10,7 +10,7 @@ export interface PlayerState extends PhysicsEntity {
   // Stats
   hp: number; maxHp: number; hpRegen: number; lastHitTimer: number;
   // Defense
-  shield: boolean; invulnTimer: number; ghostFrameTimer: number; frozen: boolean;
+  shield: boolean; invulnTimer: number; ghostFrameTimer: number; ghostFrame: boolean; frozen: boolean;
   // State
   braking: boolean; wallRiding: boolean; comboLevel: number;
   // Handbrake
@@ -58,6 +58,7 @@ export function makePlayerState(): PlayerState {
     shield: false,
     invulnTimer: 0,
     ghostFrameTimer: 0,
+    ghostFrame: false,
     frozen: false,
     // Debuffs
     slipTimer: 0,

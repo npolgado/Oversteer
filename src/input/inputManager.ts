@@ -27,6 +27,17 @@ export interface InputState {
   pause: boolean;   // PAUSE    — edge-triggered, true only on frame of press
   enter: boolean;   // CONFIRM  — edge-triggered
   reroll: boolean;  // REROLL   — edge-triggered
+  select1: boolean; // Digit1/Numpad1 — edge-triggered (upgrade card 1)
+  select2: boolean; // Digit2/Numpad2 — edge-triggered (upgrade card 2)
+  select3: boolean; // Digit3/Numpad3 — edge-triggered (upgrade card 3)
+  menuLeft: boolean;  // KeyA — edge-triggered (menu navigation)
+  menuRight: boolean; // KeyD — edge-triggered (menu navigation)
+  menuMod1: boolean;  // Digit1 in menu context — edge-triggered
+  menuMod2: boolean;  // Digit2 in menu context — edge-triggered
+  menuMod3: boolean;  // Digit3 in menu context — edge-triggered
+  menuMod4: boolean;  // Digit4 in menu context — edge-triggered
+  mute: boolean;    // KeyM — edge-triggered (mute toggle)
+  escape: boolean;  // Escape — edge-triggered (separate from pause)
 }
 
 // ---------------------------------------------------------------------------
@@ -62,6 +73,17 @@ class InputManager {
   private _pausePressed = false;
   private _enterPressed = false;
   private _rerollPressed = false;
+  private _select1Pressed = false;
+  private _select2Pressed = false;
+  private _select3Pressed = false;
+  private _menuLeftPressed = false;
+  private _menuRightPressed = false;
+  private _menuMod1Pressed = false;
+  private _menuMod2Pressed = false;
+  private _menuMod3Pressed = false;
+  private _menuMod4Pressed = false;
+  private _mutePressed = false;
+  private _escapePressed = false;
 
   // Touch state
   private _touch: TouchState = {
@@ -280,6 +302,55 @@ class InputManager {
     const reroll = rNow && !this._rerollPressed;
     this._rerollPressed = rNow;
 
+    // --- Edge-triggered: upgrade card selection (Digit/Numpad 1-3) ---
+    const s1Now = !!(k['Digit1'] || k['Numpad1']);
+    const select1 = s1Now && !this._select1Pressed;
+    this._select1Pressed = s1Now;
+
+    const s2Now = !!(k['Digit2'] || k['Numpad2']);
+    const select2 = s2Now && !this._select2Pressed;
+    this._select2Pressed = s2Now;
+
+    const s3Now = !!(k['Digit3'] || k['Numpad3']);
+    const select3 = s3Now && !this._select3Pressed;
+    this._select3Pressed = s3Now;
+
+    // --- Edge-triggered: menu navigation ---
+    const mlNow = !!k['KeyA'];
+    const menuLeft = mlNow && !this._menuLeftPressed;
+    this._menuLeftPressed = mlNow;
+
+    const mrNow = !!k['KeyD'];
+    const menuRight = mrNow && !this._menuRightPressed;
+    this._menuRightPressed = mrNow;
+
+    // --- Edge-triggered: menu modifier toggles (Digit 1-4, separate from select1-3) ---
+    const mm1Now = !!k['Digit1'];
+    const menuMod1 = mm1Now && !this._menuMod1Pressed;
+    this._menuMod1Pressed = mm1Now;
+
+    const mm2Now = !!k['Digit2'];
+    const menuMod2 = mm2Now && !this._menuMod2Pressed;
+    this._menuMod2Pressed = mm2Now;
+
+    const mm3Now = !!k['Digit3'];
+    const menuMod3 = mm3Now && !this._menuMod3Pressed;
+    this._menuMod3Pressed = mm3Now;
+
+    const mm4Now = !!k['Digit4'];
+    const menuMod4 = mm4Now && !this._menuMod4Pressed;
+    this._menuMod4Pressed = mm4Now;
+
+    // --- Edge-triggered: mute ---
+    const muteNow = !!k['KeyM'];
+    const mute = muteNow && !this._mutePressed;
+    this._mutePressed = muteNow;
+
+    // --- Edge-triggered: escape (separate from pause for menu back-navigation) ---
+    const escNow = !!k['Escape'];
+    const escape = escNow && !this._escapePressed;
+    this._escapePressed = escNow;
+
     // Two-finger tap → pause
     let pauseOut = pause;
     if (t.pauseTap) {
@@ -299,7 +370,14 @@ class InputManager {
     // Poll gamepad stub (no-op for now)
     this._pollGamepad();
 
-    return { up, down, left, right, drift, pause: pauseOut, enter, reroll };
+    return {
+      up, down, left, right, drift,
+      pause: pauseOut, enter, reroll,
+      select1, select2, select3,
+      menuLeft, menuRight,
+      menuMod1, menuMod2, menuMod3, menuMod4,
+      mute, escape,
+    };
   }
 }
 

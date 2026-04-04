@@ -1,7 +1,7 @@
 // gameplayScene.ts — Main gameplay scene: player, trail, props, and enemies.
 // Hosts player, trail, prop state, enemy state, updates, and renderers.
 
-import { Sprite, Assets } from 'pixi.js';
+import { Sprite, Assets, Graphics } from 'pixi.js';
 import type { Scene, GameContext } from './sceneManager';
 import { CFG, S } from '@core/config';
 import { makePlayerState, getPlayerSpeed, type PlayerState } from '@gameplay/player/playerState';
@@ -50,8 +50,25 @@ import { clamp } from '@core/utils';
 import { eventBus } from '@core/eventBus';
 import { HudManager, type HudData } from '@ui/hud/hudManager';
 import { EventLog } from '@ui/hud/eventLog';
+import { buildUpgradeOffer, applyUpgrade, getRerollCount } from '@gameplay/upgrades/upgradeSystem';
+import type { UpgradeDef } from '@gameplay/upgrades/upgradeRegistry';
+import { UpgradeCardsUI } from '@ui/menus/upgradeCards';
+import { inputManager } from '@input/inputManager';
+import { applyMap } from '@core/config';
+import { ScreenFX } from '@render/screenFx';
+import { ParticleSystem } from '@render/particles';
+import { DIFFICULTY_MODIFIERS, computeModifierScoreMult } from '@content/maps';
+import { sceneManager } from './sceneManager';
+import { GameOverScene, type GameOverData } from './gameOverScene';
+
+export interface GameplayOptions {
+  mapId?: string;
+  modifierIds?: string[];
+  sandbox?: boolean;
+}
 
 export class GameplayScene implements Scene {
+  private _opts: GameplayOptions;
   private _playerState: PlayerState | null = null;
   private _playerRenderer: PlayerRenderer | null = null;
   private _trailState: TrailState | null = null;
@@ -67,6 +84,40 @@ export class GameplayScene implements Scene {
   private _eventLog: EventLog | null = null;
   private _evListeners: Array<() => void> = [];
 
+  // Upgrade break state
+  private _upgradePhase = false;
+  private _upgradeCards: UpgradeCardsUI | null = null;
+  private _currentOffer: UpgradeDef[] = [];
+  private _rerollsLeft = 0;
+  private _upgradeChosen = false;
+  private _upgradeConfirmTimer = 0;
+  private _cardAnimTimer = 0;
+
+  // Death state machine (fx.js:530-568)
+  private _dying = false;
+  private _deathPhase = 0; // 0=freeze, 1=slowmo+shatter, 2=desat
+  private _deathTimer = 0;
+
+  // Screen effects + particles
+  private _screenFx: ScreenFX | null = null;
+  private _particles: ParticleSystem | null = null;
+
+  // Arena boundary glow graphics
+  private _arenaGlow: Graphics | null = null;
+
+  // Pause state
+  private _paused = false;
+  private _pauseOverlay: Graphics | null = null;
+  private _pauseText: import('pixi.js').Text | null = null;
+  private _preMuteMusicVol = 0;
+
+  // Drift squeal edge detection
+  private _wasDrifting = false;
+
+  constructor(opts: GameplayOptions = {}) {
+    this._opts = opts;
+  }
+
   enter(context: GameContext): void {
     const {
       worldContainer,
@@ -79,7 +130,26 @@ export class GameplayScene implements Scene {
 
     context.camera.attachContainer(worldContainer);
 
+    // Apply map + difficulty modifier CFG overrides before initializing game state
+    applyMap(this._opts.mapId ?? saveManager.getSelectedMap());
+
     this._playerState = makePlayerState();
+    this._dying = false;
+    this._deathTimer = 0;
+
+    // Apply difficulty modifiers (mutates CFG spawn intervals + player stats)
+    if (this._opts.modifierIds && this._opts.modifierIds.length > 0) {
+      const speedBonusRef = { value: 0 };
+      const playerMults = { scoreMult: this._playerState.scoreMult, maxHp: undefined as number | undefined, hp: undefined as number | undefined };
+      for (const id of this._opts.modifierIds) {
+        const mod = DIFFICULTY_MODIFIERS.find(m => m.id === id);
+        mod?.apply({ speedBonusRef, playerMults });
+      }
+      this._playerState.scoreMult = playerMults.scoreMult;
+      if (playerMults.maxHp !== undefined) { this._playerState.maxHp = playerMults.maxHp; this._playerState.hp = playerMults.hp ?? playerMults.maxHp; }
+      // Store speed bonus on wave state after creation below
+    }
+
     this._playerRenderer = new PlayerRenderer({ playerLayer });
     this._trailState = makeTrailState();
     this._trailRenderer = new TrailRenderer({ trailLayer });
@@ -92,8 +162,14 @@ export class GameplayScene implements Scene {
     this._enemyRenderer = new EnemyRenderer({ enemiesLayer });
     this._enemyRenderer.sync(this._enemies);
     this._waveState = makeWaveState();
-    startWave(this._waveState);
-    eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
+    // Apply hard_mode speed bonus to wave state
+    if (this._opts.modifierIds?.includes('hard_mode')) {
+      this._waveState.speedBonus = (this._waveState.speedBonus ?? 0) + 100;
+    }
+    if (!this._opts.sandbox) {
+      startWave(this._waveState);
+      eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
+    }
     this._scoringState = makeScoringState(saveManager.getHighScore());
 
     // --- HUD ---
@@ -101,6 +177,12 @@ export class GameplayScene implements Scene {
     const eventLogY = scoreH + S(12) + S(20) + S(8); // below HP bar
     this._hudManager = new HudManager(context.pixiApp.hudLayer);
     this._eventLog = new EventLog(context.pixiApp.eventLogLayer, eventLogY);
+
+    // --- Upgrade cards ---
+    this._upgradeCards = new UpgradeCardsUI(context.pixiApp.overlayLayer);
+    this._upgradePhase = false;
+    this._upgradeChosen = false;
+    this._upgradeConfirmTimer = 0;
 
     // Subscribe to eventBus for log messages; store removers for cleanup
     const onNearMiss = () => this._eventLog?.add('NEAR MISS +25', 0xffff00);
@@ -116,11 +198,52 @@ export class GameplayScene implements Scene {
     eventBus.on('encirclement', onEncircle);
     eventBus.on('waveStarted', onWave);
 
+    // --- Screen FX + Particles ---
+    this._screenFx = new ScreenFX(context.pixiApp.screenFxContainer);
+    this._particles = new ParticleSystem(context.pixiApp.particlesLayer);
+    this._dying = false;
+    this._deathPhase = 0;
+    this._deathTimer = 0;
+
+    // FX event subscriptions
+    const onNearMissFx = (data: { x: number; y: number }) => {
+      this._screenFx?.slowmo(0.85, 0.15);
+      this._particles?.spawn(data.x, data.y, 0xffff00, 4, { type: 'spark', sizeMin: 2, sizeMax: 4 });
+    };
+    const onDamagedFx = (data: { amount: number; x: number; y: number }) => {
+      this._screenFx?.shake(4, 0.2);
+      this._screenFx?.slowmo(0.9, 0.1);
+    };
+    const onEncircleFx = (data: { count: number; x: number; y: number }) => {
+      this._screenFx?.shake(6, 0.25);
+      this._particles?.addRing(data.x, data.y, 0x00ffcc);
+    };
+    const onEnemyKilledFx = (data: { x: number; y: number; type: string }) => {
+      this._particles?.spawn(data.x, data.y, 0xff3b6b, 6, {
+        type: 'shard', vxMin: -200, vxMax: 200, vyMin: -200, vyMax: 200,
+        lifeMin: 0.3, lifeMax: 0.6, sizeMin: 3, sizeMax: 7,
+      });
+    };
+    const onSpawnParticles = (data: { x: number; y: number; type: string; count: number }) => {
+      this._particles?.spawn(data.x, data.y, 0xffffff, data.count, { type: 'spark' });
+    };
+
+    eventBus.on('nearMiss', onNearMissFx);
+    eventBus.on('playerDamaged', onDamagedFx);
+    eventBus.on('encirclement', onEncircleFx);
+    eventBus.on('enemyKilled', onEnemyKilledFx);
+    eventBus.on('spawnParticles', onSpawnParticles);
+
     this._evListeners = [
       () => eventBus.off('nearMiss', onNearMiss),
       () => eventBus.off('playerDamaged', onDamaged),
       () => eventBus.off('encirclement', onEncircle),
       () => eventBus.off('waveStarted', onWave),
+      () => eventBus.off('nearMiss', onNearMissFx),
+      () => eventBus.off('playerDamaged', onDamagedFx),
+      () => eventBus.off('encirclement', onEncircleFx),
+      () => eventBus.off('enemyKilled', onEnemyKilledFx),
+      () => eventBus.off('spawnParticles', onSpawnParticles),
     ];
 
     context.camera.reset(this._playerState.x, this._playerState.y);
@@ -133,6 +256,11 @@ export class GameplayScene implements Scene {
       bg.height = CFG.WORLD_H;
       backgroundLayer.addChild(bg);
     }
+
+    // Arena boundary glow (redrawn each frame in update for pulse effect)
+    const arenaGlow = new Graphics();
+    this._arenaGlow = arenaGlow;
+    backgroundLayer.addChild(arenaGlow);
   }
 
   update(dt: number, context: GameContext): void {
@@ -147,11 +275,124 @@ export class GameplayScene implements Scene {
     )
       return;
 
-    this._gameClock += dt;
+    // dt is rawDt here; screenFx.update() returns dilated dt
+    const rawDt = dt;
+    const dilatedDt = this._screenFx?.update(rawDt) ?? rawDt;
 
+    this._gameClock += dilatedDt;
+
+    // --- Death state machine (from game.js:530-568, values from CFG) ---
+    if (this._dying) {
+      this._deathTimer -= rawDt;
+      this._particles?.update(dilatedDt || rawDt);
+      this._eventLog?.update(dilatedDt || rawDt);
+      this._screenFx?.applyToContainer(context.pixiApp.worldContainer);
+      this._drawArenaGlow();
+
+      if (this._deathPhase === 0 && this._deathTimer <= 0) {
+        // Phase 0 (freeze) done → phase 1: slowmo + shatter
+        this._deathPhase = 1;
+        this._deathTimer = CFG.DEATH_SLOWMO_DUR;
+        this._screenFx?.slowmo(CFG.DEATH_SLOWMO, CFG.DEATH_SLOWMO_DUR);
+        this._screenFx?.shake(10, 0.35);
+        const shardCount = CFG.SHARD_COUNT_MIN + Math.floor(Math.random() * (CFG.SHARD_COUNT_MAX - CFG.SHARD_COUNT_MIN + 1));
+        if (this._playerState) {
+          this._particles?.spawn(this._playerState.x, this._playerState.y, 0xEAEFF7, shardCount, {
+            type: 'shard', vxMin: -300, vxMax: 300, vyMin: -300, vyMax: 300,
+            lifeMin: 0.4, lifeMax: 0.8, sizeMin: 4, sizeMax: 10,
+          });
+          this._particles?.addRing(this._playerState.x, this._playerState.y, 0xFF3B6B);
+        }
+        this._screenFx?.flash(0xFF3B6B, 0.15, 0.1);
+      } else if (this._deathPhase === 1 && this._deathTimer <= 0) {
+        // Phase 1 done → phase 2: desaturate
+        this._deathPhase = 2;
+        this._deathTimer = 0.5;
+        this._screenFx?.desaturate(0.7);
+      } else if (this._deathPhase === 2 && this._deathTimer <= 0) {
+        this._transitionToGameOver(context);
+      }
+      return;
+    }
+
+    // Apply screen FX transform (shake + zoom) after camera updates below
     const input = context.getInput();
+
+    // --- Upgrade break phase: skip game logic, handle card UI ---
+    if (this._upgradePhase && this._playerState && this._trailState) {
+      this._cardAnimTimer += dt;
+      this._upgradeCards?.update(dt);
+      this._eventLog?.update(dt);
+
+      if (!this._upgradeChosen) {
+        const cardAction = this._upgradeCards?.checkInput(input, inputManager.consumeTap()) ?? null;
+
+        if (cardAction !== null && cardAction !== 'reroll') {
+          // Card selected
+          const upgrade = this._currentOffer[cardAction];
+          if (upgrade) {
+            applyUpgrade(this._playerState, upgrade);
+            // Handle trail upgrades (wider_trail/trail_echo) directly here
+            if (upgrade.id === 'wider_trail') this._trailState.closeDist = 60;
+            if (upgrade.id === 'trail_echo') this._trailState.maxPoints = 600;
+            eventBus.emit('upgradeApplied', { id: upgrade.id });
+            this._upgradeChosen = true;
+            this._upgradeCards?.hide();
+          }
+        } else if (cardAction === 'reroll' && this._rerollsLeft > 0) {
+          const newOffer = buildUpgradeOffer(this._playerState);
+          if (newOffer.length > 0) {
+            this._rerollsLeft--;
+            this._currentOffer = newOffer;
+            this._cardAnimTimer = 0;
+            this._upgradeCards?.show(this._currentOffer, this._rerollsLeft);
+          }
+        }
+      }
+
+      // Post-selection countdown (also handles empty pool auto-start)
+      if (this._upgradeChosen || this._currentOffer.length === 0) {
+        this._upgradeConfirmTimer -= dt;
+        if (this._upgradeConfirmTimer <= 0) {
+          this._upgradePhase = false;
+          this._playerState.frozen = false;
+          startWave(this._waveState!);
+          eventBus.emit('waveStarted', { wave: this._waveState!.waveIndex });
+        }
+      }
+
+      // Still render/update camera during break
+      this._trailRenderer.update(this._trailState);
+      this._playerRenderer?.update(this._playerState);
+      if (this._hudManager && this._eventLog) {
+        const hudData: HudData = {
+          score: this._scoringState!.score,
+          newBest: this._scoringState!.newBest,
+          hp: this._playerState.hp,
+          maxHp: this._playerState.maxHp,
+          lastHitTimer: this._playerState.lastHitTimer,
+          comboLevel: this._scoringState!.comboLevel,
+          drifting: this._playerState.drifting,
+          driftTime: this._playerState.driftTime,
+          speed: getPlayerSpeed(this._playerState),
+          maxSpeed: this._playerState.maxSpeed,
+          waveIndex: this._waveState!.waveIndex,
+          enemyCount: 0,
+          phase: 'break',
+          waveTimer: 0,
+          combatDuration: this._waveState!.currentCombatDuration,
+        };
+        this._hudManager.update(hudData);
+      }
+      context.camera.update(dilatedDt, this._playerState.x, this._playerState.y, 0, 0, 0);
+      this._screenFx?.applyToContainer(context.pixiApp.worldContainer);
+      this._particles?.update(dilatedDt);
+      this._drawArenaGlow();
+      return;
+    }
+
     updatePlayer(this._playerState, {
-      dt,
+      dt: dilatedDt,
       gameClock: this._gameClock,
       up: input.up,
       down: input.down,
@@ -159,6 +400,11 @@ export class GameplayScene implements Scene {
       right: input.right,
       drift: input.drift,
     });
+
+    // Skid marks when drifting
+    if (this._playerState.drifting) {
+      this._particles?.addSkid(this._playerState.x, this._playerState.y, 0x222233, 0.5);
+    }
 
     // --- Per-frame scoring: base score, drift combo, combo decay ---
     // Sync combo from player into scoring state first (near-miss may have changed it last frame)
@@ -169,7 +415,7 @@ export class GameplayScene implements Scene {
       this._playerState.driftTime,
       this._playerState.scoreMult,
       this._playerState.comboMaster,
-      dt,
+      dilatedDt,
     );
     // Sync combo back to player (decay may have reduced it)
     this._playerState.comboLevel = this._scoringState.comboLevel;
@@ -177,7 +423,7 @@ export class GameplayScene implements Scene {
     let enemiesChanged = false;
 
     // --- Wave manager ---
-    const waveEvents = updateWave(this._waveState, dt, this._scoringState.score, this._enemies.length);
+    const waveEvents = updateWave(this._waveState, dilatedDt, this._scoringState.score, this._enemies.length);
     for (const ev of waveEvents) {
       if (ev.type === 'spawn') {
         for (const req of ev.requests) {
@@ -195,6 +441,25 @@ export class GameplayScene implements Scene {
         this._enemies.length = 0;
         enemiesChanged = true;
         eventBus.emit('waveEnded', { wave: this._waveState.waveIndex });
+        // Enter upgrade break phase (from game.js:911-928)
+        this._upgradePhase = true;
+        this._upgradeChosen = false;
+        this._upgradeConfirmTimer = CFG.UPGRADE_CONFIRM_TIME;
+        this._cardAnimTimer = 0;
+        this._rerollsLeft = getRerollCount(this._playerState);
+        this._currentOffer = buildUpgradeOffer(this._playerState);
+        // Freeze player
+        this._playerState.vx = 0;
+        this._playerState.vy = 0;
+        this._playerState.drifting = false;
+        this._playerState.handbrakeTimer = 0;
+        this._playerState.driftTime = 0;
+        this._playerState.wallRiding = false;
+        this._playerState.driftChain = 0;
+        this._playerState.frozen = true;
+        if (this._currentOffer.length > 0) {
+          this._upgradeCards?.show(this._currentOffer, this._rerollsLeft);
+        }
       } else if (ev.type === 'break_end') {
         startWave(this._waveState);
         eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
@@ -205,7 +470,7 @@ export class GameplayScene implements Scene {
     // --- Scrap spawning ---
     const scrapPos = tickScrapSpawn(
       this._waveState,
-      dt,
+      dilatedDt,
       this._playerState.x,
       this._playerState.y,
     );
@@ -228,7 +493,7 @@ export class GameplayScene implements Scene {
     const scrapEvents = updateScraps(
       this._waveState.scraps,
       pickupForPlayer,
-      dt,
+      dilatedDt,
       trailPointsForScraps,
     );
     for (const ev of scrapEvents) {
@@ -245,7 +510,7 @@ export class GameplayScene implements Scene {
         eventBus.emit('spawnParticles', { x: ev.x, y: ev.y, type: 'shard', count: 2 });
       }
     }
-    updatePropCooldowns(this._propsState, dt);
+    updatePropCooldowns(this._propsState, dilatedDt);
     if (checkNearMissProp(this._propsState, this._playerState)) {
       const hmResult = processHazardNearMiss(this._playerState, this._scoringState.score);
       this._scoringState.score = hmResult.score;
@@ -259,7 +524,7 @@ export class GameplayScene implements Scene {
       const result = updateEnemy(
         this._enemies[i],
         this._playerState,
-        dt,
+        dilatedDt,
         this._gameClock,
         context.camera.isVisible,
       );
@@ -305,19 +570,22 @@ export class GameplayScene implements Scene {
             y: this._playerState.y,
           });
         }
-        if (this._playerState.hp <= 0) {
+        if (this._playerState.hp <= 0 && !this._dying) {
+          this._dying = true;
+          this._deathPhase = 0;
+          this._deathTimer = CFG.FREEZE_TIME; // 0.5s freeze
+          this._screenFx?.freeze(CFG.FREEZE_TIME);
           eventBus.emit('playerDied', {});
-          // TODO: transition to death state (Step 11/12)
         }
         enemiesChanged = true;
       }
     }
 
     // Per-frame player timers
-    updateNearMissStreak(this._playerState, dt);
-    applyHpRegen(this._playerState, dt);
+    updateNearMissStreak(this._playerState, dilatedDt);
+    applyHpRegen(this._playerState, dilatedDt);
 
-    const loopResult = updateTrail(this._trailState, this._playerState, this._enemies, dt);
+    const loopResult = updateTrail(this._trailState, this._playerState, this._enemies, dilatedDt);
     if (loopResult !== null) {
       const killCount = loopResult.killedEnemies.length;
       if (killCount > 0) {
@@ -401,17 +669,60 @@ export class GameplayScene implements Scene {
       // Keep EventLog Y in sync with score panel height
       const logPanelY = (hudData.newBest ? S(56) : S(42)) + S(12) + S(20) + S(8);
       this._eventLog.setPanelY(logPanelY);
-      this._eventLog.update(dt);
+      this._eventLog.update(dilatedDt);
     }
 
     context.camera.update(
-      dt,
+      dilatedDt,
       this._playerState.x,
       this._playerState.y,
       this._playerState.vx,
       this._playerState.vy,
       getPlayerSpeed(this._playerState),
     );
+    this._screenFx?.applyToContainer(context.pixiApp.worldContainer);
+    this._particles?.update(dilatedDt);
+    this._drawArenaGlow();
+  }
+
+  private _drawArenaGlow(): void {
+    if (!this._arenaGlow) return;
+    const pulse = Math.sin(this._gameClock * 2);
+    const baseAlpha = 0.4 + 0.15 * pulse;
+    this._arenaGlow.clear();
+    // 3 passes: decreasing line width, increasing alpha — same pattern as game.js
+    const widths = [14, 8, 2];
+    const alphas = [baseAlpha * 0.3, baseAlpha * 0.5, baseAlpha];
+    for (let i = 0; i < 3; i++) {
+      this._arenaGlow
+        .rect(0, 0, CFG.WORLD_W, CFG.WORLD_H)
+        .stroke({ color: 0x35F2D0, width: widths[i], alpha: alphas[i] });
+    }
+  }
+
+  private _transitionToGameOver(context: GameContext): void {
+    if (!this._scoringState || !this._waveState) return;
+
+    // Save high score
+    if (this._scoringState.score > this._scoringState.highScore) {
+      saveManager.setHighScore(Math.floor(this._scoringState.score));
+    }
+
+    const modMult = computeModifierScoreMult(this._opts.modifierIds ?? []);
+    const data: GameOverData = {
+      score: this._scoringState.score,
+      highScore: Math.max(this._scoringState.highScore, this._scoringState.score),
+      newBest: this._scoringState.newBest,
+      waveReached: this._waveState.waveIndex,
+      runStats: this._scoringState.runStats,
+      modifierMult: modMult,
+      lastMapId: this._opts.mapId ?? saveManager.getSelectedMap(),
+      lastModifierIds: this._opts.modifierIds?.slice() ?? [],
+      sandbox: this._opts.sandbox ?? false,
+    };
+
+    this.exit(context);
+    sceneManager.switchTo(new GameOverScene(data));
   }
 
   exit(context: GameContext): void {
@@ -433,6 +744,13 @@ export class GameplayScene implements Scene {
     this._hudManager = null;
     this._eventLog?.destroy();
     this._eventLog = null;
+    this._upgradeCards?.destroy();
+    this._upgradeCards = null;
+    this._screenFx?.destroy();
+    this._screenFx = null;
+    this._particles?.destroy();
+    this._particles = null;
+    this._arenaGlow = null; // destroyed with backgroundLayer.removeChildren() below
     for (const remove of this._evListeners) remove();
     this._evListeners = [];
 

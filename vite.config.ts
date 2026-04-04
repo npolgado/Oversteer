@@ -11,6 +11,7 @@ export default defineConfig({
       '@ui': path.resolve(__dirname, 'src/ui'),
       '@audio': path.resolve(__dirname, 'src/audio'),
       '@input': path.resolve(__dirname, 'src/input'),
+      '@content': path.resolve(__dirname, 'src/content'),
     },
   },
   publicDir: 'public',

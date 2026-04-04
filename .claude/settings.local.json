@@ -14,7 +14,9 @@
       "Bash(git log:*)",
       "Bash(npm test:*)",
       "mcp__mcp-obsidian__obsidian_append_content",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vitest:*)"
     ]
   }
 }

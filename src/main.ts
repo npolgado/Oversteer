@@ -4,7 +4,7 @@ import { inputManager } from '@input/inputManager';
 import { camera } from '@render/camera';
 import { sceneManager, type GameContext } from '@scenes/sceneManager';
 import { BootScene } from '@scenes/bootScene';
-import { GameplayScene } from '@scenes/gameplayScene';
+import { MenuScene } from '@scenes/menuScene';
 
 await PixiApp.init();
 
@@ -28,9 +28,9 @@ const context: GameContext = {
 
 sceneManager.init(context);
 
-// Boot → GameplayScene
+// Boot → MenuScene
 sceneManager.switchTo(new BootScene(() => {
-  sceneManager.switchTo(new GameplayScene());
+  sceneManager.switchTo(new MenuScene());
 }));
 
 // Main loop

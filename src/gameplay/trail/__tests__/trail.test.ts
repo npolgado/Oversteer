@@ -97,7 +97,7 @@ function makeTestPlayer(x: number, y: number): PlayerState {
     drifting: false, driftJustStarted: false, driftTime: 0, lastDriftEndTime: 0, driftChain: 0,
     maxSpeed: 500, turnRate: 200,
     hp: 100, maxHp: 100, hpRegen: 0, lastHitTimer: 99,
-    shield: false, invulnTimer: 0, ghostFrameTimer: 0, frozen: false,
+    shield: false, invulnTimer: 0, ghostFrameTimer: 0, ghostFrame: false, frozen: false,
     slipTimer: 0, slipStrength: 0.6, slowTimer: 0, slowStrength: 1,
     wallHit: false, braking: false, wallRiding: false, comboLevel: 0,
     handbrakeTimer: 0, speedBoostTimer: 0,
