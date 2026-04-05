@@ -121,7 +121,10 @@ export function updatePlayer(state: PlayerState, ctx: PlayerUpdateContext): void
     state.driftTime += dt;
   } else {
     if (wasDrifting) {
-      // Record end time for drift chain detection; use gameClock instead of performance.now()
+      // NOTE: diverges from original — original uses performance.now()/1000 (entities.js:207).
+      // Both store and compare use gameClock so chaining is internally consistent,
+      // but if gameClock resets mid-session (e.g., scene restart), lastDriftEndTime
+      // becomes stale and drift chaining will fail until the next drift ends.
       state.lastDriftEndTime = state.driftTime > 0.1 ? ctx.gameClock : 0;
     }
     state.driftTime = 0;

@@ -3,7 +3,8 @@
 
 import { Sprite, Container, Graphics, Assets } from 'pixi.js';
 import { CFG } from '@core/config';
-import { getPlayerSpeed, type PlayerState } from './playerState';
+import { type PlayerState } from './playerState';
+import { computePlayerRotation } from './playerRendererUtils';
 
 export class PlayerRenderer {
   readonly container: Container;
@@ -34,15 +35,12 @@ export class PlayerRenderer {
     this._sprite.x = state.x;
     this._sprite.y = state.y;
 
-    const speed = getPlayerSpeed(state);
-    // Visual heading follows velocity during drift; otherwise tracks heading
-    this._sprite.rotation = speed > 20
-      ? Math.atan2(state.vy, state.vx) + Math.PI / 2
-      : state.heading + Math.PI / 2;
+    // Always rotate to heading — never velocity direction. See entities.js:230.
+    this._sprite.rotation = computePlayerRotation(state.heading);
 
-    // Flicker during invulnerability
+    // Invuln blink: hard 10 Hz flash matching original (entities.js:233-235)
     this._sprite.alpha = state.invulnTimer > 0
-      ? (Math.sin(state.invulnTimer * 30) > 0 ? 0.4 : 1.0)
+      ? (Math.floor(state.invulnTimer * 10) % 2 === 0 ? 0.4 : 1.0)
       : 1.0;
   }
 

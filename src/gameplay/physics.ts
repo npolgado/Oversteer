@@ -58,6 +58,7 @@ export function updatePhysics(
       if (ent.driftKing) driftBoost *= 1.5;
       if (ent.afterburner) driftBoost *= 2;
       if (isPlayer && ent.lastDriftEndTime > 0) {
+        // NOTE: diverges from original — original uses performance.now()/1000 (physics.js:20).
         const elapsed = gameClock - ent.lastDriftEndTime;
         if (elapsed < CFG.DRIFT_CHAIN_WINDOW) {
           ent.driftChain = Math.min(2, (ent.driftChain || 0) + 1);

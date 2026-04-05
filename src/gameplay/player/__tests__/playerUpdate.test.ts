@@ -250,3 +250,22 @@ describe('braking state', () => {
     expect(s.braking).toBe(false);
   });
 });
+
+// ── Reverse heading ───────────────────────────────────────────
+
+describe('reverse behavior', () => {
+  it('heading does not change when reverse input is applied without turn input', () => {
+    const s = makePlayerState();
+    s.heading = 1.0; // arbitrary heading
+    s.vx = 300;      // moving forward
+    s.vy = 0;
+    const initialHeading = s.heading;
+
+    for (let i = 0; i < 30; i++) {
+      updatePlayer(s, withInput({ down: true, gameClock: i * 0.016 }));
+    }
+
+    // Heading must not flip — reverse is velocity change only
+    expect(s.heading).toBeCloseTo(initialHeading);
+  });
+});
