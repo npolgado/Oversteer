@@ -73,6 +73,7 @@ export class MenuScene implements Scene {
 
     const input = context.getInput();
     if (input.enter) {
+      context.audioManager.play('ui_click');
       this._go(context, false);
     } else if (input.menuLeft || input.menuRight) {
       // S key: menuLeft maps to KeyA — but for sandbox we specifically want KeyS
@@ -82,6 +83,7 @@ export class MenuScene implements Scene {
     // KeyS check via 'down' (KeyS = brake/down in driving, but only in menu context)
     // NOTE: 'down' is also used for driving — only valid since player isn't active here
     if (input.down) {
+      context.audioManager.play('ui_click');
       this._go(context, true);
     }
   }

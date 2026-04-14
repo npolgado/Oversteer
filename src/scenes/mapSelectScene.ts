@@ -101,11 +101,13 @@ export class MapSelectScene implements Scene {
     const input = context.getInput();
 
     if (input.menuLeft) {
+      context.audioManager.play('ui_click');
       this._mapIndex = (this._mapIndex - 1 + MAPS.length) % MAPS.length;
       saveManager.setSelectedMap(MAPS[this._mapIndex].id);
       this._refreshDisplay();
     }
     if (input.menuRight) {
+      context.audioManager.play('ui_click');
       this._mapIndex = (this._mapIndex + 1) % MAPS.length;
       saveManager.setSelectedMap(MAPS[this._mapIndex].id);
       this._refreshDisplay();
@@ -115,6 +117,7 @@ export class MapSelectScene implements Scene {
     const modKeys = [input.menuMod1, input.menuMod2, input.menuMod3, input.menuMod4];
     for (let i = 0; i < DIFFICULTY_MODIFIERS.length; i++) {
       if (modKeys[i]) {
+        context.audioManager.play('ui_click');
         const id = DIFFICULTY_MODIFIERS[i].id;
         const idx = this._activeModIds.indexOf(id);
         if (idx >= 0) this._activeModIds.splice(idx, 1);
@@ -124,12 +127,14 @@ export class MapSelectScene implements Scene {
     }
 
     if (input.escape) {
+      context.audioManager.play('ui_click');
       this.exit(context);
       sceneManager.switchTo(new MenuScene());
       return;
     }
 
     if (input.enter) {
+      context.audioManager.play('ui_click');
       const mapId = MAPS[this._mapIndex].id;
       this.exit(context);
       sceneManager.switchTo(new GameplayScene({

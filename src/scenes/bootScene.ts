@@ -1,6 +1,6 @@
 // bootScene.ts — Asset loading scene with progress bar.
 // Uses PixiJS v8 Assets API to GPU-upload all sprites.
-// Transitions to PlaygroundScene when done.
+// Transitions to MenuScene when done.
 import { Assets, Graphics, Text, TextStyle } from 'pixi.js';
 import type { Scene, GameContext } from './sceneManager';
 import { CFG } from '@core/config';

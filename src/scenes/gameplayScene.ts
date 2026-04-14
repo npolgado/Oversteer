@@ -27,6 +27,8 @@ import { getDeathParticles, type EnemyDeathEvent } from '@gameplay/enemies/enemy
 import { checkPlayerEnemyCollision, checkNearMiss } from '@gameplay/combat/collision';
 import { processPlayerHit } from '@gameplay/combat/damage';
 import { processNearMiss, processHazardNearMiss } from '@gameplay/combat/nearMiss';
+import { applyTrailBurn } from '@gameplay/combat/trailBurn';
+import { applyChainLightning } from '@gameplay/combat/chainLightning';
 import {
   updateNearMissStreak,
   applyHpRegen,
@@ -211,14 +213,17 @@ export class GameplayScene implements Scene {
 
     // FX event subscriptions
     const onNearMissFx = (data: { x: number; y: number }) => {
+      context.audioManager.play('near_miss');
       this._screenFx?.slowmo(0.85, 0.15);
       this._particles?.spawn(data.x, data.y, 0xffff00, 4, { type: 'spark', sizeMin: 2, sizeMax: 4 });
     };
     const onDamagedFx = (data: { amount: number; x: number; y: number }) => {
+      context.audioManager.play('collision');
       this._screenFx?.shake(4, 0.2);
       this._screenFx?.slowmo(0.9, 0.1);
     };
     const onEncircleFx = (data: { count: number; x: number; y: number }) => {
+      context.audioManager.play('encircle');
       this._screenFx?.shake(6, 0.25);
       this._particles?.addRing(data.x, data.y, 0x00ffcc);
     };
@@ -228,8 +233,16 @@ export class GameplayScene implements Scene {
         lifeMin: 0.3, lifeMax: 0.6, sizeMin: 3, sizeMax: 7,
       });
     };
-    const onSpawnParticles = (data: { x: number; y: number; type: string; count: number }) => {
-      this._particles?.spawn(data.x, data.y, 0xffffff, data.count, { type: 'spark' });
+    const onSpawnParticles = (data: { x: number; y: number; type: string; count: number; color?: number }) => {
+      this._particles?.spawn(data.x, data.y, data.color ?? 0xffffff, data.count, { type: 'spark' });
+    };
+    const onEventLog = (data: { text: string; color: string }) => {
+      this._eventLog?.add(data.text, parseInt(data.color.replace('#', ''), 16));
+    };
+    const onPlayerDied = () => {
+      context.audioManager.stopEngine();
+      context.audioManager.stopDrift();
+      context.audioManager.fadeOutMusic(0.5);
     };
 
     eventBus.on('nearMiss', onNearMissFx);
@@ -237,6 +250,8 @@ export class GameplayScene implements Scene {
     eventBus.on('encirclement', onEncircleFx);
     eventBus.on('enemyKilled', onEnemyKilledFx);
     eventBus.on('spawnParticles', onSpawnParticles);
+    eventBus.on('eventLog', onEventLog);
+    eventBus.on('playerDied', onPlayerDied);
 
     this._evListeners = [
       () => eventBus.off('nearMiss', onNearMiss),
@@ -248,6 +263,8 @@ export class GameplayScene implements Scene {
       () => eventBus.off('encirclement', onEncircleFx),
       () => eventBus.off('enemyKilled', onEnemyKilledFx),
       () => eventBus.off('spawnParticles', onSpawnParticles),
+      () => eventBus.off('eventLog', onEventLog),
+      () => eventBus.off('playerDied', onPlayerDied),
     ];
 
     // Start first wave after listeners are bound so initial "WAVE N" log is not missed.
@@ -256,6 +273,8 @@ export class GameplayScene implements Scene {
       eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
       this._waveAnnounceTimer = 2.0;
       this._waveAnnounceNum = this._waveState.waveIndex;
+      context.audioManager.startEngine();
+      context.audioManager.startMusic();
     }
 
     context.camera.reset(this._playerState.x, this._playerState.y);
@@ -331,8 +350,31 @@ export class GameplayScene implements Scene {
     const input = context.getInput();
 
     // --- Pause toggle (game.js:655-662, 493-508) ---
-    if (input.pause) this._paused = !this._paused;
+    if (input.pause) {
+      this._paused = !this._paused;
+      if (this._paused) {
+        this._preMuteMusicVol = context.audioManager.musicVolume;
+        context.audioManager.setVolume('music', this._preMuteMusicVol * 0.3);
+        context.audioManager.stopEngine();
+        context.audioManager.stopDrift();
+      } else {
+        context.audioManager.setVolume('music', this._preMuteMusicVol);
+        context.audioManager.startEngine();
+      }
+    }
     if (this._paused) {
+      // Volume controls while paused — use already-computed input (edge state consumed once)
+      if (input.mute)      context.audioManager.setMuted(!context.audioManager.muted);
+      if (input.sfxDown)   context.audioManager.setVolume('sfx',   context.audioManager.sfxVolume   - 0.1);
+      if (input.sfxUp)     context.audioManager.setVolume('sfx',   context.audioManager.sfxVolume   + 0.1);
+      if (input.musicDown) {
+        this._preMuteMusicVol = Math.max(0, this._preMuteMusicVol - 0.1);
+        context.audioManager.setVolume('music', this._preMuteMusicVol * 0.3);
+      }
+      if (input.musicUp) {
+        this._preMuteMusicVol = Math.min(1, this._preMuteMusicVol + 0.1);
+        context.audioManager.setVolume('music', this._preMuteMusicVol * 0.3);
+      }
       this._renderPauseOverlay(context);
       return;
     } else {
@@ -355,15 +397,19 @@ export class GameplayScene implements Scene {
           // Card selected
           const upgrade = this._currentOffer[cardAction];
           if (upgrade) {
+            context.audioManager.play('ui_click');
             applyUpgrade(this._playerState, upgrade);
             // Handle trail upgrades (wider_trail/trail_echo) directly here
             if (upgrade.id === 'wider_trail') this._trailState.closeDist = 60;
             if (upgrade.id === 'trail_echo') this._trailState.maxPoints = 600;
+            // speed_demon: enemies also get +10% speed bonus (game.js:422-426)
+            if (upgrade.id === 'speed_demon') this._waveState!.speedBonus += 40;
             eventBus.emit('upgradeApplied', { id: upgrade.id });
             this._upgradeChosen = true;
             this._upgradeCards?.hide();
           }
         } else if (cardAction === 'reroll' && this._rerollsLeft > 0) {
+          context.audioManager.play('ui_click');
           const newOffer = buildUpgradeOffer(this._playerState);
           if (newOffer.length > 0) {
             this._rerollsLeft--;
@@ -384,6 +430,7 @@ export class GameplayScene implements Scene {
           eventBus.emit('waveStarted', { wave: this._waveState!.waveIndex });
           this._waveAnnounceTimer = 2.0;
           this._waveAnnounceNum = this._waveState!.waveIndex;
+          context.audioManager.startEngine();
         }
       }
 
@@ -432,6 +479,20 @@ export class GameplayScene implements Scene {
       drift: input.drift,
     });
 
+    // Per-frame engine pitch + drift squeal modulation (game.js update loop)
+    const _spd = getPlayerSpeed(this._playerState);
+    context.audioManager.setEngineSpeed(_spd / this._playerState.maxSpeed);
+    // Drift squeal: use lateral velocity fraction, only while actively drifting
+    const _fwdX = Math.cos(this._playerState.heading);
+    const _fwdY = Math.sin(this._playerState.heading);
+    const _dot  = this._playerState.vx * _fwdX + this._playerState.vy * _fwdY;
+    const _latSpd = Math.hypot(
+      this._playerState.vx - _fwdX * _dot,
+      this._playerState.vy - _fwdY * _dot,
+    );
+    const _driftSlip = this._playerState.drifting ? _latSpd / this._playerState.maxSpeed : 0;
+    context.audioManager.setDriftIntensity(_driftSlip);
+
     // Skid marks when drifting
     if (this._playerState.drifting) {
       this._particles?.addSkid(this._playerState.x, this._playerState.y, 0x222233, 0.5);
@@ -471,6 +532,8 @@ export class GameplayScene implements Scene {
         for (const e of this._enemies) e.alive = false;
         this._enemies.length = 0;
         enemiesChanged = true;
+        context.audioManager.stopEngine();
+        context.audioManager.stopDrift();
         eventBus.emit('waveEnded', { wave: this._waveState.waveIndex });
         // Enter upgrade break phase (from game.js:911-928)
         this._upgradePhase = true;
@@ -511,7 +574,7 @@ export class GameplayScene implements Scene {
       this._waveState.scraps.push({ x: scrapPos.x, y: scrapPos.y, life: 15, type: 'scrap' });
     }
 
-    // --- Scrap collection (near-miss scrap spawning deferred to Step 7 TODO) ---
+    // --- Scrap collection ---
     const trailPointsForScraps = Array.from(
       { length: this._trailState.count },
       (_, i) => getTrailPoint(this._trailState!, i),
@@ -586,6 +649,7 @@ export class GameplayScene implements Scene {
           this._playerState.comboHeal,
           this._playerState.hp, this._playerState.maxHp,
         );
+        this._checkComboMilestone(oldCombo, nmResult.comboLevel, context);
         // Near-miss scrap spawn: 35% chance (matches original game.js)
         if (Math.random() < CFG.SCRAP_NEAR_MISS_CHANCE) {
           this._waveState.scraps.push({ x: enemy.x, y: enemy.y, life: 15, type: 'scrap' });
@@ -639,6 +703,20 @@ export class GameplayScene implements Scene {
           this._playerState.hp, this._playerState.maxHp,
         );
         eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: encircleResult.scoreDelta });
+        this._checkComboMilestone(oldCombo, encircleResult.comboLevel, context);
+
+        // Chain Lightning: chain from each encirclement kill to nearest surviving enemy (world.js:397-424)
+        if (this._playerState.chainLightning) {
+          const { chains, scoreGained } = applyChainLightning(
+            loopResult.killedEnemies as EnemyState[],
+            this._enemies,
+            this._playerState.scoreMult,
+          );
+          if (scoreGained > 0) addScore(this._scoringState, scoreGained);
+          for (const c of chains) {
+            eventBus.emit('spawnParticles', { x: c.midX, y: c.midY, type: 'spark', count: 6, color: 0x88CCFF });
+          }
+        }
       }
 
       eventBus.emit('encirclement', {
@@ -665,6 +743,27 @@ export class GameplayScene implements Scene {
       }
 
       // Remove dead enemies from array (swap-and-pop)
+      for (let i = this._enemies.length - 1; i >= 0; i--) {
+        if (!this._enemies[i].alive) {
+          this._enemies[i] = this._enemies[this._enemies.length - 1];
+          this._enemies.pop();
+        }
+      }
+    }
+
+    // Trail Burn: enemies touching the trail take damage (game.js:717-743)
+    const burnResults = applyTrailBurn(this._playerState, this._enemies, this._trailState, dilatedDt);
+    for (const r of burnResults) {
+      if (r.enemyDied) {
+        addScore(this._scoringState, 50 * this._playerState.scoreMult);
+        eventBus.emit('eventLog', { text: 'BURN!', color: '#FF6600' });
+      }
+      eventBus.emit('spawnParticles', { x: r.ex, y: r.ey, type: 'spark', count: 4, color: 0xFF6600 });
+      if (r.enemyDied) enemiesChanged = true;
+    }
+
+    // Sweep dead enemies from trail burn (swap-and-pop)
+    if (burnResults.some(r => r.enemyDied)) {
       for (let i = this._enemies.length - 1; i >= 0; i--) {
         if (!this._enemies[i].alive) {
           this._enemies[i] = this._enemies[this._enemies.length - 1];
@@ -743,15 +842,39 @@ export class GameplayScene implements Scene {
     }
     if (!this._pauseHint) {
       this._pauseHint = new Text({
-        text: 'P / Esc to resume',
-        style: new TextStyle({ fontFamily: 'Courier New, monospace', fontSize: S(16), fill: '#888888' }),
+        text: '',
+        style: new TextStyle({ fontFamily: 'Courier New, monospace', fontSize: S(14), fill: '#888888' }),
       });
       this._pauseHint.anchor.set(0.5, 0.5);
       this._pauseHint.position.set(CFG.W / 2, CFG.H / 2 - S(20));
       context.pixiApp.hudLayer.addChild(this._pauseHint);
     }
+    // Update hint text each frame to reflect current volume
+    const sfxPct  = Math.round(context.audioManager.sfxVolume   * 100);
+    const musPct  = Math.round(this._preMuteMusicVol            * 100);
+    const muteStr = context.audioManager.muted ? ' (MUTED)' : '';
+    this._pauseHint.text = `P / Esc resume  |  M mute${muteStr}  |  [ ] SFX ${sfxPct}%  |  - = Music ${musPct}%`;
+    this._pauseHint.visible = true;
+
     this._pauseOverlay.clear();
     this._pauseOverlay.rect(0, 0, CFG.W, CFG.H).fill({ color: 0x000000, alpha: 0.6 });
+  }
+
+  /** Trigger combo milestone FX + audio when combo crosses 3, 5, or 8. (game.js:1032-1051) */
+  private _checkComboMilestone(oldLevel: number, newLevel: number, context: GameContext): void {
+    const milestones = [3, 5, 8];
+    for (const m of milestones) {
+      if (Math.floor(oldLevel) < m && Math.floor(newLevel) >= m) {
+        context.audioManager.play('combo_sting');
+        this._screenFx?.flash(0x35F2D0, 0.12, 0.1);
+        this._screenFx?.zoom(1.05, 0.15);
+        const color = m >= 8 ? 0xFFD700 : m >= 5 ? 0x7C5CFF : 0x35F2D0;
+        this._particles?.addRing(this._playerState!.x, this._playerState!.y, color);
+        const label = m >= 8 ? '#FFD700' : m >= 5 ? '#7C5CFF' : '#35F2D0';
+        eventBus.emit('eventLog', { text: `x${m} COMBO!`, color: label });
+        break;
+      }
+    }
   }
 
   private _drawArenaGlow(): void {
@@ -795,6 +918,7 @@ export class GameplayScene implements Scene {
   }
 
   exit(context: GameContext): void {
+    context.audioManager.stopAll();
     this._playerRenderer?.destroy();
     this._trailRenderer?.destroy();
     this._propsRenderer?.destroy();
