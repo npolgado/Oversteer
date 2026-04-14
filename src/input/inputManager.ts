@@ -37,6 +37,10 @@ export interface InputState {
   menuMod3: boolean;  // Digit3 in menu context — edge-triggered
   menuMod4: boolean;  // Digit4 in menu context — edge-triggered
   mute: boolean;    // KeyM — edge-triggered (mute toggle)
+  sfxDown: boolean; // BracketLeft  '[' — edge-triggered (SFX volume down)
+  sfxUp: boolean;   // BracketRight ']' — edge-triggered (SFX volume up)
+  musicDown: boolean; // Minus '-' — edge-triggered (music volume down)
+  musicUp: boolean;   // Equal '=' — edge-triggered (music volume up)
   escape: boolean;  // Escape — edge-triggered (separate from pause)
 }
 
@@ -83,6 +87,10 @@ class InputManager {
   private _menuMod3Pressed = false;
   private _menuMod4Pressed = false;
   private _mutePressed = false;
+  private _sfxDownPressed = false;
+  private _sfxUpPressed = false;
+  private _musicDownPressed = false;
+  private _musicUpPressed = false;
   private _escapePressed = false;
 
   // Touch state
@@ -346,6 +354,23 @@ class InputManager {
     const mute = muteNow && !this._mutePressed;
     this._mutePressed = muteNow;
 
+    // --- Edge-triggered: volume controls ---
+    const sfxDownNow = !!k['BracketLeft'];
+    const sfxDown = sfxDownNow && !this._sfxDownPressed;
+    this._sfxDownPressed = sfxDownNow;
+
+    const sfxUpNow = !!k['BracketRight'];
+    const sfxUp = sfxUpNow && !this._sfxUpPressed;
+    this._sfxUpPressed = sfxUpNow;
+
+    const musicDownNow = !!k['Minus'];
+    const musicDown = musicDownNow && !this._musicDownPressed;
+    this._musicDownPressed = musicDownNow;
+
+    const musicUpNow = !!k['Equal'];
+    const musicUp = musicUpNow && !this._musicUpPressed;
+    this._musicUpPressed = musicUpNow;
+
     // --- Edge-triggered: escape (separate from pause for menu back-navigation) ---
     const escNow = !!k['Escape'];
     const escape = escNow && !this._escapePressed;
@@ -376,7 +401,7 @@ class InputManager {
       select1, select2, select3,
       menuLeft, menuRight,
       menuMod1, menuMod2, menuMod3, menuMod4,
-      mute, escape,
+      mute, sfxDown, sfxUp, musicDown, musicUp, escape,
     };
   }
 }

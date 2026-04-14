@@ -6,6 +6,7 @@ import { Howl } from 'howler';
 interface MusicNodes {
   osc1: OscillatorNode;
   osc2: OscillatorNode;
+  osc3: OscillatorNode;
   lfo: OscillatorNode;
   lfoGain: GainNode;
   filter: BiquadFilterNode;
@@ -15,8 +16,8 @@ interface MusicNodes {
 const audioManager = {
   ctx: null as AudioContext | null,
   masterGain: null as GainNode | null,
-  sfxVolume: 0.7,
-  musicVolume: 0.4,
+  sfxVolume: 0.5,
+  musicVolume: 0.5,
   muted: false,
   sounds: {} as Record<string, Howl>,
 
@@ -40,10 +41,10 @@ const audioManager = {
       this.masterGain.connect(this.ctx.destination);
 
       try {
-        const saved = JSON.parse(localStorage.getItem('oversteer_audio_v1') ?? 'null');
+        const saved = JSON.parse(localStorage.getItem('oversteer_audio_v2') ?? 'null');
         if (saved) {
-          this.sfxVolume = saved.sfx ?? 0.7;
-          this.musicVolume = saved.music ?? 0.4;
+          this.sfxVolume = saved.sfx ?? 0.5;
+          this.musicVolume = saved.music ?? 0.5;
           this.muted = saved.muted ?? false;
         }
       } catch (_) {
@@ -58,7 +59,7 @@ const audioManager = {
   },
 
   _savePrefs(): void {
-    localStorage.setItem('oversteer_audio_v1', JSON.stringify({
+    localStorage.setItem('oversteer_audio_v2', JSON.stringify({
       sfx: this.sfxVolume,
       music: this.musicVolume,
       muted: this.muted,
@@ -233,29 +234,52 @@ const audioManager = {
     }
   },
 
-  // --- Music (live oscillators) ---
+  // --- Music (ambient pad: A major triad with slow LFO breath) ---
   startMusic(): void {
     if (!this.ctx || this._musicPlaying) return;
     this._resumeCtx();
+
+    // Master music gain
     const g = this.ctx.createGain();
     g.gain.value = this.muted ? 0 : this.musicVolume * 0.3;
+
+    // Slow LFO for gentle pitch breathing (0.2Hz, ±3Hz depth)
+    const lfo = this.ctx.createOscillator();
+    lfo.type = 'sine'; lfo.frequency.value = 0.2;
+    const lfoGain = this.ctx.createGain();
+    lfoGain.gain.value = 3;
+    lfo.connect(lfoGain);
+
+    // osc1: 110Hz sine — A2 root
     const osc1 = this.ctx.createOscillator();
     osc1.type = 'sine'; osc1.frequency.value = 110;
-    const osc2 = this.ctx.createOscillator();
-    osc2.type = 'sine'; osc2.frequency.value = 165;
-    const lfo = this.ctx.createOscillator();
-    lfo.type = 'sine'; lfo.frequency.value = 0.3;
-    const lfoGain = this.ctx.createGain();
-    lfoGain.gain.value = 5;
-    lfo.connect(lfoGain);
     lfoGain.connect(osc1.frequency);
+
+    // osc2: 138.59Hz triangle — C#3 (major third), slightly detune for warmth
+    const osc2 = this.ctx.createOscillator();
+    osc2.type = 'triangle'; osc2.frequency.value = 138.59;
     lfoGain.connect(osc2.frequency);
+
+    // osc3: 220Hz sine — A3 (octave), quieter for depth
+    const osc3 = this.ctx.createOscillator();
+    osc3.type = 'sine'; osc3.frequency.value = 220;
+    const osc3Gain = this.ctx.createGain();
+    osc3Gain.gain.value = 0.4;
+    osc3.connect(osc3Gain);
+    lfoGain.connect(osc3.frequency);
+
+    // Lowpass filter: 500Hz, gentle roll-off
     const filt = this.ctx.createBiquadFilter();
-    filt.type = 'lowpass'; filt.frequency.value = 300;
-    osc1.connect(filt); osc2.connect(filt);
-    filt.connect(g); g.connect(this.masterGain!);
-    osc1.start(); osc2.start(); lfo.start();
-    this.musicNodes = { osc1, osc2, lfo, lfoGain, filter: filt, gain: g };
+    filt.type = 'lowpass'; filt.frequency.value = 500;
+
+    osc1.connect(filt);
+    osc2.connect(filt);
+    osc3Gain.connect(filt);
+    filt.connect(g);
+    g.connect(this.masterGain!);
+
+    osc1.start(); osc2.start(); osc3.start(); lfo.start();
+    this.musicNodes = { osc1, osc2, osc3, lfo, lfoGain, filter: filt, gain: g };
     this._musicPlaying = true;
   },
 
@@ -263,6 +287,7 @@ const audioManager = {
     if (!this._musicPlaying || !this.musicNodes) return;
     try { this.musicNodes.osc1.stop(); } catch (_) {}
     try { this.musicNodes.osc2.stop(); } catch (_) {}
+    try { this.musicNodes.osc3.stop(); } catch (_) {}
     try { this.musicNodes.lfo.stop(); } catch (_) {}
     this._musicPlaying = false;
     this.musicNodes = null;
@@ -279,6 +304,7 @@ const audioManager = {
     setTimeout(() => {
       try { nodes.osc1.stop(); } catch (_) {}
       try { nodes.osc2.stop(); } catch (_) {}
+      try { nodes.osc3.stop(); } catch (_) {}
       try { nodes.lfo.stop(); } catch (_) {}
     }, dur * 1000 + 50);
   },

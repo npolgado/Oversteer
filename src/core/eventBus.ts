@@ -10,7 +10,10 @@ export type GameEvents = {
   nearMiss: { x: number; y: number };
 
   /** Request to spawn a particle burst at a world position */
-  spawnParticles: { x: number; y: number; type: string; count: number };
+  spawnParticles: { x: number; y: number; type: string; count: number; color?: number };
+
+  /** Display a message in the EventLog HUD */
+  eventLog: { text: string; color: string };
 
   /** Player score changed */
   scoreChanged: { score: number; delta: number };
