@@ -83,3 +83,29 @@ test('bomb does not spawn before wave 5', () => {
   assert.equal(selectPickupType(4, 0.01), 'trail_boost');
   assert.equal(selectPickupType(0, 0.0), 'trail_boost');
 });
+
+test('selectPickupType at exact trail_boost/speed_pickup boundary', () => {
+  // roll < 0.12 → trail_boost; roll >= 0.12 → speed_pickup (if < 0.20)
+  assert.equal(selectPickupType(1, 0.12), 'speed_pickup');
+});
+
+test('selectPickupType at exact speed_pickup/scrap boundary', () => {
+  // roll < 0.20 → speed_pickup; roll >= 0.20 → scrap
+  assert.equal(selectPickupType(1, 0.20), 'scrap');
+});
+
+test('updateScraps collects scrap by proximity and returns event type', () => {
+  const scraps = [{ x: 5, y: 0, life: 10, type: 'scrap' }];
+  const player = { x: 0, y: 0, radius: 10, magnetRange: 0, trailMagnet: false };
+  // dist=5 < SCRAP_RADIUS(7) + radius(10) + 10 = 27 → collected
+  const events = updateScraps(scraps, player, 0.016, []);
+  assert.deepEqual(events, ['scrap']);
+  assert.equal(scraps.length, 0);
+});
+
+test('updateScraps returns non-scrap pickup type from event', () => {
+  const scraps = [{ x: 5, y: 0, life: 10, type: 'trail_boost' }];
+  const player = { x: 0, y: 0, radius: 10, magnetRange: 0, trailMagnet: false };
+  const events = updateScraps(scraps, player, 0.016, []);
+  assert.deepEqual(events, ['trail_boost']);
+});

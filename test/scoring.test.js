@@ -251,3 +251,38 @@ test('encircle killCount=1 gives no bonus and adds 2 combo', () => {
   assert.equal(result.scoreDelta, 100);
   assert.equal(result.comboLevel, 2);
 });
+
+test('encircle comboLevel amplifies score via comboMult', () => {
+  // comboLevel=2 → comboMult=floor(2+1)=3; killCount=2: base=200, bonus=100 → floor(300*3)=900
+  const result = computeEncircleOutcome(2, 2, 1, 1);
+  assert.equal(result.scoreDelta, 900);
+  assert.equal(result.comboLevel, 6);
+});
+
+test('applyNearMiss applies scoreMult to base points', () => {
+  const player = { scoreMult: 2, comboLevel: 0, consecutiveNearMisses: 0 };
+  const result = applyNearMiss(0, player, 'enemy');
+  // 25 * 2 = 50
+  assert.equal(result.score, 50);
+});
+
+test('applyNearMiss applies scoreMult to streak bonus', () => {
+  const player = { scoreMult: 2, comboLevel: 2, consecutiveNearMisses: 2 };
+  const result = applyNearMiss(0, player, 'enemy');
+  // base: 25*2=50, streak bonus: 50*3 * 2=300, total=350
+  assert.equal(result.score, 350);
+});
+
+test('computeCollisionDamage at exactly wave 5 returns base damage', () => {
+  // condition is waveIndex > 5, so wave 5 returns unscaled
+  assert.equal(computeCollisionDamage(15, 5), 15);
+  assert.equal(computeCollisionDamage(15, 4), 15);
+});
+
+test('driftComboScoreTick skipping multiple intervals awards only one tick', () => {
+  // driftTime=5.0, lastTick=0 → ticks=5 > 0, but awards pts for just one interval
+  // pts = DRIFT_COMBO_BASE(5) * floor(comboLevel(2)+1) = 5*3 = 15, nextTick=5
+  const r = driftComboScoreTick(5.0, 0, 2);
+  assert.equal(r.scoreDelta, 15);
+  assert.equal(r.nextTick, 5);
+});

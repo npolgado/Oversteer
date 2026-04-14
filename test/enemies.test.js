@@ -120,6 +120,11 @@ test('bomb zone returns 0 for very small dt', () => {
   assert.equal(applyBombZoneDamage(8, 0.01, 0), 0);
 });
 
+test('bomb zone minimum 1 damage applies even with full resistance', () => {
+  // raw = round(8 * 1.0) = 8, then Math.max(1, round(8 * (1-1))) = Math.max(1, 0) = 1
+  assert.equal(applyBombZoneDamage(8, 1.0, 1.0), 1);
+});
+
 // ── Difficulty modifier score mult tests ─────────────────────
 
 test('no modifiers gives 1x multiplier', () => {
