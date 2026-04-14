@@ -21,6 +21,11 @@ export interface HudData {
   phase: WavePhase;
   waveTimer: number;
   combatDuration: number;
+  waveAnnounceTimer: number;
+  waveAnnounceNum: number;
+  enemies: Array<{ x: number; y: number; alive: boolean }>;
+  cameraX: number;
+  cameraY: number;
 }
 
 function makeStyle(size: number, color: string, bold = false): TextStyle {
@@ -67,6 +72,16 @@ export class HudManager {
   private _speedLabel: Text;
   private _controlsHint: Text;
 
+  // Wave announce banner (game.js:1325-1338)
+  private _waveBanner: Graphics;
+  private _waveBannerText: Text;
+
+  // Off-screen enemy indicators (game.js:1528-1562)
+  private _offLeft: Graphics;
+  private _offRight: Graphics;
+  private _offTop: Graphics;
+  private _offBottom: Graphics;
+
   constructor(layer: Container) {
     this._layer = layer;
 
@@ -111,6 +126,19 @@ export class HudManager {
     this._controlsHint.anchor.set(1, 0);
     this._controlsHint.position.set(CFG.W - S(20), CFG.H - S(20));
 
+    // --- Wave announce banner ---
+    this._waveBanner = new Graphics();
+    this._waveBannerText = new Text({ text: 'WAVE 1', style: makeStyle(26, '#35F2D0', true) });
+    this._waveBannerText.anchor.set(0.5, 0.5);
+    this._waveBanner.visible = false;
+    this._waveBannerText.visible = false;
+
+    // --- Off-screen enemy indicators ---
+    this._offLeft = new Graphics();
+    this._offRight = new Graphics();
+    this._offTop = new Graphics();
+    this._offBottom = new Graphics();
+
     // Add all to layer
     layer.addChild(
       this._scoreBg, this._scoreLabel, this._scoreValue, this._newBestText,
@@ -119,6 +147,8 @@ export class HudManager {
       this._enemyText,
       this._comboBg, this._comboBar, this._comboLabel,
       this._speedBg, this._speedBar, this._speedLabel, this._controlsHint,
+      this._offLeft, this._offRight, this._offTop, this._offBottom,
+      this._waveBanner, this._waveBannerText,
     );
   }
 
@@ -241,6 +271,66 @@ export class HudManager {
       .fill({ color: 0xaaaaaa });
 
     this._speedLabel.position.set(sbx - S(6), sby + sbh / 2);
+
+    // --- Wave announce banner (game.js:1325-1338, repositioned to screen center) ---
+    if (data.waveAnnounceTimer > 0) {
+      const fadeIn = Math.min(1, (2.0 - data.waveAnnounceTimer) / 0.3);
+      const fadeOut = Math.min(1, data.waveAnnounceTimer / 0.3);
+      const alpha = Math.min(fadeIn, fadeOut);
+      const slideY = CFG.H / 2 - (1 - fadeIn) * S(40);
+
+      this._waveBanner.visible = true;
+      this._waveBannerText.visible = true;
+      this._waveBanner.alpha = alpha;
+      this._waveBannerText.alpha = alpha;
+
+      this._waveBanner.clear();
+      this._waveBanner.roundRect(CFG.W / 2 - S(100), slideY - S(18), S(200), S(36), S(6))
+        .fill({ color: 0x000000, alpha: 0.5 });
+
+      this._waveBannerText.text = `WAVE ${data.waveAnnounceNum}`;
+      this._waveBannerText.position.set(CFG.W / 2, slideY);
+    } else {
+      this._waveBanner.visible = false;
+      this._waveBannerText.visible = false;
+    }
+
+    // --- Off-screen enemy indicators (game.js:1528-1562) ---
+    const sides = { left: false, right: false, top: false, bottom: false };
+    for (const e of data.enemies) {
+      if (!e.alive) continue;
+      const sx = e.x - data.cameraX + CFG.W / 2;
+      const sy = e.y - data.cameraY + CFG.H / 2;
+      if (sx < 0) sides.left = true;
+      if (sx > CFG.W) sides.right = true;
+      if (sy < 0) sides.top = true;
+      if (sy > CFG.H) sides.bottom = true;
+    }
+    const flash = 0.55 + 0.15 * Math.sin(performance.now() * 0.008);
+    const offBarW = S(32);
+    const borderW = offBarW + S(4);
+
+    this._offLeft.clear();
+    this._offRight.clear();
+    this._offTop.clear();
+    this._offBottom.clear();
+
+    if (sides.left) {
+      this._offLeft.rect(0, 0, borderW, CFG.H).fill({ color: 0x000000, alpha: flash * 0.6 });
+      this._offLeft.rect(0, 0, offBarW, CFG.H).fill({ color: 0xFF3B6B, alpha: flash });
+    }
+    if (sides.right) {
+      this._offRight.rect(CFG.W - borderW, 0, borderW, CFG.H).fill({ color: 0x000000, alpha: flash * 0.6 });
+      this._offRight.rect(CFG.W - offBarW, 0, offBarW, CFG.H).fill({ color: 0xFF3B6B, alpha: flash });
+    }
+    if (sides.top) {
+      this._offTop.rect(0, 0, CFG.W, borderW).fill({ color: 0x000000, alpha: flash * 0.6 });
+      this._offTop.rect(0, 0, CFG.W, offBarW).fill({ color: 0xFF3B6B, alpha: flash });
+    }
+    if (sides.bottom) {
+      this._offBottom.rect(0, CFG.H - borderW, CFG.W, borderW).fill({ color: 0x000000, alpha: flash * 0.6 });
+      this._offBottom.rect(0, CFG.H - offBarW, CFG.W, offBarW).fill({ color: 0xFF3B6B, alpha: flash });
+    }
   }
 
   destroy(): void {

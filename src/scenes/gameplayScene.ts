@@ -1,7 +1,7 @@
 // gameplayScene.ts — Main gameplay scene: player, trail, props, and enemies.
 // Hosts player, trail, prop state, enemy state, updates, and renderers.
 
-import { Sprite, Assets, Graphics } from 'pixi.js';
+import { Sprite, Assets, Graphics, Text, TextStyle } from 'pixi.js';
 import type { Scene, GameContext } from './sceneManager';
 import { CFG, S } from '@core/config';
 import { makePlayerState, getPlayerSpeed, type PlayerState } from '@gameplay/player/playerState';
@@ -108,8 +108,13 @@ export class GameplayScene implements Scene {
   // Pause state
   private _paused = false;
   private _pauseOverlay: Graphics | null = null;
-  private _pauseText: import('pixi.js').Text | null = null;
+  private _pauseText: Text | null = null;
+  private _pauseHint: Text | null = null;
   private _preMuteMusicVol = 0;
+
+  // Wave announce (game.js:280-281)
+  private _waveAnnounceTimer = 0;
+  private _waveAnnounceNum = 0;
 
   // Drift squeal edge detection
   private _wasDrifting = false;
@@ -136,6 +141,9 @@ export class GameplayScene implements Scene {
     this._playerState = makePlayerState();
     this._dying = false;
     this._deathTimer = 0;
+    this._paused = false;
+    this._waveAnnounceTimer = 0;
+    this._waveAnnounceNum = 0;
 
     // Apply difficulty modifiers (mutates CFG spawn intervals + player stats)
     if (this._opts.modifierIds && this._opts.modifierIds.length > 0) {
@@ -165,10 +173,6 @@ export class GameplayScene implements Scene {
     // Apply hard_mode speed bonus to wave state
     if (this._opts.modifierIds?.includes('hard_mode')) {
       this._waveState.speedBonus = (this._waveState.speedBonus ?? 0) + 100;
-    }
-    if (!this._opts.sandbox) {
-      startWave(this._waveState);
-      eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
     }
     this._scoringState = makeScoringState(saveManager.getHighScore());
 
@@ -246,6 +250,14 @@ export class GameplayScene implements Scene {
       () => eventBus.off('spawnParticles', onSpawnParticles),
     ];
 
+    // Start first wave after listeners are bound so initial "WAVE N" log is not missed.
+    if (!this._opts.sandbox) {
+      startWave(this._waveState);
+      eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
+      this._waveAnnounceTimer = 2.0;
+      this._waveAnnounceNum = this._waveState.waveIndex;
+    }
+
     context.camera.reset(this._playerState.x, this._playerState.y);
     this._gameClock = 0;
 
@@ -318,6 +330,18 @@ export class GameplayScene implements Scene {
     // Apply screen FX transform (shake + zoom) after camera updates below
     const input = context.getInput();
 
+    // --- Pause toggle (game.js:655-662, 493-508) ---
+    if (input.pause) this._paused = !this._paused;
+    if (this._paused) {
+      this._renderPauseOverlay(context);
+      return;
+    } else {
+      // Hide overlay elements when resuming
+      if (this._pauseOverlay) this._pauseOverlay.visible = false;
+      if (this._pauseText) this._pauseText.visible = false;
+      if (this._pauseHint) this._pauseHint.visible = false;
+    }
+
     // --- Upgrade break phase: skip game logic, handle card UI ---
     if (this._upgradePhase && this._playerState && this._trailState) {
       this._cardAnimTimer += dt;
@@ -358,6 +382,8 @@ export class GameplayScene implements Scene {
           this._playerState.frozen = false;
           startWave(this._waveState!);
           eventBus.emit('waveStarted', { wave: this._waveState!.waveIndex });
+          this._waveAnnounceTimer = 2.0;
+          this._waveAnnounceNum = this._waveState!.waveIndex;
         }
       }
 
@@ -381,6 +407,11 @@ export class GameplayScene implements Scene {
           phase: 'break',
           waveTimer: 0,
           combatDuration: this._waveState!.currentCombatDuration,
+          waveAnnounceTimer: this._waveAnnounceTimer,
+          waveAnnounceNum: this._waveAnnounceNum,
+          enemies: this._enemies,
+          cameraX: context.camera.state.x,
+          cameraY: context.camera.state.y,
         };
         this._hudManager.update(hudData);
       }
@@ -463,6 +494,8 @@ export class GameplayScene implements Scene {
       } else if (ev.type === 'break_end') {
         startWave(this._waveState);
         eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
+        this._waveAnnounceTimer = 2.0;
+        this._waveAnnounceNum = this._waveState.waveIndex;
       }
     }
     if (enemiesChanged) this._enemyRenderer?.sync(this._enemies);
@@ -646,6 +679,9 @@ export class GameplayScene implements Scene {
     this._trailRenderer.update(this._trailState);
     this._playerRenderer.update(this._playerState);
 
+    // --- Wave announce timer (game.js:1019) ---
+    if (this._waveAnnounceTimer > 0) this._waveAnnounceTimer -= dilatedDt;
+
     // --- HUD ---
     if (this._hudManager && this._eventLog) {
       const hudData: HudData = {
@@ -664,6 +700,11 @@ export class GameplayScene implements Scene {
         phase: this._waveState.phase,
         waveTimer: this._waveState.waveTimer,
         combatDuration: this._waveState.currentCombatDuration,
+        waveAnnounceTimer: this._waveAnnounceTimer,
+        waveAnnounceNum: this._waveAnnounceNum,
+        enemies: this._enemies,
+        cameraX: context.camera.state.x,
+        cameraY: context.camera.state.y,
       };
       this._hudManager.update(hudData);
       // Keep EventLog Y in sync with score panel height
@@ -683,6 +724,34 @@ export class GameplayScene implements Scene {
     this._screenFx?.applyToContainer(context.pixiApp.worldContainer);
     this._particles?.update(dilatedDt);
     this._drawArenaGlow();
+  }
+
+  // Pause overlay (game.js:1399-1407)
+  private _renderPauseOverlay(context: GameContext): void {
+    if (!this._pauseOverlay) {
+      this._pauseOverlay = new Graphics();
+      context.pixiApp.hudLayer.addChild(this._pauseOverlay);
+    }
+    if (!this._pauseText) {
+      this._pauseText = new Text({
+        text: 'PAUSED',
+        style: new TextStyle({ fontFamily: 'Courier New, monospace', fontSize: S(40), fontWeight: 'bold', fill: '#EAEFF7', dropShadow: { color: '#000', blur: 2, distance: 1 } }),
+      });
+      this._pauseText.anchor.set(0.5, 0.5);
+      this._pauseText.position.set(CFG.W / 2, CFG.H / 2 - S(60));
+      context.pixiApp.hudLayer.addChild(this._pauseText);
+    }
+    if (!this._pauseHint) {
+      this._pauseHint = new Text({
+        text: 'P / Esc to resume',
+        style: new TextStyle({ fontFamily: 'Courier New, monospace', fontSize: S(16), fill: '#888888' }),
+      });
+      this._pauseHint.anchor.set(0.5, 0.5);
+      this._pauseHint.position.set(CFG.W / 2, CFG.H / 2 - S(20));
+      context.pixiApp.hudLayer.addChild(this._pauseHint);
+    }
+    this._pauseOverlay.clear();
+    this._pauseOverlay.rect(0, 0, CFG.W, CFG.H).fill({ color: 0x000000, alpha: 0.6 });
   }
 
   private _drawArenaGlow(): void {

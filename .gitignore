@@ -1,5 +1,11 @@
+# Ignore test files and environment variables
+# Ignore virtual environments and node modules
+# Ignore build artifacts and aider cache
+
+#test
 .env
 venv/
 .venv/
 node_modules/
 dist/
+.aider*

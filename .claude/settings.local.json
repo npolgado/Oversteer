@@ -16,7 +16,9 @@
       "mcp__mcp-obsidian__obsidian_append_content",
       "Bash(wc:*)",
       "Bash(npx tsc:*)",
-      "Bash(npx vitest:*)"
+      "Bash(npx vitest:*)",
+      "Bash(xargs grep:*)",
+      "Bash(find:*)"
     ]
   }
 }
