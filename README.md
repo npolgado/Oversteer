@@ -1,6 +1,10 @@
 # Oversteer
 
-A top-down arena drifting game built entirely in a single HTML/Canvas/JS file. Drift through waves of enemies, chain near-misses for points, and encircle foes with your trail to destroy them.
+A top-down arena drifting game. Drift through waves of enemies, chain near-misses for points, and encircle foes with your trail to destroy them. Ships as a vanilla JS game (`arena-drifter/`) with a full TypeScript + PixiJS port in progress under `src/`.
+
+## Play Online
+
+**[https://npolgado.github.io/Oversteer/](https://npolgado.github.io/Oversteer/)** — no install required.
 
 ## Gameplay
 
@@ -8,8 +12,8 @@ A top-down arena drifting game built entirely in a single HTML/Canvas/JS file. D
 - **Drift**: Slide your car to build combos and score multipliers
 - **Encircle**: Your car leaves a trail — form a closed loop around enemies to kill them
 - **Near-miss**: Graze enemies and hazards while drifting for bonus points
-- **Upgrades**: Choose from 17 upgrades between waves to customize your build
-- **Enemies**: 4 types with distinct behaviors — chasers, interceptors, drifters, and armored elites
+- **Upgrades**: Choose from 26 upgrades between waves to customize your build
+- **Enemies**: 7 types with distinct behaviors — Chaser, Interceptor, Drifter, Blocker, Flanker, Bomber, and armored Elite
 
 ## Controls
 
@@ -21,7 +25,8 @@ A top-down arena drifting game built entirely in a single HTML/Canvas/JS file. D
 | Space (hold) | Drift (speed >= 180) |
 | P / Escape | Pause |
 | R | Reroll upgrades (during selection) |
-| 1/2/3 | Select upgrade card |
+| 1/2/3/4 | Select upgrade card / map modifier |
+| Enter | Confirm map modifier selection |
 | S (menu only) | Sandbox mode |
 
 **Touch (mobile, TO DO TEST)**: Tap to start, left-side virtual stick, right-side drift button, two-finger pause.
@@ -68,16 +73,32 @@ chmod +x .githooks/pre-push scripts/install-hooks
 ## Project Structure
 
 ```
-src/                  New PixiJS + TypeScript architecture
-  core/               Config, utils, RNG, event bus, save manager
-  render/             PixiJS app setup, camera
-  audio/              AudioManager (Howler + Web Audio)
-  input/              InputManager (keyboard, touch, gamepad stub)
-  scenes/             Scene manager, boot scene, playground scene
-  logic/              Pure function re-exports for testing
-arena-drifter/        Legacy vanilla JS game (9 modules + index.html)
-  assets/             PNG sprites (cars, props, backgrounds)
-test/                 Old test suite (node:test)
+src/                     PixiJS + TypeScript port
+  core/                  Config, RNG, utils, event bus, save manager
+  render/                PixiJS app, camera, particles, screen FX
+  audio/                 Procedural audio (Howler + Web Audio synthesis)
+  input/                 Keyboard, touch stubs
+  scenes/                sceneManager, boot, menu, mapSelect, gameplay, gameOver
+  gameplay/
+    physics.ts           Delta-time physics (shared player + enemy)
+    pureLogic.ts         Pure scoring / spawn / encirclement logic
+    scoring.ts           Passive score tick, combo decay
+    combat/              Collision, damage, nearMiss, chainLightning, trailBurn
+    enemies/             7 enemy types — state, update, renderer, death FX
+    player/              State, update (input→physics), renderer
+    trail/               Point accumulation, loop detection, renderer
+    world/               Procedural props (chunked, seeded RNG)
+    upgrades/            26-perk registry + apply/reroll system
+    spawning/            Wave manager — combat/break phases, burst, horde
+  ui/
+    hud/                 Score, HP, combo, wave, EventLog panels
+    menus/               Upgrade card selection UI
+  content/               Map definitions + modifier data
+  logic/                 Barrel re-exports for test imports
+arena-drifter/           Original vanilla JS game — source of truth for mechanics
+  assets/                PNG sprites (cars, props, backgrounds)
+test/                    Legacy test suite (node:test)
+src/**/__tests__/        Vitest unit tests (14 files, ~58 tests)
 ```
 
 See [patch_notes.md](patch_notes.md) for version history.

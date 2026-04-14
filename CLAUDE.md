@@ -7,7 +7,8 @@ Top-down arena drift game: 3000×3000 world, waves, trail encirclement kills, ne
 | What | Command / path |
 |------|----------------|
 | **Shipped game (canvas)** | `npx serve arena-drifter` — **source of truth** for mechanics |
-| **TS / Pixi migration** | `npm run dev` (Vite), sources under `src/` |
+| **Hosted (GitHub Pages)** | `https://npolgado.github.io/Oversteer/` — deploy via Actions → **Deploy Arena Drifter** → Run workflow |
+| **TS / Pixi port** | `npm run dev` (Vite), sources under `src/` |
 | **Resolution** | Design ref 1600×900 (`CFG.W`/`CFG.H`) |
 
 **Repo:** `arena-drifter/` — `index.html` + 9 JS modules. Shared logic in `logic.js` (CFG, `U`/`S`, pure functions — e.g. `getEnemyPool`, `shouldSpawnElite`, `computeFlankTarget`, `computeBlockerTarget`, `applyBombZoneDamage`, `computeModifierScoreMult`). Tests: legacy **`test/*.test.js`** (allowlisted in `npm run test:old`) + Vitest `src/**/*.test.ts` (`npm test`). Pre-push runs both.
@@ -62,5 +63,5 @@ Key exports: `OversteerLogic`, `Audio`, `FXCache` / `Particles` / `ScreenFX` / `
 Wave 1 hint until first encircle or timeout — **`game.js`**.
 
 ---
-Old Roadmaps: [0.9.6 Cleanup](docs\roadmaps\version_0_9_6_cleanup\cleanup.md).
-Historical versions: [HISTORY](docs\HISTORY.md).
+Old Roadmaps: [0.9.6 Cleanup](docs/roadmaps/version_0_9_6_cleanup/cleanup.md).
+Historical versions: [HISTORY](docs/HISTORY.md).
