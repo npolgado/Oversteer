@@ -9,6 +9,9 @@ import {
 } from '../collision';
 import { processPlayerHit } from '../damage';
 import { processNearMiss } from '../nearMiss';
+import { applyTrailBurn } from '../trailBurn';
+import { applyChainLightning } from '../chainLightning';
+import { makeTrailState, pushTrailPoint } from '@gameplay/trail/trailState';
 
 // ── getPlayerRadius ─────────────────────────────────────────────
 
@@ -212,6 +215,130 @@ describe('processPlayerHit', () => {
   });
 });
 
+// ── applyTrailBurn ──────────────────────────────────────────────
+
+describe('applyTrailBurn', () => {
+  it('returns [] when trailBurn is false', () => {
+    const player = makePlayerState();
+    player.trailBurn = false;
+    const trail = makeTrailState();
+    pushTrailPoint(trail, 0, 0);
+    const enemy = makeEnemyState('chaser', 0, 0, 0);
+    expect(applyTrailBurn(player, [enemy], trail, 0.016)).toEqual([]);
+  });
+
+  it('returns [] when trail is empty', () => {
+    const player = makePlayerState();
+    player.trailBurn = true;
+    const trail = makeTrailState(); // count = 0
+    const enemy = makeEnemyState('chaser', 0, 0, 0);
+    expect(applyTrailBurn(player, [enemy], trail, 0.016)).toEqual([]);
+  });
+
+  it('damages enemy within trail contact range', () => {
+    const player = makePlayerState();
+    player.trailBurn = true;
+    const trail = makeTrailState();
+    pushTrailPoint(trail, 100, 100);
+    const enemy = makeEnemyState('chaser', 100, 100, 0);
+    enemy.health = 2;
+    const results = applyTrailBurn(player, [enemy], trail, 0.016);
+    expect(results).toHaveLength(1);
+    expect(results[0].enemyDied).toBe(false);
+    expect(enemy.health).toBe(1);
+    expect(enemy._trailBurnCooldown).toBeCloseTo(1.0);
+  });
+
+  it('kills enemy when health reaches 0', () => {
+    const player = makePlayerState();
+    player.trailBurn = true;
+    const trail = makeTrailState();
+    pushTrailPoint(trail, 100, 100);
+    const enemy = makeEnemyState('chaser', 100, 100, 0);
+    enemy.health = 1;
+    const results = applyTrailBurn(player, [enemy], trail, 0.016);
+    expect(results[0].enemyDied).toBe(true);
+    expect(enemy.alive).toBe(false);
+  });
+
+  it('skips enemy while cooldown is active', () => {
+    const player = makePlayerState();
+    player.trailBurn = true;
+    const trail = makeTrailState();
+    pushTrailPoint(trail, 100, 100);
+    const enemy = makeEnemyState('chaser', 100, 100, 0);
+    enemy.health = 2;
+    enemy._trailBurnCooldown = 0.5;
+    const results = applyTrailBurn(player, [enemy], trail, 0.016);
+    expect(results).toHaveLength(0);
+    expect(enemy.health).toBe(2);
+    expect(enemy._trailBurnCooldown).toBeCloseTo(0.5 - 0.016);
+  });
+
+  it('does not hit enemy far from trail', () => {
+    const player = makePlayerState();
+    player.trailBurn = true;
+    const trail = makeTrailState();
+    pushTrailPoint(trail, 0, 0);
+    const enemy = makeEnemyState('chaser', 500, 500, 0);
+    const results = applyTrailBurn(player, [enemy], trail, 0.016);
+    expect(results).toHaveLength(0);
+  });
+});
+
+// ── applyChainLightning ─────────────────────────────────────────
+
+describe('applyChainLightning', () => {
+  it('returns empty chains when no survivors within range', () => {
+    const dead = makeEnemyState('chaser', 0, 0, 0);
+    dead.alive = false;
+    const { chains, scoreGained } = applyChainLightning([dead], [], 1);
+    expect(chains).toHaveLength(0);
+    expect(scoreGained).toBe(0);
+  });
+
+  it('chains to nearest surviving enemy within 200px', () => {
+    const dead = makeEnemyState('chaser', 0, 0, 0);
+    dead.alive = false;
+    const survivor = makeEnemyState('chaser', 100, 0, 0);
+    survivor.health = 2;
+    const { chains, scoreGained } = applyChainLightning([dead], [survivor], 1);
+    expect(chains).toHaveLength(1);
+    expect(chains[0].targetDied).toBe(false);
+    expect(survivor.health).toBe(1);
+    expect(scoreGained).toBe(0);
+  });
+
+  it('kills survivor when health is 1, awards 50 × scoreMult', () => {
+    const dead = makeEnemyState('chaser', 0, 0, 0);
+    dead.alive = false;
+    const survivor = makeEnemyState('chaser', 50, 0, 0);
+    survivor.health = 1;
+    const { chains, scoreGained } = applyChainLightning([dead], [survivor], 2);
+    expect(chains[0].targetDied).toBe(true);
+    expect(survivor.alive).toBe(false);
+    expect(scoreGained).toBe(100); // 50 × 2
+  });
+
+  it('does not chain to enemies beyond 200px', () => {
+    const dead = makeEnemyState('chaser', 0, 0, 0);
+    dead.alive = false;
+    const far = makeEnemyState('chaser', 300, 0, 0);
+    const { chains } = applyChainLightning([dead], [far], 1);
+    expect(chains).toHaveLength(0);
+  });
+
+  it('returns midpoint coords for FX', () => {
+    const dead = makeEnemyState('chaser', 0, 0, 0);
+    dead.alive = false;
+    const survivor = makeEnemyState('chaser', 100, 0, 0);
+    survivor.health = 2;
+    const { chains } = applyChainLightning([dead], [survivor], 1);
+    expect(chains[0].midX).toBeCloseTo(50);
+    expect(chains[0].midY).toBeCloseTo(0);
+  });
+});
+
 // ── processNearMiss ─────────────────────────────────────────────
 
 describe('processNearMiss', () => {
@@ -252,5 +379,9 @@ describe('processNearMiss', () => {
     const e = makeEnemyState('chaser', p.x + 50, p.y, 0);
     processNearMiss(p, e, 0);
     expect(p.invulnTimer).toBe(0);
+  });
+
+  it('CFG.SCRAP_NEAR_MISS_CHANCE is 0.35', () => {
+    expect(CFG.SCRAP_NEAR_MISS_CHANCE).toBe(0.35);
   });
 });

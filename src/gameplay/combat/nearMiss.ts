@@ -32,8 +32,6 @@ export function processNearMiss(
   player.comboLevel = result.comboLevel;
   player.consecutiveNearMisses = result.consecutiveNearMisses;
 
-  // TODO: scrap spawn chance (Step 7 — CFG.SCRAP_NEAR_MISS_CHANCE = 0.35)
-
   return result;
 }
 

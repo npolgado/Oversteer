@@ -24,6 +24,8 @@ export interface EnemyState extends PhysicsEntity {
   fadeAlpha: number;
   // Near-miss cooldown
   nearMissCooldown: number;
+  // Trail Burn: per-enemy cooldown (seconds) between burn damage ticks
+  _trailBurnCooldown: number;
   // Visual
   glowExtra: number;
   sprite: string; // texture key
@@ -79,6 +81,7 @@ export function makeEnemyState(
     offscreenTimer: 0,
     fadeAlpha: 1,
     nearMissCooldown: 0,
+    _trailBurnCooldown: 0,
     glowExtra: 0,
     sprite,
   };
