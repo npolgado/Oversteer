@@ -209,3 +209,45 @@ test('applyComboDecay clamps at zero', () => {
   assert.equal(applyComboDecay(0.5, false, 1.0), 0);
   assert.equal(applyComboDecay(0, false, 1.0), 0);
 });
+
+test('applyComboDecay decays at 2.0/s without combo_master', () => {
+  // After 0.5s: 6 - 2.0*0.5 = 5
+  assert.ok(Math.abs(applyComboDecay(6, false, 0.5) - 5) < 1e-9);
+});
+
+test('applyComboDecay decays at 1.0/s with combo_master', () => {
+  // After 0.5s: 6 - 1.0*0.5 = 5.5
+  assert.ok(Math.abs(applyComboDecay(6, true, 0.5) - 5.5) < 1e-9);
+});
+
+test('applyHpRegen does nothing when hpRegen is 0', () => {
+  const player = { hp: 80, maxHp: 100, hpRegen: 0, lastHitTimer: 5 };
+  applyHpRegen(player, 1.0);
+  assert.equal(player.hp, 80);
+});
+
+test('updateNearMissStreak does not reset when timer has not expired', () => {
+  const player = { consecutiveNearMisses: 3, nearMissStreakTimer: 0.5 };
+  updateNearMissStreak(player, 0.2);
+  assert.equal(player.consecutiveNearMisses, 3);
+  assert.ok(Math.abs(player.nearMissStreakTimer - 0.3) < 1e-9);
+});
+
+test('updateNearMissStreak does nothing when timer is already 0', () => {
+  const player = { consecutiveNearMisses: 0, nearMissStreakTimer: 0 };
+  updateNearMissStreak(player, 0.5);
+  assert.equal(player.consecutiveNearMisses, 0);
+});
+
+test('applyGhostFrameNearMiss does nothing without upgrade', () => {
+  const player = { ghostFrameTimer: 0 };
+  applyGhostFrameNearMiss(player, false);
+  assert.equal(player.ghostFrameTimer, 0);
+});
+
+test('encircle killCount=1 gives no bonus and adds 2 combo', () => {
+  // killCount=1: baseScore=100, bonus=0 (requires >=2), comboMult=1, total=100
+  const result = computeEncircleOutcome(1, 0, 1, 1);
+  assert.equal(result.scoreDelta, 100);
+  assert.equal(result.comboLevel, 2);
+});

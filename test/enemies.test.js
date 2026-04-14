@@ -171,3 +171,32 @@ test('ENEMY_SPRITES_BY_TYPE has new enemy types', () => {
   assert.ok(CFG.ENEMY_SPRITES_BY_TYPE.flanker.length > 0);
   assert.ok(CFG.ENEMY_SPRITES_BY_TYPE.bomber.length > 0);
 });
+
+// ── Elite spawn boundary ─────────────────────────────────────
+
+test('elite does not spawn at exact 0.12 threshold', () => {
+  // shouldSpawnElite uses roll < 0.12, so exactly 0.12 should not spawn
+  assert.equal(shouldSpawnElite(4, 0.12), false);
+});
+
+test('elite spawns at roll just under 0.12 threshold', () => {
+  assert.equal(shouldSpawnElite(4, 0.1199), true);
+});
+
+// ── Blocker target with large trail (sampling) ───────────────
+
+test('computeBlockerTarget with large trail samples evenly', () => {
+  // 100 points spanning x=0..99, y=0 — centroid should be near x=49.5
+  const points = Array.from({ length: 100 }, (_, i) => ({ x: i, y: 0 }));
+  const mid = computeBlockerTarget(points);
+  assert.ok(mid !== null);
+  // With step=max(1, floor(100/50))=2, samples 0,2,4,...,98 → centroid = 49
+  assert.ok(Math.abs(mid.x - 49) < 1, `expected ~49, got ${mid.x}`);
+  assert.equal(mid.y, 0);
+});
+
+test('computeBlockerTarget with single point returns that point', () => {
+  const mid = computeBlockerTarget([{ x: 42, y: 7 }]);
+  assert.equal(mid.x, 42);
+  assert.equal(mid.y, 7);
+});
