@@ -21,6 +21,7 @@ PATCH: updates that don't change the user or game mechanics, often dev updates
 
 dev_0.9.6 was merged to master as pre 1.0 beta 
 dev_1.0.0 was released containing major changes to the game, as well as dev updates
+dev_1.1.0 full TypeScript + Pixi.js port — no new user-facing mechanics, architecture overhaul
 
 prod_1.0.0 will be the first release to make it to steam
 

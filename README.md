@@ -98,7 +98,7 @@ src/                     PixiJS + TypeScript port
 arena-drifter/           Original vanilla JS game — source of truth for mechanics
   assets/                PNG sprites (cars, props, backgrounds)
 test/                    Legacy test suite (node:test)
-src/**/__tests__/        Vitest unit tests (14 files, ~58 tests)
+src/**/__tests__/        Vitest unit tests (14 files, 300 tests)
 ```
 
 See [patch_notes.md](patch_notes.md) for version history.

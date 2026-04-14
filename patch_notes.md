@@ -2,6 +2,21 @@
 
 ---
 
+## 2026-04-13 - dev.1.1.0 - TypeScript + Pixi.js Port
+- **Full engine rewrite**: game ported from single-file vanilla Canvas/JS to TypeScript + Pixi.js
+  - Vite dev server (`npm run dev`), modular `src/` architecture replacing `arena-drifter/` as the active codebase
+  - Scene manager with **Boot → Menu → Map Select → Gameplay → Game Over** flow
+  - EventBus replaces global window callbacks for inter-system communication
+- **All gameplay systems ported**: physics, player, trail, enemies (all 7 types), props, waves, scoring, damage, near-misses, encirclement, upgrades (26 total), pickups, boost zones, bomb zones
+- **Upgrade mechanics ported**: **Trail Burn**, **Chain Lightning**, **Dash Burst**, **Nitro Drift**, **Lucky Dice**, and all others — upgrade flags initialized in player state, applied in game loop
+- **All screens ported**: menu with controls list, map select with modifier toggles (1–4), upgrade break with reroll, game over with extended stats
+- **HUD ported**: HP bar, combo display, wave timer, score, **EventLog** panel, FPS counter
+- **Audio ported**: engine hum, drift squeal, one-shot SFX, ambient music — all via Web Audio API with volume/mute prefs
+- **Visual FX ported**: screen shake (directional), slowmo, zoom, particles, enemy death FX, arena boundary glow, wall-riding sparks
+- **Save system**: map selection and audio prefs persist via localStorage
+- **CI/CD**: GitHub Actions workflow added for automated test runs on push
+- dev: 300 unit tests across 14 test files (Vitest); pre-push hook runs both legacy and new test suites
+
 ## 2026-03-13 - v1.0 - Beta Launch
 - **3 new enemy types** (7 total):
   - **Blocker** (2000 pts): Targets trail midpoint, holds position to block encirclement. 380 px/s
