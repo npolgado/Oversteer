@@ -5,7 +5,7 @@
 import { CFG } from '@core/config';
 import { vec2FromAngle } from '@core/utils';
 import { updatePhysics } from '@gameplay/physics';
-import { applyComboDecay, applyHpRegen, updateNearMissStreak } from '@gameplay/pureLogic';
+import { applyHpRegen, updateNearMissStreak } from '@gameplay/pureLogic';
 import type { PlayerState } from './playerState';
 
 export interface PlayerUpdateContext {
@@ -128,7 +128,10 @@ export function updatePlayer(state: PlayerState, ctx: PlayerUpdateContext): void
       state.lastDriftEndTime = state.driftTime > 0.1 ? ctx.gameClock : 0;
     }
     state.driftTime = 0;
-    state.comboLevel = applyComboDecay(state.comboLevel, state.comboMaster, dt);
+    // Combo decay lives exclusively in scoring.ts::updateScoring now. Decaying here
+    // too (as the original entities.js did) would double-decay the combo every frame,
+    // because gameLoop._runSystems calls _tickPlayer followed by _tickScoring each
+    // frame and both wrote to state.comboLevel.
   }
 
   // Timers

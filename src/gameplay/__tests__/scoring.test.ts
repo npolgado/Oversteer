@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { CFG } from '@core/config';
 import { makeScoringState, updateScoring, addScore } from '../scoring';
+import { makePlayerState } from '../player/playerState';
+import { updatePlayer } from '../player/playerUpdate';
 
 function makeState(highScore = 0) {
   return makeScoringState(highScore);
@@ -143,5 +145,45 @@ describe('addScore', () => {
     addScore(s, 25);
     addScore(s, 50);
     expect(s.score).toBe(85);
+  });
+});
+
+// ── Regression: combo decay fires only once per simulated frame ─
+// Guards against the "double decay" bug where updatePlayer and updateScoring
+// both called applyComboDecay on the same frame, halving the effective combo
+// window (see fix/double-combo-decay).
+
+describe('combo decay — single-source-of-truth across gameLoop pipeline', () => {
+  function simulateFrame(player: ReturnType<typeof makePlayerState>, s: ReturnType<typeof makeScoringState>, dt: number): void {
+    // Mirrors gameLoop._runSystems ordering: _tickPlayer then _tickScoring.
+    updatePlayer(player, {
+      dt, gameClock: 0,
+      up: false, down: false, left: false, right: false, drift: false,
+    });
+    // Sync combo from player into scoring state (as _tickScoring does)
+    s.comboLevel = player.comboLevel;
+    updateScoring(s, player.drifting, player.driftTime, player.scoreMult, player.comboMaster, dt);
+    // Sync back
+    player.comboLevel = s.comboLevel;
+  }
+
+  it('decays at 2.0/sec (not 4.0/sec) when not drifting — default', () => {
+    const player = makePlayerState();
+    const s = makeScoringState(0);
+    player.comboLevel = 4;
+    s.comboLevel = 4;
+    // 1 second at 2.0/s -> 4 - 2 = 2. If double-decayed, we'd see ~0.
+    simulateFrame(player, s, 1.0);
+    expect(player.comboLevel).toBeCloseTo(2, 5);
+  });
+
+  it('decays at 1.0/sec (not 2.0/sec) with comboMaster upgrade', () => {
+    const player = makePlayerState();
+    const s = makeScoringState(0);
+    player.comboMaster = true;
+    player.comboLevel = 4;
+    s.comboLevel = 4;
+    simulateFrame(player, s, 1.0);
+    expect(player.comboLevel).toBeCloseTo(3, 5);
   });
 });
