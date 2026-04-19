@@ -1,4 +1,4 @@
-import { Application, Container } from 'pixi.js';
+import { Application, Container, Graphics, Texture } from 'pixi.js';
 
 const app = new Application();
 
@@ -20,6 +20,10 @@ const overlayLayer = new Container();
 
 // Post-process / screen-fx layer (vignette, flash, speed lines)
 const screenFxContainer = new Container();
+
+// NOTE: not in original — 4×4 white texture for ParticleContainer sprite-based particles.
+// Set after init() completes when the renderer is available.
+let _sparkTexture: Texture | null = null;
 
 function resize(): void {
   const canvas = app.canvas as HTMLCanvasElement;
@@ -68,6 +72,12 @@ async function init(): Promise<void> {
   // Initial size + listen for future resizes
   resize();
   window.addEventListener('resize', resize);
+
+  // Create spark texture after renderer is ready. NOTE: not in original.
+  const sparkGfx = new Graphics();
+  sparkGfx.rect(0, 0, 4, 4).fill(0xffffff);
+  _sparkTexture = app.renderer.generateTexture(sparkGfx);
+  sparkGfx.destroy();
 }
 
 export const PixiApp = {
@@ -85,6 +95,8 @@ export const PixiApp = {
   eventLogLayer,
   overlayLayer,
   screenFxContainer,
+  // NOTE: not in original — set by init(), used by ParticleSystem for batched sparks/shards.
+  get sparkTexture(): Texture { return _sparkTexture!; },
   init,
   resize,
 };
