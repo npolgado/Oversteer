@@ -208,11 +208,28 @@ export class GameLoop {
       this._screenFx.shake(6, 0.25);
       this._particles.addRing(data.x, data.y, 0x00ffcc);
     };
-    const onEnemyKilledFx = (data: { x: number; y: number; type: string }) => {
-      this._particles.spawn(data.x, data.y, 0xff3b6b, 6, {
-        type: 'shard', vxMin: -200, vxMax: 200, vyMin: -200, vyMax: 200,
-        lifeMin: 0.3, lifeMax: 0.6, sizeMin: 3, sizeMax: 7,
+    const onEnemyKilledFx = (data: { x: number; y: number; type: string; isElite?: boolean }) => {
+      const requests = getDeathParticles({
+        type: data.type as EnemyType,
+        x: data.x, y: data.y,
+        isElite: data.isElite ?? false,
       });
+      for (const req of requests) {
+        if (req.type === 'ring') {
+          if (req.pulse) this._particles.addPulseRing(req.x, req.y, req.color);
+          else           this._particles.addRing(req.x, req.y, req.color);
+          continue;
+        }
+        const v = req.vMin ?? -200;
+        const vMax = req.vMax ?? 200;
+        this._particles.spawn(req.x, req.y, req.color, req.count, {
+          type: req.type,
+          vxMin: v, vxMax: vMax,
+          vyMin: v, vyMax: vMax,
+        });
+      }
+      if (data.type === 'bomber') this._screenFx.shake(4, 0.2);
+      if (data.type === 'elite')  this._screenFx.shake(6, 0.25);
     };
     const onSpawnParticles = (data: { x: number; y: number; type: string; count: number; color?: number }) => {
       this._particles.spawn(data.x, data.y, data.color ?? 0xffffff, data.count, { type: 'spark' });
@@ -655,8 +672,11 @@ export class GameLoop {
           y:       dead.y,
           isElite: false,
         };
-        getDeathParticles(deathEvent); // stub — particles wired in step 12
-        eventBus.emit('enemyKilled', { x: dead.x, y: dead.y, type: (dead as EnemyState).type });
+        eventBus.emit('enemyKilled', {
+          x: dead.x, y: dead.y,
+          type: (dead as EnemyState).type,
+          isElite: deathEvent.isElite,
+        });
         changed = true;
       }
 
