@@ -94,6 +94,9 @@ export class GameLoop {
 
   // Drift squeal edge detection
   private _wasDrifting = false;
+  // NOTE: not in original — edge detection for handbrake burst and boost zone FX.
+  private _wasHandbraking = false;
+  private _wasInBoostZone = false;
 
   // Sub-managers
   private _death: DeathSequence;
@@ -420,8 +423,43 @@ export class GameLoop {
 
     // Skid marks when drifting
     if (this._playerState.drifting) {
-      this._particles.addSkid(this._playerState.x, this._playerState.y, 0x222233, 0.5);
+      this._particles.addSkid(
+        this._playerState.x, this._playerState.y,
+        0x222233, 0.5,
+        this._playerState.heading,
+        14,
+      );
     }
+
+    // Handbrake smoke burst on press edge. NOTE: not in original (canvas had inline smoke in physics.js).
+    const isHandbraking = this._playerState.handbrakeTimer > 0;
+    if (isHandbraking && !this._wasHandbraking) {
+      const bx = this._playerState.x - Math.cos(this._playerState.heading) * 20;
+      const by = this._playerState.y - Math.sin(this._playerState.heading) * 20;
+      this._particles.spawn(bx, by, 0x888888, 8, {
+        type: 'smoke',
+        vxMin: -60, vxMax: 60,
+        vyMin: -60, vyMax: 60,
+        lifeMin: 0.4, lifeMax: 0.7,
+      });
+    }
+    this._wasHandbraking = isHandbraking;
+
+    // Boost zone entry FX — cyan burst when player enters a speed zone. NOTE: not in original.
+    const isInBoostZone = this._playerState.speedBoostTimer > 0;
+    if (isInBoostZone && !this._wasInBoostZone) {
+      this._particles.spawn(
+        this._playerState.x, this._playerState.y,
+        0x35F2D0, 8,
+        {
+          type: 'spark',
+          vxMin: -180, vxMax: 180,
+          vyMin: -180, vyMax: 180,
+          lifeMin: 0.2, lifeMax: 0.3,
+        },
+      );
+    }
+    this._wasInBoostZone = isInBoostZone;
   }
 
   private _tickAudio(): void {
