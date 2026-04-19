@@ -1,7 +1,7 @@
 // particles.ts — Particle system: shard/smoke/spark particles, rings, skid marks.
 // Ported from arena-drifter/fx.js:143-265 (source of truth).
 
-import { Graphics, Container } from 'pixi.js';
+import { Graphics, Container, Sprite, ParticleContainer } from 'pixi.js';
 
 export type ParticleType = 'shard' | 'smoke' | 'ring' | 'spark';
 
@@ -13,7 +13,10 @@ interface Particle {
   size: number;
   type: ParticleType;
   color: number; // PixiJS hex int 0xRRGGBB
-  gfx: Graphics;
+  gravity: number;  // px/s², applied as vy += gravity * dt. NOTE: not in original
+  drag: number;     // 0–1 velocity multiplier per frame. NOTE: not in original
+  gfx: Graphics | null;    // null for sprite-based particles
+  sprite: Sprite | null;   // null for graphics-based particles
 }
 
 interface SkidMark {
@@ -21,6 +24,8 @@ interface SkidMark {
   color: number;
   alpha: number;
   age: number;
+  angle: number;  // radians — car heading at spawn time. NOTE: not in original
+  width: number;  // px — tire-width of the mark. NOTE: not in original
 }
 
 interface Ring {
@@ -48,13 +53,32 @@ export class ParticleSystem {
   private _particles: Particle[] = [];
   private _rings: Ring[] = [];
   private _skidMarks: SkidMark[] = new Array(MAX_SKIDS).fill(null).map(() => ({
-    x: 0, y: 0, color: 0, alpha: 0, age: 999,
+    x: 0, y: 0, color: 0, alpha: 0, age: 999, angle: 0, width: 14,
   }));
   private _skidHead = 0;
   private _skidCount = 0;
 
-  constructor(particlesLayer: Container) {
+  // NOTE: not in original — ParticleContainer batches sparks/shards into one GPU draw call.
+  private _spriteContainer: ParticleContainer;
+  // NOTE: not in original — separate container enables additive blendMode on rings.
+  private _ringContainer: Container;
+  // NOTE: not in original — persistent Graphics for all skid marks, redrawn each frame.
+  private _skidGfx: Graphics;
+
+  constructor(particlesLayer: Container, private _sparkTexture?: Sprite['texture']) {
     this._particlesLayer = particlesLayer;
+
+    this._spriteContainer = new ParticleContainer();
+    this._spriteContainer.blendMode = 'add';
+    this._particlesLayer.addChild(this._spriteContainer);
+
+    this._ringContainer = new Container();
+    this._ringContainer.blendMode = 'add';
+    this._particlesLayer.addChild(this._ringContainer);
+
+    // Skid gfx goes at index 0 — behind sprites and rings.
+    this._skidGfx = new Graphics();
+    this._particlesLayer.addChildAt(this._skidGfx, 0);
   }
 
   spawn(
@@ -67,34 +91,69 @@ export class ParticleSystem {
       vxMin = -100, vxMax = 100,
       vyMin = -100, vyMax = 100,
       lifeMin = 0.3, lifeMax = 0.8,
-      sizeMin = 2, sizeMax = 5,
       type = 'spark',
     } = opts;
 
+    // Per-type physics and size defaults — NOTE: not in original (no gravity/drag in original).
+    const typeDefaults = (() => {
+      switch (type) {
+        case 'spark': return { gravity: 300, drag: 0.98, sizeMin: opts.sizeMin ?? 6,  sizeMax: opts.sizeMax ?? 14 };
+        case 'shard': return { gravity: 180, drag: 1.0,  sizeMin: opts.sizeMin ?? 8,  sizeMax: opts.sizeMax ?? 18 };
+        case 'smoke': return { gravity: -60, drag: 0.94, sizeMin: opts.sizeMin ?? 20, sizeMax: opts.sizeMax ?? 50 };
+        default:      return { gravity: 0,   drag: 1.0,  sizeMin: opts.sizeMin ?? 2,  sizeMax: opts.sizeMax ?? 5  };
+      }
+    })();
+
+    const isSpriteType = type === 'spark' || type === 'shard';
+
     for (let i = 0; i < count; i++) {
       const life = lifeMin + Math.random() * (lifeMax - lifeMin);
-      const gfx = new Graphics();
-      this._particlesLayer.addChild(gfx);
+      const size = typeDefaults.sizeMin + Math.random() * (typeDefaults.sizeMax - typeDefaults.sizeMin);
+
+      let gfx: Graphics | null = null;
+      let sprite: Sprite | null = null;
+
+      if (isSpriteType && this._sparkTexture) {
+        sprite = new Sprite(this._sparkTexture);
+        sprite.anchor.set(0.5);
+        sprite.tint = color;
+        this._spriteContainer.addChild(sprite);
+      } else {
+        gfx = new Graphics();
+        this._particlesLayer.addChild(gfx);
+      }
+
       this._particles.push({
         x, y,
         vx: vxMin + Math.random() * (vxMax - vxMin),
         vy: vyMin + Math.random() * (vyMax - vyMin),
         life, maxLife: life,
-        size: sizeMin + Math.random() * (sizeMax - sizeMin),
-        type, color, gfx,
+        size, type, color,
+        gravity: typeDefaults.gravity,
+        drag: typeDefaults.drag,
+        gfx, sprite,
       });
     }
   }
 
   addRing(x: number, y: number, color: number): void {
-    const maxLife = 0.3; // fx.js:183
+    const maxLife = 0.5; // was 0.3 — lingers slightly longer for visibility
+    const maxRadius = 150; // was 80 — bigger rings visible from further away
     const gfx = new Graphics();
-    this._particlesLayer.addChild(gfx);
-    this._rings.push({ x, y, radius: 0, maxRadius: 80, life: maxLife, maxLife, color, gfx });
+    this._ringContainer.addChild(gfx);
+    this._rings.push({ x, y, radius: 0, maxRadius, life: maxLife, maxLife, color, gfx });
   }
 
-  addSkid(x: number, y: number, color: number, alpha: number): void {
-    this._skidMarks[this._skidHead] = { x, y, color, alpha, age: 0 };
+  // NOTE: not in original — quick 40px ring for hit confirmation FX.
+  addPulseRing(x: number, y: number, color: number): void {
+    const maxLife = 0.2;
+    const gfx = new Graphics();
+    this._ringContainer.addChild(gfx);
+    this._rings.push({ x, y, radius: 0, maxRadius: 40, life: maxLife, maxLife, color, gfx });
+  }
+
+  addSkid(x: number, y: number, color: number, alpha: number, angle = 0, width = 14): void {
+    this._skidMarks[this._skidHead] = { x, y, color, alpha, age: 0, angle, width };
     this._skidHead = (this._skidHead + 1) % MAX_SKIDS;
     if (this._skidCount < MAX_SKIDS) this._skidCount++;
   }
@@ -103,15 +162,18 @@ export class ParticleSystem {
     // Particles (swap-and-pop)
     for (let i = this._particles.length - 1; i >= 0; i--) {
       const p = this._particles[i];
+      p.vy += p.gravity * dt;
+      p.vx *= p.drag;
+      p.vy *= p.drag;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       if (p.type === 'smoke') {
-        p.vx *= 0.95; p.vy *= 0.95;
         p.size += dt * 8;
       }
       p.life -= dt;
       if (p.life <= 0) {
-        p.gfx.destroy();
+        if (p.gfx) p.gfx.destroy();
+        if (p.sprite) this._spriteContainer.removeChild(p.sprite);
         this._particles[i] = this._particles[this._particles.length - 1];
         this._particles.pop();
         continue;
@@ -122,7 +184,7 @@ export class ParticleSystem {
     // Rings (swap-and-pop)
     for (let i = this._rings.length - 1; i >= 0; i--) {
       const r = this._rings[i];
-      r.radius += (r.maxRadius / 0.3) * dt;
+      r.radius += (r.maxRadius / r.maxLife) * dt;
       r.life -= dt;
       if (r.life <= 0) {
         r.gfx.destroy();
@@ -137,16 +199,31 @@ export class ParticleSystem {
     for (let i = 0; i < this._skidCount; i++) {
       this._skidMarks[i].age += dt;
     }
+
+    this._renderSkids();
   }
 
   private _drawParticle(p: Particle): void {
     const alpha = p.life / p.maxLife;
-    p.gfx.clear();
+
+    if (p.sprite) {
+      // Sprite path: sparks and shards via ParticleContainer
+      p.sprite.position.set(p.x, p.y);
+      p.sprite.alpha = alpha;
+      p.sprite.scale.set(p.size / 4); // texture is 4×4px — scale to match size
+      return;
+    }
+
+    // Graphics path: smoke (and fallback if no sparkTexture)
+    const gfx = p.gfx!;
+    gfx.clear();
     if (p.type === 'smoke') {
-      p.gfx.circle(p.x, p.y, p.size).fill({ color: p.color, alpha });
+      // Ease-out alpha: stays opaque longer, fades fast at end. NOTE: not in original.
+      const easeAlpha = Math.pow(alpha, 0.4);
+      gfx.circle(p.x, p.y, p.size).fill({ color: p.color, alpha: easeAlpha });
     } else if (p.type === 'shard') {
       const s = p.size;
-      p.gfx
+      gfx
         .poly([
           p.x, p.y - s,
           p.x + s * 0.7, p.y + s * 0.5,
@@ -154,8 +231,7 @@ export class ParticleSystem {
         ])
         .fill({ color: p.color, alpha });
     } else {
-      // spark / default: square
-      p.gfx.rect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size).fill({ color: p.color, alpha });
+      gfx.rect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size).fill({ color: p.color, alpha });
     }
   }
 
@@ -165,11 +241,42 @@ export class ParticleSystem {
     r.gfx.circle(r.x, r.y, r.radius).stroke({ color: r.color, width: 2, alpha });
   }
 
+  // NOTE: not in original — renders all skid marks as oriented quads each frame.
+  private _renderSkids(): void {
+    this._skidGfx.clear();
+    const markLen = 8; // mark length in px
+    for (let i = 0; i < this._skidCount; i++) {
+      const s = this._skidMarks[i];
+      if (s.age >= 8) continue; // 8s fade duration (fx.js uses 6, extended for visibility)
+      const fadeAlpha = s.alpha * (1 - s.age / 8);
+      if (fadeAlpha <= 0.01) continue;
+
+      // Oriented rect aligned to car heading
+      const hw = s.width / 2;
+      const hl = markLen / 2;
+      const cos = Math.cos(s.angle);
+      const sin = Math.sin(s.angle);
+      this._skidGfx
+        .poly([
+          s.x + cos * hl - sin * hw, s.y + sin * hl + cos * hw,
+          s.x - cos * hl - sin * hw, s.y - sin * hl + cos * hw,
+          s.x - cos * hl + sin * hw, s.y - sin * hl - cos * hw,
+          s.x + cos * hl + sin * hw, s.y + sin * hl - cos * hw,
+        ])
+        .fill({ color: s.color, alpha: fadeAlpha });
+    }
+  }
+
   clear(): void {
-    for (const p of this._particles) p.gfx.destroy();
+    for (const p of this._particles) {
+      if (p.gfx) p.gfx.destroy();
+      if (p.sprite) this._spriteContainer.removeChild(p.sprite);
+    }
     this._particles = [];
     for (const r of this._rings) r.gfx.destroy();
     this._rings = [];
+    this._ringContainer.removeChildren();
+    this._skidGfx.clear();
     this._skidHead = 0;
     this._skidCount = 0;
   }
