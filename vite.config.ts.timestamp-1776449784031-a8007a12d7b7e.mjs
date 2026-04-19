@@ -1,0 +1,32 @@
+// vite.config.ts
+import { defineConfig } from "file:///sessions/quirky-bold-clarke/mnt/Oversteer/node_modules/vite/dist/node/index.js";
+import path from "path";
+var __vite_injected_original_dirname = "/sessions/quirky-bold-clarke/mnt/Oversteer";
+var vite_config_default = defineConfig({
+  base: "/Oversteer/",
+  resolve: {
+    alias: {
+      "@core": path.resolve(__vite_injected_original_dirname, "src/core"),
+      "@render": path.resolve(__vite_injected_original_dirname, "src/render"),
+      "@gameplay": path.resolve(__vite_injected_original_dirname, "src/gameplay"),
+      "@scenes": path.resolve(__vite_injected_original_dirname, "src/scenes"),
+      "@ui": path.resolve(__vite_injected_original_dirname, "src/ui"),
+      "@audio": path.resolve(__vite_injected_original_dirname, "src/audio"),
+      "@input": path.resolve(__vite_injected_original_dirname, "src/input"),
+      "@content": path.resolve(__vite_injected_original_dirname, "src/content")
+    }
+  },
+  publicDir: "public",
+  server: {
+    open: true
+  },
+  test: {
+    globals: true,
+    environment: "node",
+    include: ["src/**/*.test.ts"]
+  }
+});
+export {
+  vite_config_default as default
+};
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsidml0ZS5jb25maWcudHMiXSwKICAic291cmNlc0NvbnRlbnQiOiBbImNvbnN0IF9fdml0ZV9pbmplY3RlZF9vcmlnaW5hbF9kaXJuYW1lID0gXCIvc2Vzc2lvbnMvcXVpcmt5LWJvbGQtY2xhcmtlL21udC9PdmVyc3RlZXJcIjtjb25zdCBfX3ZpdGVfaW5qZWN0ZWRfb3JpZ2luYWxfZmlsZW5hbWUgPSBcIi9zZXNzaW9ucy9xdWlya3ktYm9sZC1jbGFya2UvbW50L092ZXJzdGVlci92aXRlLmNvbmZpZy50c1wiO2NvbnN0IF9fdml0ZV9pbmplY3RlZF9vcmlnaW5hbF9pbXBvcnRfbWV0YV91cmwgPSBcImZpbGU6Ly8vc2Vzc2lvbnMvcXVpcmt5LWJvbGQtY2xhcmtlL21udC9PdmVyc3RlZXIvdml0ZS5jb25maWcudHNcIjtpbXBvcnQgeyBkZWZpbmVDb25maWcgfSBmcm9tICd2aXRlJztcclxuaW1wb3J0IHBhdGggZnJvbSAncGF0aCc7XHJcblxyXG5leHBvcnQgZGVmYXVsdCBkZWZpbmVDb25maWcoe1xyXG4gIGJhc2U6ICcvT3ZlcnN0ZWVyLycsXHJcbiAgcmVzb2x2ZToge1xyXG4gICAgYWxpYXM6IHtcclxuICAgICAgJ0Bjb3JlJzogcGF0aC5yZXNvbHZlKF9fZGlybmFtZSwgJ3NyYy9jb3JlJyksXHJcbiAgICAgICdAcmVuZGVyJzogcGF0aC5yZXNvbHZlKF9fZGlybmFtZSwgJ3NyYy9yZW5kZXInKSxcclxuICAgICAgJ0BnYW1lcGxheSc6IHBhdGgucmVzb2x2ZShfX2Rpcm5hbWUsICdzcmMvZ2FtZXBsYXknKSxcclxuICAgICAgJ0BzY2VuZXMnOiBwYXRoLnJlc29sdmUoX19kaXJuYW1lLCAnc3JjL3NjZW5lcycpLFxyXG4gICAgICAnQHVpJzogcGF0aC5yZXNvbHZlKF9fZGlybmFtZSwgJ3NyYy91aScpLFxyXG4gICAgICAnQGF1ZGlvJzogcGF0aC5yZXNvbHZlKF9fZGlybmFtZSwgJ3NyYy9hdWRpbycpLFxyXG4gICAgICAnQGlucHV0JzogcGF0aC5yZXNvbHZlKF9fZGlybmFtZSwgJ3NyYy9pbnB1dCcpLFxyXG4gICAgICAnQGNvbnRlbnQnOiBwYXRoLnJlc29sdmUoX19kaXJuYW1lLCAnc3JjL2NvbnRlbnQnKSxcclxuICAgIH0sXHJcbiAgfSxcclxuICBwdWJsaWNEaXI6ICdwdWJsaWMnLFxyXG4gIHNlcnZlcjoge1xyXG4gICAgb3BlbjogdHJ1ZSxcclxuICB9LFxyXG4gIHRlc3Q6IHtcclxuICAgIGdsb2JhbHM6IHRydWUsXHJcbiAgICBlbnZpcm9ubWVudDogJ25vZGUnLFxyXG4gICAgaW5jbHVkZTogWydzcmMvKiovKi50ZXN0LnRzJ10sXHJcbiAgfSxcclxufSk7XHJcbiJdLAogICJtYXBwaW5ncyI6ICI7QUFBZ1QsU0FBUyxvQkFBb0I7QUFDN1UsT0FBTyxVQUFVO0FBRGpCLElBQU0sbUNBQW1DO0FBR3pDLElBQU8sc0JBQVEsYUFBYTtBQUFBLEVBQzFCLE1BQU07QUFBQSxFQUNOLFNBQVM7QUFBQSxJQUNQLE9BQU87QUFBQSxNQUNMLFNBQVMsS0FBSyxRQUFRLGtDQUFXLFVBQVU7QUFBQSxNQUMzQyxXQUFXLEtBQUssUUFBUSxrQ0FBVyxZQUFZO0FBQUEsTUFDL0MsYUFBYSxLQUFLLFFBQVEsa0NBQVcsY0FBYztBQUFBLE1BQ25ELFdBQVcsS0FBSyxRQUFRLGtDQUFXLFlBQVk7QUFBQSxNQUMvQyxPQUFPLEtBQUssUUFBUSxrQ0FBVyxRQUFRO0FBQUEsTUFDdkMsVUFBVSxLQUFLLFFBQVEsa0NBQVcsV0FBVztBQUFBLE1BQzdDLFVBQVUsS0FBSyxRQUFRLGtDQUFXLFdBQVc7QUFBQSxNQUM3QyxZQUFZLEtBQUssUUFBUSxrQ0FBVyxhQUFhO0FBQUEsSUFDbkQ7QUFBQSxFQUNGO0FBQUEsRUFDQSxXQUFXO0FBQUEsRUFDWCxRQUFRO0FBQUEsSUFDTixNQUFNO0FBQUEsRUFDUjtBQUFBLEVBQ0EsTUFBTTtBQUFBLElBQ0osU0FBUztBQUFBLElBQ1QsYUFBYTtBQUFBLElBQ2IsU0FBUyxDQUFDLGtCQUFrQjtBQUFBLEVBQzlCO0FBQ0YsQ0FBQzsiLAogICJuYW1lcyI6IFtdCn0K
