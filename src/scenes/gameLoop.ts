@@ -3,7 +3,7 @@
 
 import { Sprite, Assets, Graphics, Text, TextStyle } from 'pixi.js';
 import type { GameContext } from './sceneManager';
-import { CFG, S, applyMap } from '@core/config';
+import { CFG, S, applyMap, type EnemyType } from '@core/config';
 import { makePlayerState, getPlayerSpeed, getPlayerRadius, type PlayerState } from '@gameplay/player/playerState';
 import { updatePlayer } from '@gameplay/player/playerUpdate';
 import { PlayerRenderer } from '@gameplay/player/playerRenderer';
@@ -162,7 +162,7 @@ export class GameLoop {
 
     // --- Screen FX + Particles ---
     this._screenFx = new ScreenFX(_ctx.pixiApp.screenFxContainer);
-    this._particles = new ParticleSystem(_ctx.pixiApp.particlesLayer);
+    this._particles = new ParticleSystem(_ctx.pixiApp.particlesLayer, _ctx.pixiApp.sparkTexture);
 
     // --- Sub-managers ---
     this._death = new DeathSequence(
