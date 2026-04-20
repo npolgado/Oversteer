@@ -15,6 +15,9 @@ export default defineConfig({
       '@content': path.resolve(__dirname, 'src/content'),
     },
   },
+  build: {
+    target: 'esnext',
+  },
   publicDir: 'public',
   server: {
     open: true,
@@ -23,5 +26,8 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    benchmark: {
+      include: ['src/**/*.bench.ts'],
+    },
   },
 });
