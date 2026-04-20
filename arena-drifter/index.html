@@ -25,6 +25,7 @@ canvas {
 <script src="world.js"></script>
 <script src="waves.js"></script>
 <script src="game.js"></script>
+<script src="bench.js"></script>
 </head>
 <body>
 <canvas id="c"></canvas>
@@ -50,6 +51,8 @@ canvas {
   Audio.init();
   FXCache.init();
   Game.init();
+  BenchmarkRunner.init(); // registers message listener; must be after Game.init()
+  window.parent.postMessage({ type: 'bench_ready' }, '*'); // harmless when not in iframe
 
   let lastTime = performance.now();
   function loop(timestamp) {
@@ -61,6 +64,8 @@ canvas {
     const rawDt = Math.min(rawDtMs / 1000, 0.05);
     lastTime = timestamp;
     PerfMon.record(rawDtMs);
+
+    BenchmarkRunner.tick(rawDtMs); // no-op if not in bench mode
 
     Game.update(rawDt);
 

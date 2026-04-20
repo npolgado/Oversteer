@@ -120,24 +120,47 @@
     _buf: new Float32Array(60),
     _idx: 0,
     _count: 0,
+    enabled: localStorage.getItem('oversteer_perf_v1') === 'true',
+
     record(rawDtMs) {
       this._buf[this._idx] = rawDtMs;
       this._idx = (this._idx + 1) % 60;
       if (this._count < 60) this._count++;
     },
+
     avgFps() {
       if (!this._count) return 0;
       let sum = 0;
       for (let i = 0; i < this._count; i++) sum += this._buf[i];
       return 1000 / (sum / this._count);
     },
+
     worstMs() {
       let worst = 0;
       for (let i = 0; i < this._count; i++) {
         if (this._buf[i] > worst) worst = this._buf[i];
       }
       return worst;
-    }
+    },
+
+    toggle() {
+      this.enabled = !this.enabled;
+      localStorage.setItem('oversteer_perf_v1', String(this.enabled));
+    },
+
+    draw(ctx) {
+      if (!this.enabled || !this._count) return;
+      const fps = this.avgFps().toFixed(0);
+      const worst = this.worstMs().toFixed(1);
+      const txt = `FPS: ${fps}  worst: ${worst}ms`;
+      const x = CFG.W - S(8);
+      const y = S(16);
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(x - S(108), y - S(12), S(112), S(18));
+      U.text(ctx, txt, x, y, { align: 'right', color: '#00ff88', size: 11, shadow: true });
+      ctx.restore();
+    },
   };
 
   // ── PARTICLES / FX ──────────────────────────────────────────

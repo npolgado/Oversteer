@@ -320,6 +320,7 @@
       const Input = window.Input;
       Input.init();
       this.state = STATE.MENU;
+      this._f3Pressed = false;
     },
 
     reset() {
@@ -439,6 +440,12 @@
       const ARENA_UPGRADES = window.ARENA_UPGRADES;
 
       Input.poll();
+
+      // F3 perf overlay toggle — works in all game states
+      const f3Now = !!Input.keys['F3'];
+      if (f3Now && !this._f3Pressed) window.PerfMon.toggle();
+      this._f3Pressed = f3Now;
+
       this.menuAnim += rawDt;
 
       if (this.state === STATE.MENU) {
@@ -1405,6 +1412,11 @@
         U.text(ctx, 'WASD: Drive  |  SPACE: Drift  |  S+brake: Handbrake  |  Loop around enemies to kill', CFG.W/2, CFG.H/2 + S(10), {
           align: 'center', color: '#555', size: 11
         });
+        // PerfMon toggle indicator
+        const perfLabel = `[F3] Perf overlay: ${window.PerfMon.enabled ? 'ON' : 'OFF'}`;
+        U.text(ctx, perfLabel, CFG.W/2, CFG.H/2 + S(25), {
+          align: 'center', color: window.PerfMon.enabled ? '#00ff88' : '#555', size: 11,
+        });
 
         // Collected upgrades with names
         const ups = this.player.upgrades;
@@ -1520,6 +1532,9 @@
           U.text(ctx, 'ENTER to menu  |  R to restart', CFG.W/2, CFG.H - S(50), { align: 'center', color: CFG.C_ACCENT, size: 18, bold: true, shadow: true });
         }
       }
+
+      // Perf overlay (always on top)
+      window.PerfMon.draw(ctx);
 
       // Touch controls overlay
       this.renderTouchUI(ctx);
