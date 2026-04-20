@@ -165,7 +165,7 @@ export class GameLoop {
 
     // --- Screen FX + Particles ---
     this._screenFx = new ScreenFX(_ctx.pixiApp.screenFxContainer);
-    this._particles = new ParticleSystem(_ctx.pixiApp.particlesLayer, _ctx.pixiApp.sparkTexture);
+    this._particles = new ParticleSystem(_ctx.pixiApp.particlesLayer, _ctx.pixiApp.sparkTexture, _ctx.camera.isVisible);
 
     // --- Sub-managers ---
     this._death = new DeathSequence(
