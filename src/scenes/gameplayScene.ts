@@ -8,6 +8,7 @@ export interface GameplayOptions {
   mapId?: string;
   modifierIds?: string[];
   sandbox?: boolean;
+  benchmark?: string; // scenario name e.g. 'idle_5', 'drift_15'
 }
 
 export class GameplayScene implements Scene {

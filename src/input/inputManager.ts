@@ -42,6 +42,7 @@ export interface InputState {
   musicDown: boolean; // Minus '-' — edge-triggered (music volume down)
   musicUp: boolean;   // Equal '=' — edge-triggered (music volume up)
   escape: boolean;  // Escape — edge-triggered (separate from pause)
+  perfToggle: boolean; // F3 — edge-triggered
 }
 
 // ---------------------------------------------------------------------------
@@ -92,6 +93,10 @@ class InputManager {
   private _musicDownPressed = false;
   private _musicUpPressed = false;
   private _escapePressed = false;
+  private _f3Pressed = false;
+
+  /** When non-null, poll() returns this instead of reading real input. Used by benchmark mode. */
+  overrideState: InputState | null = null;
 
   // Touch state
   private _touch: TouchState = {
@@ -269,6 +274,7 @@ class InputManager {
   // ---------------------------------------------------------------------------
 
   poll(): InputState {
+    if (this.overrideState !== null) return this.overrideState;
     const k = this._keys;
     const t = this._touch;
 
@@ -392,6 +398,11 @@ class InputManager {
       }
     }
 
+    // --- Edge-triggered: perf overlay toggle (F3) ---
+    const f3Now = !!k['F3'];
+    const perfToggle = f3Now && !this._f3Pressed;
+    this._f3Pressed = f3Now;
+
     // Poll gamepad stub (no-op for now)
     this._pollGamepad();
 
@@ -402,6 +413,7 @@ class InputManager {
       menuLeft, menuRight,
       menuMod1, menuMod2, menuMod3, menuMod4,
       mute, sfxDown, sfxUp, musicDown, musicUp, escape,
+      perfToggle,
     };
   }
 }
