@@ -1,4 +1,5 @@
-import { Application, Container } from 'pixi.js';
+import 'pixi.js/browser';
+import { Application, Container, WebGLRenderer } from 'pixi.js';
 
 const app = new Application();
 
@@ -30,14 +31,35 @@ function resize(): void {
   canvas.style.height = 900 * scale + 'px';
 }
 
-async function init(): Promise<void> {
-  await app.init({
+async function init(opts?: { forceWebGL?: boolean }): Promise<void> {
+  const isInIframe = window.parent !== window;
+  const dbg = (step: string) => isInIframe && window.parent.postMessage({ type: 'bench_debug', step }, '*');
+
+  const baseOpts = {
     width: 1600,
     height: 900,
     backgroundColor: 0x07080b,
     antialias: false,
     resolution: 1,
-  });
+  };
+
+  if (opts?.forceWebGL) {
+    // Bypass autoDetectRenderer — its dynamic import() hangs in iframes.
+    // Replicate Application.init manually: stage + renderer + plugins.
+    dbg('pixi_init_manual_webgl_renderer');
+    const renderer = new WebGLRenderer();
+    await renderer.init(baseOpts);
+    dbg('pixi_init_renderer_ready');
+    app.stage ||= new Container();
+    (app as any).renderer = renderer;
+    (Application as any)._plugins.forEach((plugin: any) => {
+      plugin.init.call(app, baseOpts);
+    });
+  } else {
+    dbg('pixi_init_auto_detect');
+    await app.init(baseOpts);
+  }
+  dbg('pixi_init_app.init_resolved');
 
   // Pixel-crisp rendering
   const canvas = app.canvas as HTMLCanvasElement;
@@ -63,11 +85,13 @@ async function init(): Promise<void> {
   if (!gameDiv) {
     throw new Error('Missing #game div in index.html');
   }
+  dbg('pixi_init_mounting_canvas');
   gameDiv.appendChild(canvas);
 
   // Initial size + listen for future resizes
   resize();
   window.addEventListener('resize', resize);
+  dbg('pixi_init_complete');
 }
 
 export const PixiApp = {

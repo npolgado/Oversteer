@@ -51,6 +51,8 @@ import { HudManager, type HudData } from '@ui/hud/hudManager';
 import { EventLog } from '@ui/hud/eventLog';
 import { UpgradeCardsUI } from '@ui/menus/upgradeCards';
 import { inputManager } from '@input/inputManager';
+import type { InputState } from '@input/inputManager';
+import { PerfOverlay } from '@ui/PerfOverlay';
 import { ScreenFX } from '@render/screenFx';
 import { ParticleSystem } from '@render/particles';
 import { DIFFICULTY_MODIFIERS, computeModifierScoreMult } from '@content/maps';
@@ -59,6 +61,16 @@ import { GameOverScene, type GameOverData } from './gameOverScene';
 import { DeathSequence } from '@gameplay/death/deathSequence';
 import { UpgradeBreakPhase } from '@gameplay/upgradeBreak/upgradeBreakPhase';
 import type { GameplayOptions } from './gameplayScene';
+
+const EMPTY_INPUT: InputState = {
+  up: false, down: false, left: false, right: false,
+  drift: false, pause: false, enter: false, reroll: false,
+  select1: false, select2: false, select3: false,
+  menuLeft: false, menuRight: false,
+  menuMod1: false, menuMod2: false, menuMod3: false, menuMod4: false,
+  mute: false, sfxDown: false, sfxUp: false, musicDown: false, musicUp: false,
+  escape: false, perfToggle: false,
+};
 
 export class GameLoop {
   // --- Game state (all moved from GameplayScene) ---
@@ -80,6 +92,20 @@ export class GameLoop {
   private _screenFx: ScreenFX;
   private _particles: ParticleSystem;
   private _arenaGlow: Graphics;
+
+  // PerfOverlay
+  private _perf: PerfOverlay;
+  private _lastFrameWallMs = 0;
+  private _pausePerfText: import('pixi.js').Text | null = null;
+
+  // Benchmark mode
+  private _bench: {
+    scenario: string;
+    drift: boolean;
+    phase: 'warmup' | 'collect' | 'done';
+    timer: number;
+    frames: number[];
+  } | null = null;
 
   // Pause state
   private _paused = false;
@@ -159,6 +185,7 @@ export class GameLoop {
     const eventLogY = scoreH + S(12) + S(20) + S(8);
     this._hudManager = new HudManager(_ctx.pixiApp.hudLayer);
     this._eventLog = new EventLog(_ctx.pixiApp.eventLogLayer, eventLogY);
+    this._perf = new PerfOverlay(_ctx.pixiApp.hudLayer);
 
     // --- Screen FX + Particles ---
     this._screenFx = new ScreenFX(_ctx.pixiApp.screenFxContainer);
@@ -249,7 +276,7 @@ export class GameLoop {
     ];
 
     // Start first wave after listeners are bound so initial "WAVE N" log is not missed.
-    if (!_opts.sandbox) {
+    if (!_opts.sandbox && !_opts.benchmark) {
       startWave(this._waveState);
       eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
       this._waveAnnounceTimer = 2.0;
@@ -260,6 +287,10 @@ export class GameLoop {
 
     _ctx.camera.reset(this._playerState.x, this._playerState.y);
     this._gameClock = 0;
+
+    if (_opts.benchmark) {
+      this._setupBenchmark(_opts.benchmark);
+    }
 
     const bgTexture = Assets.get('background_01');
     if (bgTexture) {
@@ -276,6 +307,14 @@ export class GameLoop {
   }
 
   update(dt: number): void {
+    // Wall-clock frame time for PerfOverlay (not clamped like dt)
+    const nowMs = performance.now();
+    const rawDtMs = this._lastFrameWallMs ? nowMs - this._lastFrameWallMs : dt * 1000;
+    this._lastFrameWallMs = nowMs;
+    this._perf.update(rawDtMs);
+
+    if (this._bench) this._tickBench(rawDtMs);
+
     const rawDt = dt;
     const dilatedDt = this._screenFx.update(rawDt);
 
@@ -308,6 +347,8 @@ export class GameLoop {
         this._ctx.audioManager.startEngine();
       }
     }
+    if (input.perfToggle) this._perf.toggle();
+
     if (this._paused) {
       if (input.mute)      this._ctx.audioManager.setMuted(!this._ctx.audioManager.muted);
       if (input.sfxDown)   this._ctx.audioManager.setVolume('sfx',   this._ctx.audioManager.sfxVolume   - 0.1);
@@ -321,8 +362,10 @@ export class GameLoop {
         this._ctx.audioManager.setVolume('music', this._preMuteMusicVol * 0.3);
       }
       this._renderPauseOverlay();
+      this._renderPausePerfText();
       return;
     } else {
+      if (this._pausePerfText) this._pausePerfText.visible = false;
       if (this._pauseOverlay) this._pauseOverlay.visible = false;
       if (this._pauseText)    this._pauseText.visible    = false;
       if (this._pauseHint)    this._pauseHint.visible    = false;
@@ -837,7 +880,115 @@ export class GameLoop {
     sceneManager.switchTo(new GameOverScene(data));
   }
 
+  private _renderPausePerfText(): void {
+    if (!this._pausePerfText) {
+      this._pausePerfText = new Text({
+        text: '',
+        style: new TextStyle({
+          fontFamily: 'Courier New, monospace',
+          fontSize: S(11),
+          fill: '#888888',
+        }),
+      });
+      this._pausePerfText.anchor.set(0.5, 0);
+      this._ctx.pixiApp.hudLayer.addChild(this._pausePerfText);
+    }
+    this._pausePerfText.visible = true;
+    this._pausePerfText.text = `[F3] Perf overlay: ${this._perf.enabled ? 'ON' : 'OFF'}`;
+    (this._pausePerfText.style as TextStyle).fill = this._perf.enabled ? '#00ff88' : '#666666';
+    this._pausePerfText.position.set(CFG.W / 2, CFG.H / 2 + S(50));
+  }
+
+  private _setupBenchmark(scenario: string): void {
+    const BENCH_DEFS: Record<string, { enemyCount: number; drift: boolean }> = {
+      idle_5:   { enemyCount: 5,  drift: false },
+      idle_15:  { enemyCount: 15, drift: false },
+      idle_30:  { enemyCount: 30, drift: false },
+      drift_5:  { enemyCount: 5,  drift: true  },
+      drift_15: { enemyCount: 15, drift: true  },
+      drift_30: { enemyCount: 30, drift: true  },
+    };
+    const def = BENCH_DEFS[scenario];
+    if (!def) return;
+
+    this._bench = { scenario, drift: def.drift, phase: 'warmup', timer: 0, frames: [] };
+
+    this._playerState.x = CFG.WORLD_W / 2;
+    this._playerState.y = CFG.WORLD_H / 2;
+    // Match vanilla bench behavior: make run non-lethal so every scenario reports.
+    this._playerState.maxHp = 999999;
+    this._playerState.hp = 999999;
+    this._playerState.vx = def.drift ? 200 : 0;
+    this._playerState.vy = 0;
+    this._playerState.heading = 0;
+
+    this._enemies.length = 0;
+    const n = def.enemyCount;
+    for (let i = 0; i < n; i++) {
+      const angle = (i / n) * Math.PI * 2;
+      const r = 500;
+      this._enemies.push(
+        makeEnemyState('chaser',
+          CFG.WORLD_W / 2 + Math.cos(angle) * r,
+          CFG.WORLD_H / 2 + Math.sin(angle) * r,
+          0
+        )
+      );
+    }
+    this._enemyRenderer.sync(this._enemies);
+    this._ctx.camera.reset(this._playerState.x, this._playerState.y);
+  }
+
+  private _tickBench(rawDtMs: number): void {
+    const b = this._bench!;
+    if (b.phase === 'done') return;
+
+    inputManager.overrideState = b.drift
+      ? { ...EMPTY_INPUT, up: true, left: true, drift: true }
+      : EMPTY_INPUT;
+
+    b.timer += rawDtMs / 1000;
+
+    if (b.phase === 'warmup') {
+      if (b.timer >= 3) {
+        b.phase = 'collect';
+        b.timer = 0;
+        b.frames = [];
+      }
+    } else if (b.phase === 'collect') {
+      b.frames.push(rawDtMs);
+      if (b.timer >= 10) {
+        b.phase = 'done';
+        inputManager.overrideState = null;
+        this._finishBench();
+      }
+    }
+  }
+
+  private _finishBench(): void {
+    const frames = this._bench!.frames;
+    const sorted = [...frames].sort((a, b) => a - b);
+    const n = sorted.length;
+    const avg = frames.reduce((s, t) => s + t, 0) / n;
+    window.parent.postMessage(
+      {
+        type: 'bench_result',
+        build: 'Port',
+        scenario: this._bench!.scenario,
+        avgFps: 1000 / avg,
+        p50: sorted[Math.floor(n * 0.50)],
+        p95: sorted[Math.floor(n * 0.95)],
+        p99: sorted[Math.floor(n * 0.99)],
+        worstMs: sorted[n - 1],
+      },
+      '*'
+    );
+  }
+
   destroy(): void {
+    inputManager.overrideState = null;
+    this._perf.destroy();
+    this._pausePerfText?.destroy();
     this._ctx.audioManager.stopAll();
     this._playerRenderer.destroy();
     this._trailRenderer.destroy();
