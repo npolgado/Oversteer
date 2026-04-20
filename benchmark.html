@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Oversteer — Benchmark</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: monospace; background: #111; color: #eee; padding: 24px; }
+h1 { font-size: 1.4rem; margin-bottom: 8px; }
+p.sub { color: #888; font-size: 0.85rem; margin-bottom: 20px; }
+button { padding: 10px 24px; font-size: 1rem; font-family: monospace; cursor: pointer;
+  background: #00cc66; color: #000; border: none; border-radius: 4px; }
+button:disabled { background: #444; color: #888; cursor: default; }
+#progress { margin-top: 16px; color: #aaa; font-size: 0.85rem; min-height: 1.2em; }
+#report { margin-top: 32px; display: none; }
+#verdict { font-size: 1.1rem; font-weight: bold; padding: 10px 16px;
+  border-radius: 4px; display: inline-block; margin-bottom: 20px; }
+#verdict.ok   { background: #004d29; color: #00ff88; }
+#verdict.warn { background: #4d1300; color: #ff6633; }
+table { border-collapse: collapse; width: 100%; margin-bottom: 24px; font-size: 0.85rem; }
+th, td { border: 1px solid #333; padding: 8px 12px; text-align: center; }
+th { background: #1a1a1a; color: #aaa; }
+td.label { text-align: left; color: #ccc; }
+td.good  { color: #00ff88; }
+td.bad   { color: #ff6633; }
+canvas#chart { display: block; margin-bottom: 24px; background: #1a1a1a;
+  border: 1px solid #333; border-radius: 4px; }
+details { border: 1px solid #333; border-radius: 4px; padding: 8px 12px; }
+summary { cursor: pointer; color: #888; font-size: 0.85rem; }
+pre { margin-top: 8px; font-size: 0.75rem; color: #aaa; white-space: pre-wrap; }
+iframe { position: fixed; bottom: 16px; right: 16px; width: 320px; height: 180px;
+  border: 1px solid #333; border-radius: 4px; background: #000; }
+#log { margin-top: 12px; max-height: 200px; overflow-y: auto; font-size: 0.75rem;
+  background: #0a0a0a; border: 1px solid #222; border-radius: 4px; padding: 6px 10px; }
+#log:empty { display: none; }
+#log div { margin: 1px 0; }
+#log .err { color: #ff4444; }
+#log .dbg { color: #666; }
+#log .info { color: #4488ff; }
+#log .timeout { color: #ff8800; }
+</style>
+</head>
+<body>
+<h1>Oversteer Benchmark</h1>
+<p class="sub">Runs 12 scenarios (6 × 2 builds) in hidden iframes and reports avg FPS + frame times.</p>
+<button id="runBtn" onclick="startBenchmark()">Run Benchmark</button>
+<div id="progress"></div>
+<div id="log"></div>
+<iframe id="frame"></iframe>
+<div id="report">
+  <div id="verdict"></div>
+  <table id="resultTable">
+    <thead>
+      <tr><th>Scenario</th><th>MVP avg FPS</th><th>Port avg FPS</th><th>MVP worst ms</th><th>Port worst ms</th></tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+  <canvas id="chart" width="800" height="300"></canvas>
+  <details>
+    <summary>Raw data (p50 / p95 / p99)</summary>
+    <pre id="rawData"></pre>
+  </details>
+</div>
+
+<script>
+const SCENARIOS = ['idle_5','idle_15','idle_30','drift_5','drift_15','drift_30'];
+const BUILDS = [
+  { name: 'MVP',  url: 'arena-drifter/' },
+  { name: 'Port', url: 'dist-local/'    },
+];
+const TIMEOUT_MS = 30000; // 3s warmup + 10s collect + BootScene load + headroom
+
+const results = {}; // scenario → { MVP: {...}, Port: {...} }
+let runQueue = [];
+let currentIdx = 0;
+
+function logMsg(cls, text) {
+  const el = document.getElementById('log');
+  const d = document.createElement('div');
+  d.className = cls;
+  d.textContent = `[${new Date().toISOString().slice(11,19)}] ${text}`;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+function startBenchmark() {
+  document.getElementById('runBtn').disabled = true;
+  document.getElementById('report').style.display = 'none';
+  document.getElementById('progress').textContent = 'Starting…';
+
+  runQueue = [];
+  for (const scenario of SCENARIOS) {
+    for (const build of BUILDS) {
+      runQueue.push({ scenario, build });
+    }
+  }
+  currentIdx = 0;
+  runNext();
+}
+
+function runNext() {
+  if (currentIdx >= runQueue.length) {
+    renderReport();
+    document.getElementById('runBtn').disabled = false;
+    return;
+  }
+  const { scenario, build } = runQueue[currentIdx];
+  const total = runQueue.length;
+  document.getElementById('progress').textContent =
+    `[${currentIdx + 1}/${total}] Running ${build.name} — ${scenario}…`;
+
+  const frame = document.getElementById('frame');
+  let timer = null;
+
+  function onMessage(e) {
+    if (!e.data || !e.data.type) return;
+    const tag = `${build.name}/${scenario}`;
+    if (e.data.type === 'bench_ready') {
+      console.log(`[bench] ${tag}: ready — sending bench_start`);
+      logMsg('info', `${tag}: ready — sending bench_start`);
+      frame.contentWindow.postMessage({ type: 'bench_start', scenario }, '*');
+      return;
+    }
+    if (e.data.type === 'bench_error') {
+      console.error(`[bench] ${tag}: ERROR — ${e.data.error}`);
+      logMsg('err', `${tag}: ERROR — ${e.data.error}`);
+      return;
+    }
+    if (e.data.type === 'bench_debug') {
+      console.log(`[bench] ${tag}: ${e.data.step}`);
+      logMsg('dbg', `${tag}: ${e.data.step}`);
+      return;
+    }
+    if (e.data.type === 'bench_result' && e.data.scenario === scenario && e.data.build === build.name) {
+      console.log(`[bench] ${tag}: result — ${e.data.avgFps?.toFixed(1)} FPS`);
+      logMsg('info', `${tag}: result — ${e.data.avgFps?.toFixed(1)} FPS, worst ${e.data.worstMs?.toFixed(1)}ms`);
+      cleanup();
+      if (!results[scenario]) results[scenario] = {};
+      results[scenario][build.name] = e.data;
+      currentIdx++;
+      runNext();
+    }
+  }
+
+  function cleanup() {
+    window.removeEventListener('message', onMessage);
+    clearTimeout(timer);
+    frame.src = 'about:blank';
+  }
+
+  window.addEventListener('message', onMessage);
+  timer = setTimeout(() => {
+    console.warn(`[bench] ${build.name}/${scenario}: TIMEOUT after ${TIMEOUT_MS}ms`);
+    logMsg('timeout', `${build.name}/${scenario}: TIMEOUT after ${TIMEOUT_MS/1000}s — no bench_result received`);
+    cleanup();
+    if (!results[scenario]) results[scenario] = {};
+    results[scenario][build.name] = { avgFps: 0, worstMs: 0, p50: 0, p95: 0, p99: 0, timed_out: true };
+    currentIdx++;
+    runNext();
+  }, TIMEOUT_MS);
+
+  frame.src = build.url;
+}
+
+function renderReport() {
+  document.getElementById('progress').textContent = 'Done.';
+  document.getElementById('report').style.display = 'block';
+
+  let anyRegression = false;
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  let raw = '';
+
+  for (const scenario of SCENARIOS) {
+    const v = results[scenario]?.MVP  || {};
+    const t = results[scenario]?.Port || {};
+
+    const vFps = v.avgFps || 0;
+    const tFps = t.avgFps || 0;
+    const regression = vFps > 0 && tFps > 0 && tFps < vFps * 0.95;
+    if (regression) anyRegression = true;
+
+    const vWorst = v.worstMs || 0;
+    const tWorst = t.worstMs || 0;
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="label">${scenario}</td>
+      <td>${fmtFps(vFps)}</td>
+      <td class="${regression ? 'bad' : 'good'}">${fmtFps(tFps)}</td>
+      <td>${vWorst.toFixed(1)}ms</td>
+      <td>${tWorst.toFixed(1)}ms</td>
+    `;
+    tbody.appendChild(tr);
+
+    raw += `${scenario}:\n`;
+    raw += `  MVP:  p50=${(v.p50||0).toFixed(1)}ms  p95=${(v.p95||0).toFixed(1)}ms  p99=${(v.p99||0).toFixed(1)}ms  worst=${vWorst.toFixed(1)}ms\n`;
+    raw += `  Port: p50=${(t.p50||0).toFixed(1)}ms  p95=${(t.p95||0).toFixed(1)}ms  p99=${(t.p99||0).toFixed(1)}ms  worst=${tWorst.toFixed(1)}ms\n\n`;
+  }
+
+  document.getElementById('rawData').textContent = raw.trim();
+
+  const verdict = document.getElementById('verdict');
+  if (anyRegression) {
+    verdict.className = 'warn';
+    verdict.textContent = 'Regression detected — TS build is >5% slower than vanilla on at least one scenario.';
+  } else {
+    verdict.className = 'ok';
+    verdict.textContent = 'No regression — TS build is within 5% of vanilla across all scenarios.';
+  }
+
+  drawChart();
+}
+
+function fmtFps(fps) {
+  if (!fps) return 'N/A';
+  return fps.toFixed(1);
+}
+
+function drawChart() {
+  const canvas = document.getElementById('chart');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const PAD = { top: 24, right: 16, bottom: 48, left: 48 };
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top - PAD.bottom;
+
+  const allFps = [];
+  for (const s of SCENARIOS) {
+    allFps.push((results[s]?.MVP?.avgFps || 0), (results[s]?.Port?.avgFps || 0));
+  }
+  const maxFps = Math.max(...allFps, 30);
+
+  // Y-axis grid
+  ctx.strokeStyle = '#2a2a2a';
+  ctx.fillStyle = '#666';
+  ctx.font = '10px monospace';
+  for (let fps = 0; fps <= maxFps; fps += 15) {
+    const y = PAD.top + chartH - (fps / maxFps) * chartH;
+    ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(PAD.left + chartW, y); ctx.stroke();
+    ctx.fillText(fps, PAD.left - 28, y + 4);
+  }
+
+  const groupW = chartW / SCENARIOS.length;
+  const BAR_W = groupW * 0.3;
+  const colors = { MVP: '#4488ff', Port: '#00cc66' };
+
+  for (let i = 0; i < SCENARIOS.length; i++) {
+    const s = SCENARIOS[i];
+    const gx = PAD.left + i * groupW;
+    const builds = ['MVP', 'Port'];
+    builds.forEach((b, bi) => {
+      const fps = results[s]?.[b]?.avgFps || 0;
+      const barH = (fps / maxFps) * chartH;
+      const x = gx + groupW * 0.1 + bi * (BAR_W + 4);
+      const y = PAD.top + chartH - barH;
+      ctx.fillStyle = colors[b];
+      ctx.fillRect(x, y, BAR_W, barH);
+    });
+
+    // Label
+    ctx.fillStyle = '#888';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(s, gx + groupW / 2, H - 8);
+  }
+
+  // Legend
+  ctx.textAlign = 'left';
+  ctx.fillStyle = colors.MVP; ctx.fillRect(PAD.left, 4, 12, 12);
+  ctx.fillStyle = '#ccc'; ctx.fillText('MVP', PAD.left + 16, 14);
+  ctx.fillStyle = colors.Port; ctx.fillRect(PAD.left + 80, 4, 12, 12);
+  ctx.fillStyle = '#ccc'; ctx.fillText('Port', PAD.left + 96, 14);
+}
+</script>
+</body>
+</html>
