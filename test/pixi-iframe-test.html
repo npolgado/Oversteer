@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pixi Iframe Init — Diagnostic</title>
+<style>
+* { margin: 0; padding: 0; }
+body { font-family: monospace; background: #111; color: #eee; padding: 24px; }
+h1 { font-size: 1.2rem; margin-bottom: 16px; }
+p.sub { color: #888; font-size: 0.8rem; margin-bottom: 16px; }
+#log { font-size: 0.8rem; line-height: 1.6; }
+#log div { margin: 2px 0; }
+.ok   { color: #0f8; }
+.err  { color: #f44; }
+.info { color: #48f; }
+.warn { color: #f80; }
+iframe { width: 320px; height: 180px; border: 1px solid #333; display: block; margin-top: 16px; }
+button { padding: 8px 20px; font-family: monospace; font-size: 1rem; cursor: pointer;
+  background: #0c6; color: #000; border: none; border-radius: 4px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<h1>Pixi Iframe Init — Diagnostic</h1>
+<p class="sub">
+Tests whether Pixi v8 Application.init() resolves inside an iframe.<br>
+Runs 3 variants: auto-detect, preference:'webgl', preference:'webgpu'.<br>
+Serve via <code>npm run dev</code>, then open <code>/test/pixi-iframe-test.html</code>.
+</p>
+<button onclick="runAll()">Run Tests</button>
+<div id="log"></div>
+<iframe id="frame" src="about:blank"></iframe>
+
+<script>
+const TIMEOUT = 12000;
+const VARIANTS = [
+  { label: 'auto-detect', query: '' },
+  { label: 'forceWebGL', query: '?preference=webgl' },
+  { label: 'forceWebGPU', query: '?preference=webgpu' },
+];
+
+function log(cls, msg) {
+  const d = document.createElement('div');
+  d.className = cls;
+  d.textContent = `[${new Date().toISOString().slice(11,19)}] ${msg}`;
+  document.getElementById('log').appendChild(d);
+}
+
+let queue = [];
+let idx = 0;
+
+function runAll() {
+  document.getElementById('log').innerHTML = '';
+  queue = [...VARIANTS];
+  idx = 0;
+  runNext();
+}
+
+function runNext() {
+  if (idx >= queue.length) { log('ok', 'All tests complete.'); return; }
+  const v = queue[idx];
+  log('info', `--- Test: ${v.label} ---`);
+
+  const frame = document.getElementById('frame');
+  let timer = null;
+
+  function onMsg(e) {
+    if (!e.data || !e.data._pixiTest) return;
+    const d = e.data;
+    if (d.type === 'step') { log('info', `  ${d.msg}`); return; }
+    if (d.type === 'done') {
+      log('ok', `  PASS — init resolved in ${d.ms}ms`);
+      finish();
+    }
+    if (d.type === 'error') {
+      log('err', `  FAIL — ${d.msg}`);
+      finish();
+    }
+  }
+
+  function finish() {
+    window.removeEventListener('message', onMsg);
+    clearTimeout(timer);
+    frame.src = 'about:blank';
+    idx++;
+    setTimeout(runNext, 500);
+  }
+
+  window.addEventListener('message', onMsg);
+  timer = setTimeout(() => {
+    log('warn', `  TIMEOUT — init did not resolve within ${TIMEOUT/1000}s`);
+    finish();
+  }, TIMEOUT);
+
+  frame.src = '/test/pixi-init-diag.html' + v.query;
+}
+</script>
+</body>
+</html>
