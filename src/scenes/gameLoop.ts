@@ -3,7 +3,7 @@
 
 import { Sprite, Assets, Graphics, Text, TextStyle } from 'pixi.js';
 import type { GameContext } from './sceneManager';
-import { CFG, S, applyMap } from '@core/config';
+import { CFG, S, applyMap, type EnemyType } from '@core/config';
 import { makePlayerState, getPlayerSpeed, getPlayerRadius, type PlayerState } from '@gameplay/player/playerState';
 import { updatePlayer } from '@gameplay/player/playerUpdate';
 import { PlayerRenderer } from '@gameplay/player/playerRenderer';
@@ -120,6 +120,9 @@ export class GameLoop {
 
   // Drift squeal edge detection
   private _wasDrifting = false;
+  // NOTE: not in original — edge detection for handbrake burst and boost zone FX.
+  private _wasHandbraking = false;
+  private _wasInBoostZone = false;
 
   // Sub-managers
   private _death: DeathSequence;
@@ -189,7 +192,7 @@ export class GameLoop {
 
     // --- Screen FX + Particles ---
     this._screenFx = new ScreenFX(_ctx.pixiApp.screenFxContainer);
-    this._particles = new ParticleSystem(_ctx.pixiApp.particlesLayer);
+    this._particles = new ParticleSystem(_ctx.pixiApp.particlesLayer, _ctx.pixiApp.sparkTexture, _ctx.camera.isVisible);
 
     // --- Sub-managers ---
     this._death = new DeathSequence(
@@ -235,11 +238,28 @@ export class GameLoop {
       this._screenFx.shake(6, 0.25);
       this._particles.addRing(data.x, data.y, 0x00ffcc);
     };
-    const onEnemyKilledFx = (data: { x: number; y: number; type: string }) => {
-      this._particles.spawn(data.x, data.y, 0xff3b6b, 6, {
-        type: 'shard', vxMin: -200, vxMax: 200, vyMin: -200, vyMax: 200,
-        lifeMin: 0.3, lifeMax: 0.6, sizeMin: 3, sizeMax: 7,
+    const onEnemyKilledFx = (data: { x: number; y: number; type: string; isElite?: boolean }) => {
+      const requests = getDeathParticles({
+        type: data.type as EnemyType,
+        x: data.x, y: data.y,
+        isElite: data.isElite ?? false,
       });
+      for (const req of requests) {
+        if (req.type === 'ring') {
+          if (req.pulse) this._particles.addPulseRing(req.x, req.y, req.color);
+          else           this._particles.addRing(req.x, req.y, req.color);
+          continue;
+        }
+        const v = req.vMin ?? -200;
+        const vMax = req.vMax ?? 200;
+        this._particles.spawn(req.x, req.y, req.color, req.count, {
+          type: req.type,
+          vxMin: v, vxMax: vMax,
+          vyMin: v, vyMax: vMax,
+        });
+      }
+      if (data.type === 'bomber') this._screenFx.shake(4, 0.2);
+      if (data.type === 'elite')  this._screenFx.shake(6, 0.25);
     };
     const onSpawnParticles = (data: { x: number; y: number; type: string; count: number; color?: number }) => {
       this._particles.spawn(data.x, data.y, data.color ?? 0xffffff, data.count, { type: 'spark' });
@@ -446,8 +466,43 @@ export class GameLoop {
 
     // Skid marks when drifting
     if (this._playerState.drifting) {
-      this._particles.addSkid(this._playerState.x, this._playerState.y, 0x222233, 0.5);
+      this._particles.addSkid(
+        this._playerState.x, this._playerState.y,
+        0x222233, 0.5,
+        this._playerState.heading,
+        14,
+      );
     }
+
+    // Handbrake smoke burst on press edge. NOTE: not in original (canvas had inline smoke in physics.js).
+    const isHandbraking = this._playerState.handbrakeTimer > 0;
+    if (isHandbraking && !this._wasHandbraking) {
+      const bx = this._playerState.x - Math.cos(this._playerState.heading) * 20;
+      const by = this._playerState.y - Math.sin(this._playerState.heading) * 20;
+      this._particles.spawn(bx, by, 0x888888, 8, {
+        type: 'smoke',
+        vxMin: -60, vxMax: 60,
+        vyMin: -60, vyMax: 60,
+        lifeMin: 0.4, lifeMax: 0.7,
+      });
+    }
+    this._wasHandbraking = isHandbraking;
+
+    // Boost zone entry FX — cyan burst when player enters a speed zone. NOTE: not in original.
+    const isInBoostZone = this._playerState.speedBoostTimer > 0;
+    if (isInBoostZone && !this._wasInBoostZone) {
+      this._particles.spawn(
+        this._playerState.x, this._playerState.y,
+        0x35F2D0, 8,
+        {
+          type: 'spark',
+          vxMin: -180, vxMax: 180,
+          vyMin: -180, vyMax: 180,
+          lifeMin: 0.2, lifeMax: 0.3,
+        },
+      );
+    }
+    this._wasInBoostZone = isInBoostZone;
   }
 
   private _tickAudio(): void {
@@ -698,8 +753,11 @@ export class GameLoop {
           y:       dead.y,
           isElite: false,
         };
-        getDeathParticles(deathEvent); // stub — particles wired in step 12
-        eventBus.emit('enemyKilled', { x: dead.x, y: dead.y, type: (dead as EnemyState).type });
+        eventBus.emit('enemyKilled', {
+          x: dead.x, y: dead.y,
+          type: (dead as EnemyState).type,
+          isElite: deathEvent.isElite,
+        });
         changed = true;
       }
 

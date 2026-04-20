@@ -4,7 +4,7 @@
 
 export type GameEvents = {
   /** An enemy was destroyed (trail encirclement, bomb, etc.) */
-  enemyKilled: { x: number; y: number; type: string };
+  enemyKilled: { x: number; y: number; type: string; isElite?: boolean };
 
   /** Player passed very close to an enemy or hazard zone */
   nearMiss: { x: number; y: number };
