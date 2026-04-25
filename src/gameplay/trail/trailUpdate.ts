@@ -79,8 +79,8 @@ export function clearTrail(state: TrailState): void {
   state.count = 0;
   state.recordTimer = 0;
   state.checkTimer = 0;
-  state.flashPoly = null;
-  state.flashPolyTimer = 0;
+  // flashPoly and flashPolyTimer intentionally NOT reset here — matches JS clear() behavior.
+  // _detectLoop sets these before returning; clearing them here would erase the encirclement flash.
 }
 
 function _detectLoop(

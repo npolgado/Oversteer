@@ -86,6 +86,24 @@ describe('trail ring buffer', () => {
     expect(state.count).toBe(0);
     expect(state.head).toBe(0);
   });
+
+  it('clearTrail preserves flashPoly and flashPolyTimer (matches JS clear() behavior)', () => {
+    // JS world.js clear() does NOT reset _flashPoly or _flashPolyTimer.
+    // _detectLoop sets these before returning; wiping them in clearTrail would erase
+    // the encirclement flash polygon before it ever renders.
+    const state = makeTrailState();
+    state.flashPoly = [{ x: 10, y: 20 }, { x: 30, y: 40 }];
+    state.flashPolyTimer = 0.3;
+
+    clearTrail(state);
+
+    expect(state.flashPoly).not.toBeNull();
+    expect(state.flashPolyTimer).toBe(0.3);
+    // Core trail data should still be reset
+    expect(state.count).toBe(0);
+    expect(state.head).toBe(0);
+    expect(state.checkTimer).toBe(0);
+  });
 });
 
 // ── Loop detection ────────────────────────────────────────────

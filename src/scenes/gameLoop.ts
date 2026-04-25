@@ -15,6 +15,7 @@ import {
   generateProps,
   checkPlayerCollision as checkPlayerPropCollision,
   handlePropCollisions,
+  checkEnemyPropCollision,
   updatePropCooldowns,
   checkNearMissProp,
   type PropsState,
@@ -637,6 +638,7 @@ export class GameLoop {
         this._gameClock,
         this._ctx.camera.isVisible,
       );
+      checkEnemyPropCollision(this._propsState, this._enemies[i]);
       if (result.despawned) {
         // swap-and-pop
         this._enemies[i] = this._enemies[this._enemies.length - 1];

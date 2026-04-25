@@ -116,7 +116,12 @@ export class ParticleSystem {
         sprite = new Sprite(this._sparkTexture!);
         sprite.anchor.set(0.5);
         sprite.tint = color;
-        this._spriteContainer.addChild(sprite);
+        // ParticleContainer API differs between Pixi versions. Prefer addParticle/removeParticle when available.
+        if ('addParticle' in this._spriteContainer && (this._spriteContainer as any).addParticle) {
+          (this._spriteContainer as any).addParticle(sprite);
+        } else {
+          this._spriteContainer.addChild(sprite);
+        }
       }
 
       this._particles.push({
@@ -161,7 +166,14 @@ export class ParticleSystem {
       if (p.type === 'smoke') p.size += dt * 8;
       p.life -= dt;
       if (p.life <= 0) {
-        if (p.sprite) { this._spriteContainer.removeChild(p.sprite); p.sprite.destroy(); }
+        if (p.sprite) {
+          if ('removeParticle' in this._spriteContainer && (this._spriteContainer as any).removeParticle) {
+            (this._spriteContainer as any).removeParticle(p.sprite);
+          } else {
+            this._spriteContainer.removeChild(p.sprite);
+          }
+          p.sprite.destroy();
+        }
         this._particles[i] = this._particles[this._particles.length - 1];
         this._particles.pop();
         continue;
@@ -254,7 +266,14 @@ export class ParticleSystem {
 
   clear(): void {
     for (const p of this._particles) {
-      if (p.sprite) { this._spriteContainer.removeChild(p.sprite); p.sprite.destroy(); }
+      if (p.sprite) {
+        if ('removeParticle' in this._spriteContainer && (this._spriteContainer as any).removeParticle) {
+          (this._spriteContainer as any).removeParticle(p.sprite);
+        } else {
+          this._spriteContainer.removeChild(p.sprite);
+        }
+        p.sprite.destroy();
+      }
     }
     this._particles = [];
     this._rings = [];

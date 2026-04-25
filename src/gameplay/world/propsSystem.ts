@@ -145,14 +145,19 @@ export function handlePropCollisions(hits: Prop[], player: PlayerState): PropCol
       const dy = player.y - prop.y;
       const dist = Math.hypot(dx, dy) || 1;
       const overlap = pr + prop.radius - dist;
+      // Guard: skip if a prior pushout already resolved this prop (stale hits list)
+      if (overlap <= 0) continue;
       player.x += (dx / dist) * overlap;
       player.y += (dy / dist) * overlap;
       const nx = dx / dist;
       const ny = dy / dist;
       const dot = player.vx * nx + player.vy * ny;
       if (dot < 0) {
-        player.vx -= (1 + CFG.BOUNCE_RETAIN) * dot * nx;
-        player.vy -= (1 + CFG.BOUNCE_RETAIN) * dot * ny;
+        // Match JS: zero the normal component then scale all velocity by 0.3 (absorptive)
+        player.vx -= dot * nx;
+        player.vy -= dot * ny;
+        player.vx *= 0.3;
+        player.vy *= 0.3;
       }
       player.wallHit = true;
       events.push({ type: 'solid_bounce', x: prop.x, y: prop.y });
@@ -187,8 +192,11 @@ export function checkEnemyPropCollision(state: PropsState, enemy: EnemyForProp):
     const ny = dy / d;
     const dot = enemy.vx * nx + enemy.vy * ny;
     if (dot < 0) {
-      enemy.vx -= (1 + CFG.BOUNCE_RETAIN) * dot * nx;
-      enemy.vy -= (1 + CFG.BOUNCE_RETAIN) * dot * ny;
+      // Match JS: zero the normal component then scale all velocity by 0.4 (absorptive)
+      enemy.vx -= dot * nx;
+      enemy.vy -= dot * ny;
+      enemy.vx *= 0.4;
+      enemy.vy *= 0.4;
     }
     enemy.wallHit = true;
   }

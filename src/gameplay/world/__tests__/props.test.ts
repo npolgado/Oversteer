@@ -7,8 +7,10 @@ import {
   getPropsNear,
   checkPlayerCollision,
   handlePropCollisions,
+  checkEnemyPropCollision,
   type Prop,
   type PropsState,
+  type EnemyForProp,
 } from '../propsSystem';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -171,6 +173,104 @@ describe('handlePropCollisions — slip debuff', () => {
     expect(player.slipTimer).toBe(1.5);
     expect(player.slipStrength).toBe(0.6);
     expect(events[0].type).toBe('slip_enter');
+  });
+});
+
+describe('handlePropCollisions — negative overlap guard (multi-prop)', () => {
+  it('skips a prop whose overlap becomes negative after a prior prop pushout', () => {
+    const player = makePlayerState();
+    // Two props on the same side: propA is close (large overlap), propB is further (small overlap).
+    // propA pushes the player left by more than propB's original overlap, making propB's
+    // recalculated overlap negative. Without the guard the player would be pulled back into propA.
+    player.x = 100;
+    player.y = 0;
+    player.vx = 0;
+    player.vy = 0;
+
+    const propA = makeSolidProp(106, 0, 15);   // dist=6, sumR=25, overlap=19 → big push left
+    const propB = makeSolidProp(125, 0, 20);   // original dist=25, sumR=30, overlap=5
+
+    // Manually pass both as hits (simulating checkPlayerCollision result at snapshot time)
+    handlePropCollisions([propA, propB], player);
+
+    // Player should be fully outside propA
+    const distToA = Math.abs(player.x - propA.x);
+    expect(distToA).toBeGreaterThanOrEqual(CFG.PLAYER_RADIUS + propA.radius - 0.01);
+
+    // Player should NOT have been dragged back toward propB (propB's overlap was negative after
+    // propA resolved — the guard must skip it, leaving the player at the propA-resolved position)
+    const distToB = Math.abs(player.x - propB.x);
+    expect(distToB).toBeGreaterThanOrEqual(CFG.PLAYER_RADIUS + propB.radius - 0.01);
+  });
+});
+
+describe('handlePropCollisions — bounce formula damping', () => {
+  it('reduces player speed to ≤30% of incoming speed (absorptive, matches JS)', () => {
+    const player = makePlayerState();
+    player.x = 100;
+    player.y = 0;
+    player.vx = 300; // moving right into prop
+    player.vy = 0;
+
+    // Prop directly ahead, overlapping player
+    const prop = makeSolidProp(115, 0, 15);  // dist=15, sumR=25, overlap=10
+    const incomingSpeed = Math.hypot(player.vx, player.vy);
+
+    handlePropCollisions([prop], player);
+
+    const outgoingSpeed = Math.hypot(player.vx, player.vy);
+    // JS formula zeroes the normal component then scales everything by 0.3
+    expect(outgoingSpeed).toBeLessThanOrEqual(incomingSpeed * 0.31);
+  });
+
+  it('does not add energy on oblique impact', () => {
+    const player = makePlayerState();
+    player.x = 100;
+    player.y = 0;
+    player.vx = 200;
+    player.vy = 150;
+
+    const prop = makeSolidProp(115, 5, 15);
+    const incomingSpeed = Math.hypot(player.vx, player.vy);
+
+    handlePropCollisions([prop], player);
+
+    const outgoingSpeed = Math.hypot(player.vx, player.vy);
+    expect(outgoingSpeed).toBeLessThan(incomingSpeed);
+  });
+});
+
+describe('checkEnemyPropCollision — bounce formula damping', () => {
+  it('reduces enemy speed to ≤40% of incoming speed (absorptive, matches JS)', () => {
+    const state = makePropsState();
+    const prop = makeSolidProp(115, 0, 15);
+    addTestProp(state, prop);
+
+    const enemy: EnemyForProp = {
+      x: 100, y: 0,
+      vx: 300, vy: 0,
+      radius: 10,
+      wallHit: false,
+    };
+
+    const incomingSpeed = Math.hypot(enemy.vx, enemy.vy);
+    checkEnemyPropCollision(state, enemy);
+    const outgoingSpeed = Math.hypot(enemy.vx, enemy.vy);
+
+    // JS formula: zero normal component then scale by 0.4
+    expect(outgoingSpeed).toBeLessThanOrEqual(incomingSpeed * 0.41);
+  });
+
+  it('sets wallHit on the enemy', () => {
+    const state = makePropsState();
+    addTestProp(state, makeSolidProp(115, 0, 15));
+
+    const enemy: EnemyForProp = {
+      x: 100, y: 0, vx: 200, vy: 0, radius: 10, wallHit: false,
+    };
+
+    checkEnemyPropCollision(state, enemy);
+    expect(enemy.wallHit).toBe(true);
   });
 });
 
