@@ -115,6 +115,13 @@ export class GameLoop {
   private _pauseHint: Text | null = null;
   private _preMuteMusicVol = 0;
 
+  // Post-upgrade-selection countdown overlay
+  private _cdBg: Graphics | null = null;
+  private _cdIcon: Text | null = null;
+  private _cdName: Text | null = null;
+  private _cdNum: Text | null = null;
+  private _cdWave: Text | null = null;
+
   // Wave announce (game.js:280-281)
   private _waveAnnounceTimer = 0;
   private _waveAnnounceNum = 0;
@@ -313,7 +320,7 @@ export class GameLoop {
       this._setupBenchmark(_opts.benchmark);
     }
 
-    const bgTexture = Assets.get('background_01');
+    const bgTexture = Assets.get(CFG.BACKGROUND_SPRITE);
     if (bgTexture) {
       const bg = new Sprite(bgTexture);
       bg.width = CFG.WORLD_W;
@@ -395,6 +402,15 @@ export class GameLoop {
     // --- Upgrade break phase: skip game logic, handle card UI ---
     if (this._upgradeBreak.active) {
       this._upgradeBreak.update(dt, input, this._playerState, this._trailState, this._waveState);
+      if (this._upgradeBreak.upgradeChosen) {
+        this._renderUpgradeCountdown(
+          this._upgradeBreak.chosenUpgrade,
+          this._upgradeBreak.upgradeConfirmTimer,
+          this._waveState.waveIndex,
+        );
+      } else {
+        this._hideUpgradeCountdown();
+      }
       // Render scene during break (same as end of main loop, minus enemies)
       this._trailRenderer.update(this._trailState);
       this._playerRenderer.update(this._playerState);
@@ -429,6 +445,7 @@ export class GameLoop {
       return;
     }
 
+    this._hideUpgradeCountdown();
     this._runSystems(rawDt, dilatedDt, input);
   }
 
@@ -959,6 +976,70 @@ export class GameLoop {
     this._pausePerfText.position.set(CFG.W / 2, CFG.H / 2 + S(50));
   }
 
+  private _renderUpgradeCountdown(
+    upgrade: { icon: string; name: string } | null,
+    timer: number,
+    waveIndex: number,
+  ): void {
+    const layer = this._ctx.pixiApp.overlayLayer;
+
+    // Create once if null; re-add to layer if UpgradeCardsUI.hide() removed it via removeChildren().
+    if (!this._cdBg) {
+      this._cdBg = new Graphics();
+    }
+    if (!this._cdBg.parent) layer.addChild(this._cdBg);
+
+    if (!this._cdIcon) {
+      this._cdIcon = new Text({ text: '', style: new TextStyle({ fontFamily: 'Courier New, monospace', fontSize: S(48), fontWeight: 'bold', fill: CFG.C_ACCENT, dropShadow: { color: '#000', blur: 2, distance: 1 } }) });
+      this._cdIcon.anchor.set(0.5, 0.5);
+      this._cdIcon.position.set(CFG.W / 2, CFG.H / 2 - S(60));
+    }
+    if (!this._cdIcon.parent) layer.addChild(this._cdIcon);
+
+    if (!this._cdName) {
+      this._cdName = new Text({ text: '', style: new TextStyle({ fontFamily: 'Courier New, monospace', fontSize: S(22), fontWeight: 'bold', fill: CFG.C_TEXT, dropShadow: { color: '#000', blur: 2, distance: 1 } }) });
+      this._cdName.anchor.set(0.5, 0.5);
+      this._cdName.position.set(CFG.W / 2, CFG.H / 2 - S(15));
+    }
+    if (!this._cdName.parent) layer.addChild(this._cdName);
+
+    if (!this._cdNum) {
+      this._cdNum = new Text({ text: '', style: new TextStyle({ fontFamily: 'Courier New, monospace', fontSize: S(48), fontWeight: 'bold', fill: CFG.C_ACCENT, dropShadow: { color: '#000', blur: 2, distance: 1 } }) });
+      this._cdNum.anchor.set(0.5, 0.5);
+      this._cdNum.position.set(CFG.W / 2, CFG.H / 2 + S(40));
+    }
+    if (!this._cdNum.parent) layer.addChild(this._cdNum);
+
+    if (!this._cdWave) {
+      this._cdWave = new Text({ text: '', style: new TextStyle({ fontFamily: 'Courier New, monospace', fontSize: S(16), fill: '#888888', dropShadow: { color: '#000', blur: 2, distance: 1 } }) });
+      this._cdWave.anchor.set(0.5, 0.5);
+      this._cdWave.position.set(CFG.W / 2, CFG.H / 2 + S(80));
+    }
+    if (!this._cdWave.parent) layer.addChild(this._cdWave);
+
+    this._cdBg.clear();
+    this._cdBg.rect(0, 0, CFG.W, CFG.H).fill({ color: 0x000000, alpha: 0.7 });
+    this._cdBg.visible = true;
+    if (upgrade) {
+      this._cdIcon.text = upgrade.icon;
+      this._cdName.text = upgrade.name;
+    }
+    this._cdNum.text = `${Math.ceil(Math.max(0, timer))}`;
+    this._cdWave.text = `Wave ${waveIndex + 1} incoming...`;
+    this._cdIcon.visible = true;
+    this._cdName.visible = true;
+    this._cdNum.visible = true;
+    this._cdWave.visible = true;
+  }
+
+  private _hideUpgradeCountdown(): void {
+    if (this._cdBg)   this._cdBg.visible   = false;
+    if (this._cdIcon) this._cdIcon.visible  = false;
+    if (this._cdName) this._cdName.visible  = false;
+    if (this._cdNum)  this._cdNum.visible   = false;
+    if (this._cdWave) this._cdWave.visible  = false;
+  }
+
   private _setupBenchmark(scenario: string): void {
     const BENCH_DEFS: Record<string, { enemyCount: number; drift: boolean }> = {
       idle_5:   { enemyCount: 5,  drift: false },
@@ -1047,6 +1128,11 @@ export class GameLoop {
 
   destroy(): void {
     inputManager.overrideState = null;
+    this._cdBg?.destroy();
+    this._cdIcon?.destroy();
+    this._cdName?.destroy();
+    this._cdNum?.destroy();
+    this._cdWave?.destroy();
     this._perf.destroy();
     this._pausePerfText?.destroy();
     this._ctx.audioManager.stopAll();

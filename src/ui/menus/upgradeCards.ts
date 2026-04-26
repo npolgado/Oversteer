@@ -2,6 +2,7 @@
 
 import { Graphics, Text, TextStyle, Container } from 'pixi.js';
 import type { UpgradeDef } from '@gameplay/upgrades/upgradeRegistry';
+import { UPGRADE_REGISTRY } from '@gameplay/upgrades/upgradeRegistry';
 import type { InputState } from '@input/inputManager';
 import { CFG, S } from '@core/config';
 
@@ -30,7 +31,7 @@ export class UpgradeCardsUI {
     this._layer = overlayLayer;
   }
 
-  show(cards: UpgradeDef[], rerollsLeft: number): void {
+  show(cards: UpgradeDef[], rerollsLeft: number, ownedUpgrades: string[] = []): void {
     this.hide();
     this._animTimer = 0;
     this._visible = true;
@@ -118,6 +119,45 @@ export class UpgradeCardsUI {
     const rbX = CFG.W / 2 - rbW / 2;
     const rbY = CFG.H - S(35) - rbH / 2;
     this._rerollBounds = { x: rbX, y: rbY, w: rbW, h: rbH };
+
+    // Owned upgrades summary
+    if (ownedUpgrades.length > 0) {
+      const counts = new Map<string, { name: string; count: number }>();
+      for (const id of ownedUpgrades) {
+        const def = UPGRADE_REGISTRY.find(u => u.id === id);
+        if (!def) continue;
+        const entry = counts.get(id);
+        if (entry) entry.count++;
+        else counts.set(id, { name: def.name, count: 1 });
+      }
+      const itemStr = Array.from(counts.values())
+        .map(({ count, name }) => `${count}x ${name}`)
+        .join('  ·  ');
+
+      const labelY = cardY + CARD_H + S(24);
+      const label = new Text({
+        text: 'OWNED UPGRADES',
+        style: new TextStyle({ fill: '#555566', fontSize: S(11), fontFamily: 'Courier New, monospace', letterSpacing: 1 }),
+      });
+      label.anchor.set(0.5, 0);
+      label.position.set(CFG.W / 2, labelY);
+      this._layer.addChild(label);
+
+      const itemsTxt = new Text({
+        text: itemStr,
+        style: new TextStyle({
+          fill: '#99aabb',
+          fontSize: S(13),
+          fontFamily: 'Courier New, monospace',
+          wordWrap: true,
+          wordWrapWidth: CFG.W - S(120),
+          align: 'center',
+        }),
+      });
+      itemsTxt.anchor.set(0.5, 0);
+      itemsTxt.position.set(CFG.W / 2, labelY + S(18));
+      this._layer.addChild(itemsTxt);
+    }
   }
 
   hide(): void {

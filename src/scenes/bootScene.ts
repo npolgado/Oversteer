@@ -22,8 +22,8 @@ const ASSETS_TO_LOAD = [
   { alias: 'mud_1',   src: 'props/mud_1.png' },
   { alias: 'bush_1',  src: 'props/bush_1.png' },
   // Backgrounds
-  { alias: 'background_01', src: 'backgrounds/background_01.png' },
-  { alias: 'background_02', src: 'backgrounds/background_02.png' },
+  { alias: 'backgrounds/background_01.png', src: 'backgrounds/background_01.png' },
+  { alias: 'backgrounds/background_02.png', src: 'backgrounds/background_02.png' },
 ];
 
 export class BootScene implements Scene {

@@ -21,6 +21,11 @@ export class UpgradeBreakPhase {
   private _cardAnimTimer = 0;
   private _currentOffer: UpgradeDef[] = [];
   private _rerollsLeft = 0;
+  private _chosenUpgrade: UpgradeDef | null = null;
+
+  get upgradeChosen(): boolean { return this._upgradeChosen; }
+  get upgradeConfirmTimer(): number { return this._upgradeConfirmTimer; }
+  get chosenUpgrade(): UpgradeDef | null { return this._chosenUpgrade; }
 
   constructor(
     private _upgradeCards: UpgradeCardsUI,
@@ -37,6 +42,7 @@ export class UpgradeBreakPhase {
     this.active = true;
     this._upgradeChosen = false;
     this._upgradeConfirmTimer = CFG.UPGRADE_CONFIRM_TIME;
+    this._chosenUpgrade = null;
     this._cardAnimTimer = 0;
     this._rerollsLeft = getRerollCount(playerState);
     this._currentOffer = buildUpgradeOffer(playerState);
@@ -50,7 +56,7 @@ export class UpgradeBreakPhase {
     playerState.driftChain = 0;
     playerState.frozen = true;
     if (this._currentOffer.length > 0) {
-      this._upgradeCards.show(this._currentOffer, this._rerollsLeft);
+      this._upgradeCards.show(this._currentOffer, this._rerollsLeft, playerState.upgrades);
     }
   }
 
@@ -82,6 +88,7 @@ export class UpgradeBreakPhase {
           // speed_demon: enemies also get +10% speed bonus (game.js:422-426)
           if (upgrade.id === 'speed_demon') waveState.speedBonus += 40;
           eventBus.emit('upgradeApplied', { id: upgrade.id });
+          this._chosenUpgrade = upgrade;
           this._upgradeChosen = true;
           this._upgradeCards.hide();
         }
@@ -92,7 +99,7 @@ export class UpgradeBreakPhase {
           this._rerollsLeft--;
           this._currentOffer = newOffer;
           this._cardAnimTimer = 0;
-          this._upgradeCards.show(this._currentOffer, this._rerollsLeft);
+          this._upgradeCards.show(this._currentOffer, this._rerollsLeft, playerState.upgrades);
         }
       }
     }
