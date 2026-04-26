@@ -55,6 +55,7 @@ import { inputManager } from '@input/inputManager';
 import type { InputState } from '@input/inputManager';
 import { PerfOverlay } from '@ui/PerfOverlay';
 import { ScreenFX } from '@render/screenFx';
+import { SpeedLines } from '@render/speedLines';
 import { ParticleSystem } from '@render/particles';
 import { DIFFICULTY_MODIFIERS, computeModifierScoreMult } from '@content/maps';
 import { sceneManager } from './sceneManager';
@@ -91,6 +92,7 @@ export class GameLoop {
   private _evListeners: Array<() => void> = [];
 
   private _screenFx: ScreenFX;
+  private _speedLines: SpeedLines;
   private _particles: ParticleSystem;
   private _arenaGlow: Graphics;
 
@@ -141,7 +143,9 @@ export class GameLoop {
       worldContainer,
       backgroundLayer,
       playerLayer,
+      playerBloomLayer,
       trailLayer,
+      trailBloomLayer,
       propsLayer,
       enemiesLayer,
     } = _ctx.pixiApp;
@@ -175,9 +179,9 @@ export class GameLoop {
       }
     }
 
-    this._playerRenderer = new PlayerRenderer({ playerLayer });
+    this._playerRenderer = new PlayerRenderer({ playerLayer, playerBloomLayer });
     this._trailState = makeTrailState();
-    this._trailRenderer = new TrailRenderer({ trailLayer });
+    this._trailRenderer = new TrailRenderer({ trailLayer, trailBloomLayer });
     this._propsState = makePropsState();
     generateProps(this._propsState);
     this._propsRenderer = new PropsRenderer({ propsLayer });
@@ -199,7 +203,9 @@ export class GameLoop {
     this._perf = new PerfOverlay(_ctx.pixiApp.hudLayer);
 
     // --- Screen FX + Particles ---
-    this._screenFx = new ScreenFX(_ctx.pixiApp.screenFxContainer);
+    this._screenFx = new ScreenFX(_ctx.pixiApp.screenFxContainer, _ctx.pixiApp.app.renderer as any);
+    // SpeedLines sits on top of vignette/flash inside screenFxContainer (port of game.js:1270-1294).
+    this._speedLines = new SpeedLines(_ctx.pixiApp.screenFxContainer);
     this._particles = new ParticleSystem(_ctx.pixiApp.particlesLayer, _ctx.pixiApp.sparkTexture, _ctx.camera.isVisible);
 
     // --- Sub-managers ---
@@ -440,6 +446,13 @@ export class GameLoop {
       this._eventLog.update(dt);
       this._ctx.camera.update(dilatedDt, this._playerState.x, this._playerState.y, 0, 0, 0);
       this._screenFx.applyToContainer(this._ctx.pixiApp.worldContainer);
+      this._speedLines.update(
+        getPlayerSpeed(this._playerState),
+        this._playerState.maxSpeed,
+        this._playerState.heading,
+        this._gameClock,
+        true,
+      );
       this._particles.update(dilatedDt);
       this._drawArenaGlow();
       return;
@@ -859,6 +872,13 @@ export class GameLoop {
       getPlayerSpeed(this._playerState),
     );
     this._screenFx.applyToContainer(this._ctx.pixiApp.worldContainer);
+    this._speedLines.update(
+      getPlayerSpeed(this._playerState),
+      this._playerState.maxSpeed,
+      this._playerState.heading,
+      this._gameClock,
+      !this._death.active,
+    );
     this._particles.update(dilatedDt);
     this._drawArenaGlow();
   }
@@ -1145,6 +1165,7 @@ export class GameLoop {
     this._hudManager.destroy();
     this._eventLog.destroy();
     this._screenFx.destroy();
+    this._speedLines.destroy();
     this._particles.destroy();
     for (const remove of this._evListeners) remove();
     this._evListeners = [];

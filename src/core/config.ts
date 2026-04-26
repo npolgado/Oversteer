@@ -195,6 +195,18 @@ export interface CfgShape {
   PLAYER_SPRITE: string;
   ENEMY_SPRITES_BY_TYPE: EnemySprites;
   BACKGROUND_SPRITE: string;
+  // Bloom — NOTE: not in original
+  BLOOM_BLUR_STRENGTH: number;
+  BLOOM_BLUR_QUALITY: number;
+  BLOOM_TRAIL_WIDTH_MULT: number;
+  BLOOM_TRAIL_ALPHA_MULT: number;
+  BLOOM_PLAYER_GLOW_RADIUS_MULT: number;
+  // Vignette — port of arena-drifter/fx.js:51-61
+  VIGNETTE_INNER: number;
+  VIGNETTE_OUTER: number;
+  VIGNETTE_ALPHA: number;
+  // Speed lines — port of arena-drifter/game.js:1270-1294
+  SPEED_LINES_THRESHOLD: number;
 }
 
 // Mutable at runtime — applyMap() writes into this object.
@@ -361,6 +373,18 @@ export const CFG: CfgShape = {
   ],
   // Sprites
   PLAYER_SPRITE: 'cars/player.png',
+  // Bloom — NOTE: not in original
+  BLOOM_BLUR_STRENGTH: 8,
+  BLOOM_BLUR_QUALITY: 2,
+  BLOOM_TRAIL_WIDTH_MULT: 2.5,
+  BLOOM_TRAIL_ALPHA_MULT: 0.5,
+  BLOOM_PLAYER_GLOW_RADIUS_MULT: 2.5,
+  // Vignette — port of arena-drifter/fx.js:51-61
+  VIGNETTE_INNER: 0.3,
+  VIGNETTE_OUTER: 0.7,
+  VIGNETTE_ALPHA: 0.5,
+  // Speed lines — port of arena-drifter/game.js:1270-1294
+  SPEED_LINES_THRESHOLD: 0.7,
   ENEMY_SPRITES_BY_TYPE: {
     chaser:      ['cars/enemy_red.png', 'cars/enemy_orange.png'],
     interceptor: ['cars/police.png', 'cars/ambulance.png'],

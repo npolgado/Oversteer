@@ -1,5 +1,6 @@
 import 'pixi.js/browser';
-import { Application, Container, WebGLRenderer, Graphics, Texture } from 'pixi.js';
+import { Application, Container, WebGLRenderer, Graphics, Texture, BlurFilter } from 'pixi.js';
+import { CFG } from '@core/config';
 
 const app = new Application();
 
@@ -8,9 +9,13 @@ const worldContainer = new Container();
 const backgroundLayer = new Container();
 const propsLayer = new Container();
 const trailLayer = new Container();
+// NOTE: not in original — blurred bright-pass duplicate of trail for bloom effect.
+const trailBloomLayer = new Container();
 const pickupsLayer = new Container();
 const enemiesLayer = new Container();
 const playerLayer = new Container();
+// NOTE: not in original — blurred bright-pass of player position for engine glow effect.
+const playerBloomLayer = new Container();
 const particlesLayer = new Container();
 
 // Screen-fixed UI containers
@@ -69,13 +74,22 @@ async function init(opts?: { forceWebGL?: boolean }): Promise<void> {
   const canvas = app.canvas as HTMLCanvasElement;
   canvas.style.imageRendering = 'pixelated';
 
+  // Bloom layers: BlurFilter on an additive-blend container creates the cheap-bloom halo.
+  // NOTE: not in original.
+  trailBloomLayer.filters = [new BlurFilter({ strength: CFG.BLOOM_BLUR_STRENGTH, quality: CFG.BLOOM_BLUR_QUALITY })];
+  trailBloomLayer.blendMode = 'add';
+  playerBloomLayer.filters = [new BlurFilter({ strength: CFG.BLOOM_BLUR_STRENGTH, quality: CFG.BLOOM_BLUR_QUALITY })];
+  playerBloomLayer.blendMode = 'add';
+
   // Build layer hierarchy — back to front
   worldContainer.addChild(
     backgroundLayer,
     propsLayer,
     trailLayer,
+    trailBloomLayer,
     pickupsLayer,
     enemiesLayer,
+    playerBloomLayer,
     playerLayer,
     particlesLayer,
   );
@@ -110,9 +124,11 @@ export const PixiApp = {
   backgroundLayer,
   propsLayer,
   trailLayer,
+  trailBloomLayer,
   pickupsLayer,
   enemiesLayer,
   playerLayer,
+  playerBloomLayer,
   particlesLayer,
   uiContainer,
   hudLayer,

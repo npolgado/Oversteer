@@ -1,7 +1,8 @@
 // screenFx.ts — Transient screen effects: shake, flash, slowmo, freeze, desaturation.
 // Ported from arena-drifter/fx.js:268-390 (source of truth for all numeric values).
+// Vignette ported from arena-drifter/fx.js:51-61.
 
-import { Graphics, Container } from 'pixi.js';
+import { Graphics, Container, Sprite, getCanvasTexture, type Renderer } from 'pixi.js';
 import { CFG } from '@core/config';
 import { lerp } from '@core/utils';
 
@@ -38,12 +39,35 @@ export class ScreenFX {
   private _flashGfx: Graphics;
   private _desatGfx: Graphics;
   private _container: Container;
+  private _vignetteSprite: Sprite | null = null;
 
-  constructor(screenFxContainer: Container) {
+  constructor(screenFxContainer: Container, renderer?: Renderer) {
     this._container = screenFxContainer;
     this._flashGfx = new Graphics();
     this._desatGfx = new Graphics();
+    // Vignette sits behind flash/desat; speed lines (SpeedLines class) sit on top.
+    if (renderer) this._vignetteSprite = this._buildVignette(renderer, screenFxContainer);
     screenFxContainer.addChild(this._flashGfx, this._desatGfx);
+  }
+
+  // Port of arena-drifter/fx.js:51-61 — radial gradient from transparent center to dark edges.
+  private _buildVignette(_renderer: Renderer, container: Container): Sprite {
+    const canvas = document.createElement('canvas');
+    canvas.width = CFG.W;
+    canvas.height = CFG.H;
+    const cx = canvas.getContext('2d')!;
+    const vig = cx.createRadialGradient(
+      CFG.W / 2, CFG.H / 2, CFG.H * CFG.VIGNETTE_INNER,
+      CFG.W / 2, CFG.H / 2, CFG.W * CFG.VIGNETTE_OUTER,
+    );
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, `rgba(0,0,0,${CFG.VIGNETTE_ALPHA})`);
+    cx.fillStyle = vig;
+    cx.fillRect(0, 0, CFG.W, CFG.H);
+    const tex = getCanvasTexture(canvas);
+    const spr = new Sprite(tex);
+    container.addChildAt(spr, 0); // behind flash and desat
+    return spr;
   }
 
   shake(intensity: number, dur: number, dirX = 0, dirY = 0): void {
@@ -170,5 +194,6 @@ export class ScreenFX {
   destroy(): void {
     this._flashGfx.destroy();
     this._desatGfx.destroy();
+    this._vignetteSprite?.destroy();
   }
 }
