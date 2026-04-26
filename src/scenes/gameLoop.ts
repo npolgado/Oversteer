@@ -203,7 +203,7 @@ export class GameLoop {
     this._perf = new PerfOverlay(_ctx.pixiApp.hudLayer);
 
     // --- Screen FX + Particles ---
-    this._screenFx = new ScreenFX(_ctx.pixiApp.screenFxContainer, _ctx.pixiApp.app.renderer as any);
+    this._screenFx = new ScreenFX(_ctx.pixiApp.screenFxContainer, true);
     // SpeedLines sits on top of vignette/flash inside screenFxContainer (port of game.js:1270-1294).
     this._speedLines = new SpeedLines(_ctx.pixiApp.screenFxContainer);
     this._particles = new ParticleSystem(_ctx.pixiApp.particlesLayer, _ctx.pixiApp.sparkTexture, _ctx.camera.isVisible);
@@ -451,7 +451,7 @@ export class GameLoop {
         this._playerState.maxSpeed,
         this._playerState.heading,
         this._gameClock,
-        true,
+        !this._death.active,
       );
       this._particles.update(dilatedDt);
       this._drawArenaGlow();

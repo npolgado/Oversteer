@@ -1,8 +1,9 @@
 // screenFx.ts — Transient screen effects: shake, flash, slowmo, freeze, desaturation.
 // Ported from arena-drifter/fx.js:268-390 (source of truth for all numeric values).
 // Vignette ported from arena-drifter/fx.js:51-61.
+// TODO: port chromatic aberration from arena-drifter/game.js:1297-1318 (red/blue edge tints at >80% speed or DYING).
 
-import { Graphics, Container, Sprite, getCanvasTexture, type Renderer } from 'pixi.js';
+import { Graphics, Container, Sprite, getCanvasTexture } from 'pixi.js';
 import { CFG } from '@core/config';
 import { lerp } from '@core/utils';
 
@@ -41,17 +42,17 @@ export class ScreenFX {
   private _container: Container;
   private _vignetteSprite: Sprite | null = null;
 
-  constructor(screenFxContainer: Container, renderer?: Renderer) {
+  constructor(screenFxContainer: Container, enableVignette = false) {
     this._container = screenFxContainer;
     this._flashGfx = new Graphics();
     this._desatGfx = new Graphics();
-    // Vignette sits behind flash/desat; speed lines (SpeedLines class) sit on top.
-    if (renderer) this._vignetteSprite = this._buildVignette(renderer, screenFxContainer);
+    // flash/desat first; vignette on top; SpeedLines (added externally) sits on top of all.
     screenFxContainer.addChild(this._flashGfx, this._desatGfx);
+    if (enableVignette) this._vignetteSprite = this._buildVignette(screenFxContainer);
   }
 
   // Port of arena-drifter/fx.js:51-61 — radial gradient from transparent center to dark edges.
-  private _buildVignette(_renderer: Renderer, container: Container): Sprite {
+  private _buildVignette(container: Container): Sprite {
     const canvas = document.createElement('canvas');
     canvas.width = CFG.W;
     canvas.height = CFG.H;
@@ -66,7 +67,7 @@ export class ScreenFX {
     cx.fillRect(0, 0, CFG.W, CFG.H);
     const tex = getCanvasTexture(canvas);
     const spr = new Sprite(tex);
-    container.addChildAt(spr, 0); // behind flash and desat
+    container.addChild(spr); // on top of flash/desat, below SpeedLines
     return spr;
   }
 

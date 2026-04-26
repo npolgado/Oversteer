@@ -18,7 +18,9 @@
       "Bash(npx tsc:*)",
       "Bash(npx vitest:*)",
       "Bash(xargs grep:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(git show *)",
+      "Bash(git *)"
     ]
   }
 }

@@ -273,26 +273,7 @@ describe('UpgradeBreakPhase special upgrade side effects', () => {
     expect(wave.speedBonus).toBe(40);
   });
 
-  it('speed_demon stacks: second speed_demon adds another 40', () => {
-    // First pick
-    vi.spyOn(upgradeSystem, 'buildUpgradeOffer').mockReturnValue([UPGRADE_BY_ID.get('speed_demon')!]);
-    const cards = makeCards();
-    const phase = new UpgradeBreakPhase(cards as any, mockAudio as any, vi.fn());
-    const player = makePlayerState();
-    const wave = makeWaveState();
-    const trail = makeTrailState();
 
-    phase.enter(player, wave);
-    cards.checkInput.mockReturnValueOnce(0);
-    phase.update(0.016, noInput, player, trail, wave);
-
-    // Simulate the break ending and a new one starting
-    wave.speedBonus = 40; // already set from first pick
-    // speed_demon is non-stackable so it wouldn't normally appear, but waveState mutation is what we're checking
-    expect(wave.speedBonus).toBe(40);
-
-    vi.restoreAllMocks();
-  });
 });
 
 // ── reroll ────────────────────────────────────────────────────────────────────
