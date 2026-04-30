@@ -74,7 +74,7 @@ if (isInIframe) {
   dbg('boot_scene_switched');
 } else {
   sceneManager.switchTo(new BootScene(() => {
-    sceneManager.switchTo(new MenuScene());
+    sceneManager.switchTo(new MenuScene(), { fade: 0.25 });
   }));
 }
 
