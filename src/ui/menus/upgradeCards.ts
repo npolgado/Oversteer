@@ -5,16 +5,15 @@ import type { UpgradeDef } from '@gameplay/upgrades/upgradeRegistry';
 import { UPGRADE_REGISTRY } from '@gameplay/upgrades/upgradeRegistry';
 import type { InputState } from '@input/inputManager';
 import { CFG, S } from '@core/config';
+import { uiTween, killUITweens } from '@render/tween';
 
 const CARD_W = S(220);
 const CARD_H = S(300);
 const CARD_GAP = S(30);
-const SLIDE_DUR = 0.3;
 
 interface CardGraphics {
   container: Container;
   targetY: number;
-  startY: number;
 }
 
 export class UpgradeCardsUI {
@@ -24,7 +23,6 @@ export class UpgradeCardsUI {
   private _rerollText: Text | null = null;
   private _cardBounds: Array<{ x: number; y: number; w: number; h: number }> = [];
   private _rerollBounds: { x: number; y: number; w: number; h: number } | null = null;
-  private _animTimer = 0;
   private _visible = false;
 
   constructor(overlayLayer: Container) {
@@ -32,8 +30,7 @@ export class UpgradeCardsUI {
   }
 
   show(cards: UpgradeDef[], rerollsLeft: number, ownedUpgrades: string[] = []): void {
-    this.hide();
-    this._animTimer = 0;
+    this._clearLayer();
     this._visible = true;
     this._cardBounds = [];
 
@@ -58,7 +55,8 @@ export class UpgradeCardsUI {
       const cx = startX + i * (CARD_W + CARD_GAP);
       const container = new Container();
       container.x = cx;
-      container.y = offscreenY; // start below screen
+      container.y = offscreenY;
+      container.alpha = 0;
 
       // Card background
       const bg = new Graphics();
@@ -103,7 +101,14 @@ export class UpgradeCardsUI {
       this._layer.addChild(container);
       this._cardBounds.push({ x: cx, y: cardY, w: CARD_W, h: CARD_H });
 
-      return { container, targetY: cardY, startY: offscreenY };
+      // Staggered slide-up + fade-in (restores original arena-drifter stagger)
+      uiTween(container, {
+        y: cardY, alpha: 1,
+        duration: 0.35, delay: i * 0.08,
+        ease: 'back.out(1.4)',
+      });
+
+      return { container, targetY: cardY };
     });
 
     // Reroll button
@@ -160,26 +165,30 @@ export class UpgradeCardsUI {
     }
   }
 
-  hide(): void {
-    this._layer.removeChildren();
-    this._cards = [];
-    this._rerollBtn = null;
-    this._rerollText = null;
-    this._cardBounds = [];
-    this._rerollBounds = null;
-    this._visible = false;
-  }
-
-  update(dt: number): void {
+  async hide(): Promise<void> {
     if (!this._visible) return;
-    this._animTimer = Math.min(this._animTimer + dt, SLIDE_DUR);
-    const t = this._animTimer / SLIDE_DUR;
-    const ease = 1 - Math.pow(1 - t, 3); // ease-out cubic
+    this._visible = false;
 
-    for (const card of this._cards) {
-      card.container.y = card.startY + (card.targetY - card.startY) * ease;
+    // Fade cards out and slide down before clearing
+    if (this._cards.length > 0) {
+      await Promise.all(this._cards.map(c =>
+        uiTween(c.container, { alpha: 0, y: c.container.y + S(20), duration: 0.2, ease: 'power2.in' }),
+      ));
     }
+
+    // Kill any in-flight card tweens before destroying
+    for (const c of this._cards) killUITweens(c.container);
+    this._clearLayer();
   }
+
+  /** Pulse reroll button when clicked. */
+  pulseRerollBtn(): void {
+    if (!this._rerollText) return;
+    uiTween(this._rerollText, { scaleX: 0.92, scaleY: 0.92, duration: 0.08, yoyo: true, repeat: 1 });
+  }
+
+  // No-op: animation is driven by GSAP, not the game loop.
+  update(_dt: number): void {}
 
   checkInput(
     input: Pick<InputState, 'select1' | 'select2' | 'select3' | 'reroll'>,
@@ -211,6 +220,15 @@ export class UpgradeCardsUI {
   }
 
   destroy(): void {
-    this.hide();
+    this._clearLayer();
+  }
+
+  private _clearLayer(): void {
+    this._layer.removeChildren();
+    this._cards = [];
+    this._rerollBtn = null;
+    this._rerollText = null;
+    this._cardBounds = [];
+    this._rerollBounds = null;
   }
 }
