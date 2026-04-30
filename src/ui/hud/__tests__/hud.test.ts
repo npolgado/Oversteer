@@ -6,7 +6,16 @@ import { Container } from 'pixi.js';
 import { EventLog } from '../eventLog';
 import { HudManager, type HudData } from '../hudManager';
 
-// ── Mock PixiJS Container / Text ───────────────────────────────
+// ── Mock @render/tween ───────────────────────────────────────────
+// uiTween returns a resolved Promise; killUITweens is a no-op.
+vi.mock('@render/tween', () => ({
+  uiTween: vi.fn().mockResolvedValue(undefined),
+  killUITweens: vi.fn(),
+  pauseUITweens: vi.fn(),
+  resumeUITweens: vi.fn(),
+}));
+
+// ── Mock PixiJS Container / Text ─────────────────────────────────
 // Vitest runs in Node (no DOM/WebGL). We mock the pixi.js module so
 // EventLog can be tested without a renderer.
 
@@ -15,9 +24,12 @@ vi.mock('pixi.js', () => {
     text = '';
     alpha = 1;
     visible = true;
-    style: Record<string, unknown> = {};
+    style: Record<string, unknown> = { fill: '' };
+    scale = { set: vi.fn(), x: 1, y: 1 };
     anchor = { set: vi.fn() };
-    position = { set: vi.fn() };
+    position = { set: vi.fn(), x: 0, y: 0 };
+    x = 0;
+    y = 0;
     destroy = vi.fn();
     constructor(opts: { text?: string } = {}) { this.text = opts.text ?? ''; }
   }
@@ -37,6 +49,7 @@ vi.mock('pixi.js', () => {
     removeChildren = vi.fn(() => { this.children = []; });
   }
   class MockTextStyle {
+    fill = '';
     constructor(public opts: Record<string, unknown> = {}) {}
   }
   return {
@@ -47,7 +60,7 @@ vi.mock('pixi.js', () => {
   };
 });
 
-// ── EventLog ───────────────────────────────────────────────────
+// ── EventLog ─────────────────────────────────────────────────────
 
 function makeLog() {
   const layer = new Container();
@@ -65,25 +78,20 @@ describe('EventLog.add', () => {
     const log = makeLog();
     for (let i = 0; i < 10; i++) log.add(`Entry ${i}`, 0xffffff);
     // Can only verify indirectly via update not throwing
-    // The internal array is private, but we can tick time past all entries
-    // and check nothing throws
     for (let i = 0; i < 10; i++) log.update(0.1);
   });
 });
 
 describe('EventLog.update', () => {
-  it('removes entries after 3.5s', () => {
-    const log = makeLog();
-    log.add('FADE ME', 0xffffff);
-    // Advance past lifetime in one large tick
-    log.update(4.0);
-    // Advance again — should not throw even with 0 entries
-    log.update(0.1);
-  });
-
   it('does not throw on empty log', () => {
     const log = makeLog();
     expect(() => log.update(0.16)).not.toThrow();
+  });
+
+  it('does not throw when called repeatedly', () => {
+    const log = makeLog();
+    log.add('FADE ME', 0xffffff);
+    for (let i = 0; i < 10; i++) log.update(0.1);
   });
 });
 
@@ -113,7 +121,7 @@ describe('EventLog.setPanelY', () => {
   });
 });
 
-// ── HudManager ────────────────────────────────────────────────────────────────
+// ── HudManager ───────────────────────────────────────────────────
 
 function makeBaseHudData(overrides: Partial<HudData> = {}): HudData {
   return {
@@ -132,8 +140,6 @@ function makeBaseHudData(overrides: Partial<HudData> = {}): HudData {
     phase: 'combat',
     waveTimer: 30,
     combatDuration: 30,
-    waveAnnounceTimer: 0,
-    waveAnnounceNum: 1,
     enemies: [],
     cameraX: 0,
     cameraY: 0,
@@ -154,31 +160,27 @@ describe('HudManager smoke', () => {
 });
 
 describe('HudManager — wave announce banner', () => {
-  it('shows banner when waveAnnounceTimer > 0', () => {
+  it('sets banner text when showWaveBanner is called', () => {
     const hud = makeHud();
-    hud.update(makeBaseHudData({ waveAnnounceTimer: 1.5, waveAnnounceNum: 2 }));
-    // Access private field via type assertion to verify visibility
-    const banner = (hud as unknown as Record<string, { visible: boolean }>)._waveBanner;
-    const text = (hud as unknown as Record<string, { visible: boolean; text?: string }>)._waveBannerText;
-    expect(banner.visible).toBe(true);
-    expect(text.visible).toBe(true);
+    hud.showWaveBanner(2);
+    const text = (hud as unknown as Record<string, { text: string }>)._waveBannerText;
     expect(text.text).toBe('WAVE 2');
   });
 
-  it('hides banner when waveAnnounceTimer <= 0', () => {
+  it('sets correct wave number in banner text', () => {
     const hud = makeHud();
-    hud.update(makeBaseHudData({ waveAnnounceTimer: 0, waveAnnounceNum: 1 }));
-    const banner = (hud as unknown as Record<string, { visible: boolean }>)._waveBanner;
-    const text = (hud as unknown as Record<string, { visible: boolean }>)._waveBannerText;
-    expect(banner.visible).toBe(false);
-    expect(text.visible).toBe(false);
-  });
-
-  it('updates wave number text', () => {
-    const hud = makeHud();
-    hud.update(makeBaseHudData({ waveAnnounceTimer: 2.0, waveAnnounceNum: 5 }));
+    hud.showWaveBanner(5);
     const text = (hud as unknown as Record<string, { text: string }>)._waveBannerText;
     expect(text.text).toBe('WAVE 5');
+  });
+
+  it('does not throw when called multiple times', () => {
+    const hud = makeHud();
+    expect(() => {
+      hud.showWaveBanner(1);
+      hud.showWaveBanner(2);
+      hud.showWaveBanner(3);
+    }).not.toThrow();
   });
 });
 
@@ -196,7 +198,6 @@ describe('HudManager — off-screen enemy indicators', () => {
 
   it('does not throw when enemies are off all four edges', () => {
     const hud = makeHud();
-    const W = 1600, H = 900; // CFG.W / CFG.H defaults
     const enemies = [
       { x: -2000, y: 0, alive: true },    // left
       { x: 2000, y: 0, alive: true },     // right
