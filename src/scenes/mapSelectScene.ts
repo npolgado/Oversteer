@@ -128,15 +128,13 @@ export class MapSelectScene implements Scene {
 
     if (input.escape) {
       context.audioManager.play('ui_click');
-      this.exit(context);
-      sceneManager.switchTo(new MenuScene());
+      sceneManager.switchTo(new MenuScene(), { fade: 0.25 });
       return;
     }
 
     if (input.enter) {
       context.audioManager.play('ui_click');
       const mapId = MAPS[this._mapIndex].id;
-      this.exit(context);
       sceneManager.switchTo(new GameplayScene({
         mapId,
         modifierIds: this._activeModIds.slice(),

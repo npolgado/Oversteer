@@ -57,6 +57,7 @@ import { PerfOverlay } from '@ui/PerfOverlay';
 import { ScreenFX } from '@render/screenFx';
 import { SpeedLines } from '@render/speedLines';
 import { ParticleSystem } from '@render/particles';
+import { pauseUITweens, resumeUITweens } from '@render/tween';
 import { DIFFICULTY_MODIFIERS, computeModifierScoreMult } from '@content/maps';
 import { sceneManager } from './sceneManager';
 import { GameOverScene, type GameOverData } from './gameOverScene';
@@ -124,10 +125,6 @@ export class GameLoop {
   private _cdNum: Text | null = null;
   private _cdWave: Text | null = null;
 
-  // Wave announce (game.js:280-281)
-  private _waveAnnounceTimer = 0;
-  private _waveAnnounceNum = 0;
-
   // Drift squeal edge detection
   private _wasDrifting = false;
   // NOTE: not in original — edge detection for handbrake burst and boost zone FX.
@@ -157,8 +154,6 @@ export class GameLoop {
 
     this._playerState = makePlayerState();
     this._paused = false;
-    this._waveAnnounceTimer = 0;
-    this._waveAnnounceNum = 0;
 
     // Apply difficulty modifiers (mutates CFG spawn intervals + player stats)
     if (_opts.modifierIds && _opts.modifierIds.length > 0) {
@@ -217,10 +212,7 @@ export class GameLoop {
     this._upgradeBreak = new UpgradeBreakPhase(
       new UpgradeCardsUI(_ctx.pixiApp.overlayLayer),
       _ctx.audioManager,
-      (waveIndex) => {
-        this._waveAnnounceTimer = 2.0;
-        this._waveAnnounceNum = waveIndex;
-      },
+      (waveIndex) => { this._hudManager.showWaveBanner(waveIndex); },
     );
 
     // --- Event subscriptions ---
@@ -313,8 +305,7 @@ export class GameLoop {
     if (!_opts.sandbox && !_opts.benchmark) {
       startWave(this._waveState);
       eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
-      this._waveAnnounceTimer = 2.0;
-      this._waveAnnounceNum = this._waveState.waveIndex;
+      this._hudManager.showWaveBanner(this._waveState.waveIndex);
       _ctx.audioManager.startEngine();
       _ctx.audioManager.startMusic();
     }
@@ -376,9 +367,11 @@ export class GameLoop {
         this._ctx.audioManager.setVolume('music', this._preMuteMusicVol * 0.3);
         this._ctx.audioManager.stopEngine();
         this._ctx.audioManager.stopDrift();
+        pauseUITweens();
       } else {
         this._ctx.audioManager.setVolume('music', this._preMuteMusicVol);
         this._ctx.audioManager.startEngine();
+        resumeUITweens();
       }
     }
     if (input.perfToggle) this._perf.toggle();
@@ -436,8 +429,6 @@ export class GameLoop {
         phase:              'break',
         waveTimer:          0,
         combatDuration:     this._waveState.currentCombatDuration,
-        waveAnnounceTimer:  this._waveAnnounceTimer,
-        waveAnnounceNum:    this._waveAnnounceNum,
         enemies:            this._enemies,
         cameraX:            this._ctx.camera.state.x,
         cameraY:            this._ctx.camera.state.y,
@@ -594,8 +585,7 @@ export class GameLoop {
       } else if (ev.type === 'break_end') {
         startWave(this._waveState);
         eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
-        this._waveAnnounceTimer = 2.0;
-        this._waveAnnounceNum = this._waveState.waveIndex;
+        this._hudManager.showWaveBanner(this._waveState.waveIndex);
       }
     }
     return changed;
@@ -831,9 +821,6 @@ export class GameLoop {
     this._trailRenderer.update(this._trailState);
     this._playerRenderer.update(this._playerState);
 
-    // --- Wave announce timer (game.js:1019) ---
-    if (this._waveAnnounceTimer > 0) this._waveAnnounceTimer -= dilatedDt;
-
     // --- HUD ---
     const hudData: HudData = {
       score:             this._scoringState.score,
@@ -851,8 +838,6 @@ export class GameLoop {
       phase:             this._waveState.phase,
       waveTimer:         this._waveState.waveTimer,
       combatDuration:    this._waveState.currentCombatDuration,
-      waveAnnounceTimer: this._waveAnnounceTimer,
-      waveAnnounceNum:   this._waveAnnounceNum,
       enemies:           this._enemies,
       cameraX:           this._ctx.camera.state.x,
       cameraY:           this._ctx.camera.state.y,
