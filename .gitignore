@@ -11,3 +11,4 @@ dist/
 dist-local/
 .aider*
 .worktrees/
+.claude/
