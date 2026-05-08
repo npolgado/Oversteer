@@ -94,6 +94,44 @@ describe('EventLog.update', () => {
     log.add('FADE ME', 0xffffff);
     for (let i = 0; i < 10; i++) log.update(0.1);
   });
+
+  it('removes entries from _entries when age reaches ENTRY_LIFETIME (3.5s)', () => {
+    const log = makeLog();
+    log.add('X', 0xffffff);
+    log.update(3.5);
+    expect((log as any)._entries.length).toBe(0);
+  });
+
+  it('entry alpha is 1 before FADE_START (2.2s)', () => {
+    const log = makeLog();
+    log.add('A', 0xffffff);
+    log.update(2.0);
+    const entry = (log as any)._entries[0];
+    expect(entry.pixiText.alpha).toBe(1);
+  });
+
+  it('entry alpha is between 0 and 1 during fade window (2.2s–3.5s)', () => {
+    const log = makeLog();
+    log.add('A', 0xffffff);
+    log.update(3.0); // mid-fade
+    const entry = (log as any)._entries[0];
+    expect(entry.pixiText.alpha).toBeGreaterThan(0);
+    expect(entry.pixiText.alpha).toBeLessThan(1);
+  });
+
+  // Regression: old GSAP-based implementation left tweens on destroyed Text objects when
+  // clear() was called during active entries. GSAP later accessed this._position on the
+  // destroyed object, throwing "can't access property 'y', this._position is null".
+  it('update does not access entries after clear() (regression: destroyed Text position)', () => {
+    const log = makeLog();
+    log.add('A', 0xff0000);
+    log.add('B', 0x00ff00);
+    log.update(1.0);
+    log.clear();
+    // If entries were still referenced after clear, this would touch destroyed objects.
+    expect(() => log.update(0.1)).not.toThrow();
+    expect((log as any)._entries.length).toBe(0);
+  });
 });
 
 describe('EventLog.clear', () => {
@@ -110,6 +148,14 @@ describe('EventLog.clear', () => {
     log.add('X', 0xffffff);
     log.clear();
     expect(() => log.update(1.0)).not.toThrow();
+  });
+
+  it('_entries is empty after clear()', () => {
+    const log = makeLog();
+    log.add('P', 0xffffff);
+    log.add('Q', 0xffffff);
+    log.clear();
+    expect((log as any)._entries.length).toBe(0);
   });
 });
 
@@ -185,6 +231,24 @@ describe('HudManager — wave announce banner', () => {
   });
 });
 
+describe('HudManager — milestone banner', () => {
+  it('sets banner text when showMilestoneBanner is called', () => {
+    const hud = makeHud();
+    hud.showMilestoneBanner('x5 COMBO!', '#7C5CFF');
+    const text = (hud as unknown as Record<string, { text: string }>)._milestoneBannerText;
+    expect(text.text).toBe('x5 COMBO!');
+  });
+
+  it('does not throw when called multiple times rapidly', () => {
+    const hud = makeHud();
+    expect(() => {
+      hud.showMilestoneBanner('x3 COMBO!', '#35F2D0');
+      hud.showMilestoneBanner('x5 COMBO!', '#7C5CFF');
+      hud.showMilestoneBanner('x8 COMBO!', '#FFD700');
+    }).not.toThrow();
+  });
+});
+
 describe('HudManager — off-screen enemy indicators', () => {
   it('does not throw when no enemies', () => {
     const hud = makeHud();
@@ -221,7 +285,7 @@ describe('HudManager — off-screen enemy indicators', () => {
 // ── HudManager — newBest animation state ──────────────────────────────────────
 
 describe('HudManager — newBest animation', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); });
 
   it('_newBestShown starts false', () => {
     const hud = makeHud();
@@ -269,7 +333,7 @@ describe('HudManager — newBest animation', () => {
 // ── HudManager — wave timer visibility transitions ────────────────────────────
 
 describe('HudManager — wave timer visibility transitions', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); });
 
   it('uiTween is called when combat phase becomes active', () => {
     const hud = makeHud();
@@ -299,7 +363,7 @@ describe('HudManager — wave timer visibility transitions', () => {
 // ── HudManager — combo bar visibility transitions ─────────────────────────────
 
 describe('HudManager — combo bar visibility transitions', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); });
 
   it('uiTween is called (×3) when drift combo becomes visible', () => {
     const hud = makeHud();

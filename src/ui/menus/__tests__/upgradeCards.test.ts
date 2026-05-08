@@ -68,7 +68,7 @@ const noInput = { select1: false, select2: false, select3: false, reroll: false 
 // ── show / hide lifecycle ─────────────────────────────────────────────────────
 
 describe('UpgradeCardsUI.show()', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); });
 
   it('sets _visible to true', () => {
     const ui = makeUI();
@@ -108,7 +108,7 @@ describe('UpgradeCardsUI.show()', () => {
 });
 
 describe('UpgradeCardsUI.hide()', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); });
 
   it('is a no-op when not visible', () => {
     const ui = makeUI();
@@ -134,7 +134,7 @@ describe('UpgradeCardsUI.hide()', () => {
 // ── update() animation state machine ─────────────────────────────────────────
 
 describe('UpgradeCardsUI.update() — slide-in animation', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); });
 
   it('completes "in" animation and snaps cards to targetY', () => {
     const ui = makeUI();
@@ -169,7 +169,7 @@ describe('UpgradeCardsUI.update() — slide-in animation', () => {
 });
 
 describe('UpgradeCardsUI.update() — slide-out animation', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); });
 
   it('clears layer after "out" animation completes', () => {
     const ui = makeUI();
@@ -185,7 +185,7 @@ describe('UpgradeCardsUI.update() — slide-out animation', () => {
 // ── checkInput() ──────────────────────────────────────────────────────────────
 
 describe('UpgradeCardsUI.checkInput()', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); });
 
   it('returns null when not visible', () => {
     const ui = makeUI();

@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-05-08 - dev_1.2.0 - Game Feel + Visual Polish
+
+- **Trail thickness from speed**: Drift trail now stores per-point speed at emission time; segment width scales with `speedFrac` (matches `arena-drifter/world.js:500-501`) instead of position in trail
+- **GPU-batched spark/shard particles**: Sparks and shards now render through PixiJS `ParticleContainer` (additive blending, sprite-batched) instead of per-particle `Graphics` calls; smoke retains Graphics path
+- **Shard rotation restored**: Shards rotate at 10 rad/s as particles fly (matches `arena-drifter/fx.js:263`)
+- **Chromatic aberration**: Red/blue edge strips appear at screen edges when driving at >80% max speed or during the death sequence (port of `arena-drifter/game.js:1297-1314`)
+- **Milestone banner slide-in**: Combo crossings at x3/x5/x8 now trigger a centered slide-in banner in addition to the existing EventLog entries and rings
+- **Upgrade card lerp documented**: The manual lerp + backOut easing in `upgradeCards.ts` is an intentional workaround for a PixiJS v8 alpha-on-zero-attached-container quirk — documented in `docs/fixes/gsap_ui_fixes.md`
+- **FPS benchmark workflow**: Added `docs/perf/README.md` with step-by-step guide to run the vs-vanilla benchmark harness; added `npm run bench:web` convenience script
+
+---
+
 ## 2026-04-13 - dev.1.1.0 - TypeScript + Pixi.js Port
 
 - **Full engine rewrite**: game ported from single-file vanilla Canvas/JS to TypeScript + Pixi.js

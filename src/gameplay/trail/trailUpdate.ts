@@ -53,7 +53,7 @@ export function updateTrail(
   // Record position
   state.recordTimer += dt;
   if (state.recordTimer >= RECORD_INTERVAL) {
-    pushTrailPoint(state, player.x, player.y);
+    pushTrailPoint(state, player.x, player.y, Math.hypot(player.vx, player.vy));
     state.recordTimer = 0;
   }
 

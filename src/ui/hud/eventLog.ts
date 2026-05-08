@@ -1,12 +1,12 @@
 // eventLog.ts — On-screen event log: max 7 entries, fade after 2.2s, gone at 3.5s.
-// Matches behavior of arena-drifter/fx.js EventLog.
+// Matches behavior of arena-drifter/fx.js EventLog (age-based alpha, no GSAP tweens on entries).
 
 import { Graphics, Text, TextStyle, Container } from 'pixi.js';
 import { S } from '@core/config';
-import { uiTween, killUITweens } from '@render/tween';
 
 const MAX_ENTRIES = 7;
 const ENTRY_LIFETIME = 3.5;
+const FADE_START = 2.2;
 const LINE_HEIGHT = () => S(17);
 const PAD_V = () => S(5);
 const PAD_H = () => S(7);
@@ -16,6 +16,7 @@ interface LogEntry {
   text: string;
   color: number;
   pixiText: Text;
+  age: number;
 }
 
 export class EventLog {
@@ -37,10 +38,8 @@ export class EventLog {
   }
 
   add(text: string, color = 0xffffff): void {
-    // If at max, remove oldest (last in array = oldest)
     if (this._entries.length >= MAX_ENTRIES) {
       const oldest = this._entries.pop()!;
-      killUITweens(oldest.pixiText);
       oldest.pixiText.destroy();
     }
 
@@ -50,35 +49,33 @@ export class EventLog {
       fill: `#${color.toString(16).padStart(6, '0')}`,
     });
     const pixiText = new Text({ text, style });
-    pixiText.alpha = 0;
-    pixiText.scale.set(0.8);
     this._layer.addChild(pixiText);
 
-    // Newest at top (index 0)
-    this._entries.unshift({ text, color, pixiText });
+    this._entries.unshift({ text, color, pixiText, age: 0 });
     this._reposition();
-
-    // Pop-in
-    uiTween(pixiText, { alpha: 1, scaleX: 1, scaleY: 1, duration: 0.2, ease: 'back.out(2)' });
-    // Fade-out + destroy after lifetime
-    uiTween(pixiText, {
-      alpha: 0,
-      duration: 0.6,
-      delay: ENTRY_LIFETIME - 0.6,
-      ease: 'power2.in',
-      onComplete: () => this._removeEntry(pixiText),
-    });
+    this._drawBg();
   }
 
-  // update is called by gameLoop but entries are driven by GSAP, not dt.
-  update(_dt: number): void {
+  update(dt: number): void {
+    for (let i = this._entries.length - 1; i >= 0; i--) {
+      const e = this._entries[i];
+      e.age += dt;
+      if (e.age >= ENTRY_LIFETIME) {
+        e.pixiText.destroy();
+        this._entries.splice(i, 1);
+        continue;
+      }
+      // Match arena-drifter/fx.js:499-501 — full alpha until FADE_START, then linear fade.
+      e.pixiText.alpha = e.age < FADE_START
+        ? 1
+        : 1 - (e.age - FADE_START) / (ENTRY_LIFETIME - FADE_START);
+    }
     this._reposition();
     this._drawBg();
   }
 
   clear(): void {
     for (const e of this._entries) {
-      killUITweens(e.pixiText);
       e.pixiText.destroy();
     }
     this._entries = [];
@@ -91,31 +88,11 @@ export class EventLog {
     this._layer.removeChildren();
   }
 
-  private _removeEntry(pixiText: Text): void {
-    const idx = this._entries.findIndex(e => e.pixiText === pixiText);
-    if (idx < 0) return;
-    this._entries.splice(idx, 1);
-    pixiText.destroy();
-    // Slide remaining entries up smoothly
-    this._repositionAnimated();
-    this._drawBg();
-  }
-
   private _reposition(): void {
     const x = S(12) + PAD_H();
     for (let i = 0; i < this._entries.length; i++) {
       const e = this._entries[i];
       e.pixiText.position.set(x, this._panelY + PAD_V() + LINE_HEIGHT() * i + LINE_HEIGHT() / 2);
-    }
-  }
-
-  private _repositionAnimated(): void {
-    const x = S(12) + PAD_H();
-    for (let i = 0; i < this._entries.length; i++) {
-      const e = this._entries[i];
-      const targetY = this._panelY + PAD_V() + LINE_HEIGHT() * i + LINE_HEIGHT() / 2;
-      e.pixiText.x = x;
-      uiTween(e.pixiText, { y: targetY, duration: 0.15, ease: 'power2.out' });
     }
   }
 

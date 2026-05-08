@@ -11,7 +11,8 @@
     "test:old": "node --test test/enemies.test.js test/pickups.test.js test/scoring.test.js test/trail.test.js test/upgrades.test.js test/utility.test.js test/waves.test.js test/bench.test.js",
     "build:bench": "tsc && vite build --base=/dist-local/ --outDir=dist-local --target=esnext && node -e \"const fs=require('fs'),f='dist-local/index.html',h=fs.readFileSync(f,'utf8');fs.writeFileSync(f,h.replace('<head>','<head><base href=\\\"/dist-local/\\\">'));\"",
     "bench": "vitest bench src/bench/logicBench.bench.ts",
-    "bench:serve": "npx http-server . -p 3000 -c-1"
+    "bench:serve": "npx http-server . -p 3000 -c-1",
+    "bench:web": "npm run build:bench && npm run bench:serve"
   },
   "devDependencies": {
     "@types/howler": "^2.2.12",

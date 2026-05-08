@@ -78,6 +78,10 @@ export class HudManager {
   private _waveBanner: Graphics;
   private _waveBannerText: Text;
 
+  // Combo milestone banner — NOTE: not in original (canvas used EventLog only).
+  private _milestoneBanner: Graphics;
+  private _milestoneBannerText: Text;
+
   // Off-screen enemy indicators (game.js:1528-1562)
   private _offLeft: Graphics;
   private _offRight: Graphics;
@@ -142,6 +146,13 @@ export class HudManager {
     this._waveBanner.alpha = 0;
     this._waveBannerText.alpha = 0;
 
+    // --- Combo milestone banner (attached at construction with alpha=0 — safe Pixi v8 alpha tween pattern) ---
+    this._milestoneBanner = new Graphics();
+    this._milestoneBannerText = new Text({ text: '', style: makeStyle(32, '#35F2D0', true) });
+    this._milestoneBannerText.anchor.set(0.5, 0.5);
+    this._milestoneBanner.alpha = 0;
+    this._milestoneBannerText.alpha = 0;
+
     // --- Off-screen enemy indicators ---
     this._offLeft = new Graphics();
     this._offRight = new Graphics();
@@ -158,6 +169,7 @@ export class HudManager {
       this._speedBg, this._speedBar, this._speedLabel, this._controlsHint,
       this._offLeft, this._offRight, this._offTop, this._offBottom,
       this._waveBanner, this._waveBannerText,
+      this._milestoneBanner, this._milestoneBannerText,
     );
   }
 
@@ -182,6 +194,36 @@ export class HudManager {
     Promise.all(tl).then(() => {
       uiTween(this._waveBannerText, { alpha: 0, duration: 0.3, delay: 1.4, ease: 'power2.in' });
       uiTween(this._waveBanner,     { alpha: 0, duration: 0.3, delay: 1.4, ease: 'power2.in' });
+    });
+  }
+
+  /** Slide in a combo milestone banner (x3/x5/x8 COMBO!) then fade out. */
+  showMilestoneBanner(label: string, color: string): void {
+    killUITweens(this._milestoneBanner);
+    killUITweens(this._milestoneBannerText);
+
+    this._milestoneBannerText.style.fill = color;
+    this._milestoneBannerText.text = label;
+    // Reset to fully transparent at the position where it will animate.
+    this._milestoneBannerText.alpha = 0;
+    this._milestoneBanner.alpha = 0;
+    // Place slightly below wave banner so they don't overlap when both fire.
+    this._milestoneBannerText.x = CFG.W / 2;
+    this._milestoneBannerText.y = CFG.H * 0.6;
+
+    this._milestoneBanner.clear();
+    const bw = S(200);
+    const bh = S(44);
+    this._milestoneBanner.roundRect(CFG.W / 2 - bw / 2, CFG.H * 0.6 - bh / 2, bw, bh, S(6))
+      .fill({ color: 0x000000, alpha: 0.5 });
+
+    const tl = [
+      uiTween(this._milestoneBannerText, { alpha: 1, duration: 0.25, ease: 'power2.out' }),
+      uiTween(this._milestoneBanner,     { alpha: 1, duration: 0.25, ease: 'power2.out' }),
+    ];
+    Promise.all(tl).then(() => {
+      uiTween(this._milestoneBannerText, { alpha: 0, duration: 0.3, delay: 1.0, ease: 'power2.in' });
+      uiTween(this._milestoneBanner,     { alpha: 0, duration: 0.3, delay: 1.0, ease: 'power2.in' });
     });
   }
 

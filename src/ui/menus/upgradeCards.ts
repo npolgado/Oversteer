@@ -1,4 +1,7 @@
 // upgradeCards.ts — Upgrade card selection overlay (3 cards, keyboard 1/2/3, touch).
+// NOTE: card slide-in uses manual lerp + per-frame update(dt), not uiTween().
+// GSAP `alpha` tweens on dynamically-added containers attached with alpha=0 fail in Pixi v8.
+// See docs/fixes/gsap_ui_fixes.md (Addendum) for the underlying mechanism.
 
 import { gsap } from 'gsap';
 import { Graphics, Text, TextStyle, Container } from 'pixi.js';

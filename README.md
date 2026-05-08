@@ -56,6 +56,16 @@ npx serve arena-drifter
 
 Then open the URL shown in your terminal (usually `http://localhost:3000`).
 
+## Benchmarking
+
+Compares the TypeScript/PixiJS build against the vanilla `arena-drifter/` build across 6 scenarios (idle/drift × 5/15/30 enemies).
+
+```bash
+npm run bench:web
+```
+
+Then open `http://localhost:3000/benchmark.html` and click **Run Benchmark**.
+
 ## Developers
 
 To enable the pre-push test hook, run:

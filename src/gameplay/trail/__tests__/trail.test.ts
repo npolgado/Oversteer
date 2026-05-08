@@ -50,8 +50,22 @@ describe('trail ring buffer', () => {
     pushTrailPoint(state, 10, 20);
     pushTrailPoint(state, 30, 40);
     expect(state.count).toBe(2);
-    expect(getTrailPoint(state, 0)).toEqual({ x: 10, y: 20 });
-    expect(getTrailPoint(state, 1)).toEqual({ x: 30, y: 40 });
+    expect(getTrailPoint(state, 0)).toMatchObject({ x: 10, y: 20 });
+    expect(getTrailPoint(state, 1)).toMatchObject({ x: 30, y: 40 });
+  });
+
+  it('pushTrailPoint stores per-point speed for width variation', () => {
+    const state = makeTrailState();
+    pushTrailPoint(state, 0, 0, 200);
+    pushTrailPoint(state, 10, 0, 500);
+    expect(getTrailPoint(state, 0).speed).toBe(200);
+    expect(getTrailPoint(state, 1).speed).toBe(500);
+  });
+
+  it('pushTrailPoint defaults speed to 0 when omitted', () => {
+    const state = makeTrailState();
+    pushTrailPoint(state, 5, 5);
+    expect(getTrailPoint(state, 0).speed).toBe(0);
   });
 
   it('wraps around correctly after filling maxPoints', () => {
@@ -65,9 +79,9 @@ describe('trail ring buffer', () => {
     pushTrailPoint(state, 999, 999);
     expect(state.count).toBe(400);
     // Oldest is now i=1
-    expect(getTrailPoint(state, 0)).toEqual({ x: 1, y: 2 });
+    expect(getTrailPoint(state, 0)).toMatchObject({ x: 1, y: 2 });
     // Newest is the 999,999 point
-    expect(getTrailPoint(state, 399)).toEqual({ x: 999, y: 999 });
+    expect(getTrailPoint(state, 399)).toMatchObject({ x: 999, y: 999 });
   });
 
   it('getTrailPoint returns oldest after wrap', () => {

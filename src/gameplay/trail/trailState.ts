@@ -49,8 +49,8 @@ export function getTrailPoint(state: TrailState, i: number): TrailPoint {
 }
 
 /** Push a new position into the ring buffer. Overwrites oldest when full. */
-export function pushTrailPoint(state: TrailState, x: number, y: number): void {
-  state.points[state.head] = { x, y };
+export function pushTrailPoint(state: TrailState, x: number, y: number, speed = 0): void {
+  state.points[state.head] = { x, y, speed };
   state.head = (state.head + 1) % state.points.length;
   if (state.count < state.maxPoints) state.count++;
 }

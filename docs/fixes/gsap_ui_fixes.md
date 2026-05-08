@@ -166,3 +166,11 @@ PixiPlugin 3.15 explicitly checks `PIXI.VERSION` and sets `_isV8Plus = version >
 ### `scaleX`/`scaleY` via direct tween
 
 PixiPlugin maps these only inside `pixi: {}`. Without PixiPlugin, `gsap.to(obj, { scaleX: 1 })` would try to set `obj.scaleX` directly, which doesn't exist on PixiJS v8 Containers (`scale.x` does). Use a proxy with `onUpdate: () => obj.scale.set(proxy.s)` instead.
+
+---
+
+## Decision — Upgrade cards stay on manual lerp
+
+**Recorded:** 2026-05-08
+
+The upgrade card slide-in (`src/ui/menus/upgradeCards.ts:205-235`) uses a hand-rolled `lerp` + `backOut` easing function driven by `update(dt)` rather than `uiTween()`. This is the deliberate workaround for the alpha-on-zero-attached-container failure described above. The containers are created inside `show()` and immediately added with `container.y = offscreenY` (alpha stays at 1), so the slide works via `y` manipulation only. Converting to GSAP would re-introduce the alpha bug unless the containers are pre-created in the constructor (as `_waveBannerText` is), which would conflict with the dynamic card content. Manual lerp is the correct long-term approach here.

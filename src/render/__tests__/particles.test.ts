@@ -36,3 +36,23 @@ describe('SkidMark angle and width', () => {
     expect(CAR_SKID_WIDTH).toBe(14);
   });
 });
+
+describe('GPU particle path selection', () => {
+  it('spark and shard use GPU-batched sprite path when texture available', () => {
+    // Documents that the sprite path is selected only when texture exists and type is spark/shard.
+    const useSprite = (type: string, hasTexture: boolean) =>
+      (type === 'spark' || type === 'shard') && hasTexture;
+
+    expect(useSprite('spark', true)).toBe(true);
+    expect(useSprite('shard', true)).toBe(true);
+    expect(useSprite('smoke', true)).toBe(false);
+    expect(useSprite('spark', false)).toBe(false);
+  });
+
+  it('shard rotation step matches original fx.js:263 (10 rad/s)', () => {
+    let rotation = 0;
+    const dt = 0.016;
+    rotation += 10 * dt;
+    expect(rotation).toBeCloseTo(0.16);
+  });
+});

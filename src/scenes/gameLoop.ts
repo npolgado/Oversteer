@@ -96,6 +96,7 @@ export class GameLoop {
   private _speedLines: SpeedLines;
   private _particles: ParticleSystem;
   private _arenaGlow: Graphics;
+  private _accentColor = 0x35F2D0;
 
   // PerfOverlay
   private _perf: PerfOverlay;
@@ -152,6 +153,10 @@ export class GameLoop {
 
     // Apply map + difficulty modifier CFG overrides before initializing game state
     applyMap(_opts.mapId ?? saveManager.getSelectedMap());
+    {
+      const parsedAccent = parseInt(CFG.C_ACCENT.replace('#', ''), 16);
+      this._accentColor = Number.isFinite(parsedAccent) ? parsedAccent : 0x35F2D0;
+    }
 
     this._playerState = makePlayerState();
     this._paused = false;
@@ -512,6 +517,23 @@ export class GameLoop {
     }
     this._wasHandbraking = isHandbraking;
 
+    // Wall-riding sparks along arena boundary (game.js parity).
+    if (this._playerState.wallRiding) {
+      this._particles.spawn(
+        this._playerState.x,
+        this._playerState.y,
+        this._accentColor,
+        1,
+        {
+          type: 'spark',
+          vxMin: -20, vxMax: 20,
+          vyMin: -20, vyMax: 20,
+          lifeMin: 0.35, lifeMax: 0.7,
+          sizeMin: 10, sizeMax: 18,
+        },
+      );
+    }
+
     // Boost zone entry FX — cyan burst when player enters a speed zone. NOTE: not in original.
     const isInBoostZone = this._playerState.speedBoostTimer > 0;
     if (isInBoostZone && !this._wasInBoostZone) {
@@ -866,6 +888,10 @@ export class GameLoop {
       this._gameClock,
       !this._death.active,
     );
+    this._screenFx.setAberration(
+      getPlayerSpeed(this._playerState) / (this._playerState.maxSpeed || CFG.MAX_SPEED),
+      this._playerState.hp <= 0,
+    );
     this._particles.update(dilatedDt);
     this._drawArenaGlow();
   }
@@ -926,6 +952,7 @@ export class GameLoop {
         this._particles.addRing(this._playerState.x, this._playerState.y, color);
         const label = m >= 8 ? '#FFD700' : m >= 5 ? '#7C5CFF' : '#35F2D0';
         eventBus.emit('eventLog', { text: `x${m} COMBO!`, color: label });
+        this._hudManager.showMilestoneBanner(`x${m} COMBO!`, label);
         break;
       }
     }

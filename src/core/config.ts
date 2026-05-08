@@ -207,6 +207,9 @@ export interface CfgShape {
   VIGNETTE_ALPHA: number;
   // Speed lines — port of arena-drifter/game.js:1270-1294
   SPEED_LINES_THRESHOLD: number;
+  // Chromatic aberration — port of arena-drifter/game.js:1297-1314
+  ABERRATION_SPEED_THRESHOLD: number;  // speed fraction above which aberration kicks in
+  ABERRATION_DYING_INTENSITY: number;  // fixed intensity while dying
 }
 
 // Mutable at runtime — applyMap() writes into this object.
@@ -350,7 +353,7 @@ export const CFG: CfgShape = {
   DRIFT_CHAIN_MULT_1: 1.5,
   DRIFT_CHAIN_MULT_2: 2.0,
   // Wall riding
-  WALL_RIDE_DIST: 30,
+  WALL_RIDE_DIST: 140,
   WALL_RIDE_SPEED_BONUS: 0.10,
   // Early-game balancing
   FIRST_SPAWN_INITIAL: 2.5,
@@ -385,6 +388,9 @@ export const CFG: CfgShape = {
   VIGNETTE_ALPHA: 0.5,
   // Speed lines — port of arena-drifter/game.js:1270-1294
   SPEED_LINES_THRESHOLD: 0.7,
+  // Chromatic aberration — port of arena-drifter/game.js:1297-1314
+  ABERRATION_SPEED_THRESHOLD: 0.8,
+  ABERRATION_DYING_INTENSITY: 0.4,
   ENEMY_SPRITES_BY_TYPE: {
     chaser:      ['cars/enemy_red.png', 'cars/enemy_orange.png'],
     interceptor: ['cars/police.png', 'cars/ambulance.png'],

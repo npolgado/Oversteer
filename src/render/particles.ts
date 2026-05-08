@@ -1,11 +1,11 @@
 // particles.ts — Particle system: shard/smoke/spark particles, rings, skid marks.
 // Ported from arena-drifter/fx.js:143-265 (source of truth).
 
-import { Graphics, Container, Sprite, ParticleContainer } from 'pixi.js';
+import { Graphics, Container, Particle as PIXIParticle, ParticleContainer, type Texture } from 'pixi.js';
 
 export type ParticleType = 'shard' | 'smoke' | 'ring' | 'spark';
 
-interface Particle {
+interface SysParticle {
   x: number; y: number;
   vx: number; vy: number;
   life: number;
@@ -15,8 +15,10 @@ interface Particle {
   color: number; // PixiJS hex int 0xRRGGBB
   gravity: number;  // px/s², applied as vy += gravity * dt. NOTE: not in original
   drag: number;     // 0–1 velocity multiplier per frame. NOTE: not in original
-  sprite: Sprite | null; // null for graphics-based particles
+  sprite: PIXIParticle | null; // Spark/shard types use GPU-batched PIXIParticle; smoke uses Graphics.
 }
+
+export type Particle = SysParticle;
 
 interface SkidMark {
   x: number; y: number;
@@ -65,12 +67,21 @@ export class ParticleSystem {
 
   constructor(
     particlesLayer: Container,
-    private _sparkTexture?: Sprite['texture'],
+    private _sparkTexture?: Texture,
     private _isVisible?: (x: number, y: number, r: number) => boolean,
   ) {
     this._particlesLayer = particlesLayer;
 
-    this._spriteContainer = new ParticleContainer();
+    // Sparks/shards change scale and alpha every frame, so vertex/color must be dynamic.
+    this._spriteContainer = new ParticleContainer({
+      texture: this._sparkTexture,
+      dynamicProperties: {
+        position: true,
+        vertex: true,
+        color: true,
+      },
+      roundPixels: true,
+    });
     this._spriteContainer.blendMode = 'add';
     this._particlesLayer.addChild(this._spriteContainer);
 
@@ -105,23 +116,26 @@ export class ParticleSystem {
       }
     })();
 
-    const isSpriteType = (type === 'spark' || type === 'shard') && !!this._sparkTexture;
+    // Sparks and shards route through the GPU-batched ParticleContainer; smoke uses Graphics.
+    const useSprite = (type === 'spark' || type === 'shard') && !!this._sparkTexture;
 
     for (let i = 0; i < count; i++) {
       const life = lifeMin + Math.random() * (lifeMax - lifeMin);
       const size = typeDefaults.sizeMin + Math.random() * (typeDefaults.sizeMax - typeDefaults.sizeMin);
 
-      let sprite: Sprite | null = null;
-      if (isSpriteType) {
-        sprite = new Sprite(this._sparkTexture!);
-        sprite.anchor.set(0.5);
-        sprite.tint = color;
-        // ParticleContainer API differs between Pixi versions. Prefer addParticle/removeParticle when available.
-        if ('addParticle' in this._spriteContainer && (this._spriteContainer as any).addParticle) {
-          (this._spriteContainer as any).addParticle(sprite);
-        } else {
-          this._spriteContainer.addChild(sprite);
-        }
+      let sprite: PIXIParticle | null = null;
+      if (useSprite) {
+        sprite = new PIXIParticle({
+          texture: this._sparkTexture!,
+          x, y,
+          tint: color,
+          alpha: 1,
+          anchorX: 0.5,
+          anchorY: 0.5,
+          scaleX: size / 4,
+          scaleY: size / 4,
+        });
+        this._spriteContainer.addParticle(sprite);
       }
 
       this._particles.push({
@@ -166,19 +180,23 @@ export class ParticleSystem {
       if (p.type === 'smoke') p.size += dt * 8;
       p.life -= dt;
       if (p.life <= 0) {
-        if (p.sprite) {
-          if ('removeParticle' in this._spriteContainer && (this._spriteContainer as any).removeParticle) {
-            (this._spriteContainer as any).removeParticle(p.sprite);
-          } else {
-            this._spriteContainer.removeChild(p.sprite);
-          }
-          p.sprite.destroy();
-        }
+        if (p.sprite) this._spriteContainer.removeParticle(p.sprite);
         this._particles[i] = this._particles[this._particles.length - 1];
         this._particles.pop();
         continue;
       }
-      if (p.sprite) this._drawSprite(p);
+      // Sync GPU-batched sprite particles each frame.
+      if (p.sprite) {
+        p.sprite.x = p.x;
+        p.sprite.y = p.y;
+        const alpha = p.life / p.maxLife;
+        p.sprite.alpha = alpha;
+        const s = p.size / 4;
+        p.sprite.scaleX = s;
+        p.sprite.scaleY = s;
+        // Restore shard rotation from arena-drifter/fx.js:263 (ctx.rotate(p.life * 10)).
+        if (p.type === 'shard') p.sprite.rotation += 10 * dt;
+      }
     }
 
     // Rings (swap-and-pop)
@@ -199,13 +217,6 @@ export class ParticleSystem {
     this._renderSmoke();
     this._renderRings();
     this._renderSkids();
-  }
-
-  private _drawSprite(p: Particle): void {
-    const alpha = p.life / p.maxLife;
-    p.sprite!.position.set(p.x, p.y);
-    p.sprite!.alpha = alpha;
-    p.sprite!.scale.set(p.size / 4);
   }
 
   // NOTE: not in original — renders all smoke/fallback particles into one persistent Graphics per frame.
@@ -265,15 +276,9 @@ export class ParticleSystem {
   }
 
   clear(): void {
+    // Remove all GPU-batched sprites before clearing the array.
     for (const p of this._particles) {
-      if (p.sprite) {
-        if ('removeParticle' in this._spriteContainer && (this._spriteContainer as any).removeParticle) {
-          (this._spriteContainer as any).removeParticle(p.sprite);
-        } else {
-          this._spriteContainer.removeChild(p.sprite);
-        }
-        p.sprite.destroy();
-      }
+      if (p.sprite) this._spriteContainer.removeParticle(p.sprite);
     }
     this._particles = [];
     this._rings = [];

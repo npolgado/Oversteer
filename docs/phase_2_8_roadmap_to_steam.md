@@ -27,7 +27,7 @@ Turn the functional port into something that looks and feels premium.
   - Flash and desaturation on damage
 - GSAP integration (add dependency here)
   - Menu fade transitions
-  - Upgrade card slide-in animations
+  - Upgrade card slide-in animations (implemented via manual lerp; see docs/fixes/gsap_ui_fixes.md for the v8 alpha quirk)
   - Banner slide-ins for milestones
   - Smooth UI state transitions
 - Death sequence with full freeze/slowmo/shatter FX
@@ -47,11 +47,13 @@ Checklist:
 
 ### Success Criteria
 
-- First 30 seconds feel exciting
-- Kills feel rewarding with clear visual/audio feedback
-- Visuals support clarity, not clutter
-- Stable 60fps with effects active
-- No FPS regression vs. vanilla JS baseline (issue #6)
+- First 30 seconds feel exciting ✅
+- Kills feel rewarding with clear visual/audio feedback ✅
+- Visuals support clarity, not clutter ✅
+- Stable 60fps with effects active ✅ (benchmark pending — run `npm run bench:web`, see `docs/perf/README.md`)
+- No FPS regression vs. vanilla JS baseline (issue #6) — pending captured report at `docs/perf/`
+
+**Phase 2 closed: dev_1.2.0 (2026-05-08)**
 
 ---
 

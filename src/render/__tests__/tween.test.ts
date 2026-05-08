@@ -34,7 +34,7 @@ import { uiTween, pauseUITweens, resumeUITweens, killUITweens } from '@render/tw
 // ── uiTween ───────────────────────────────────────────────────────────────────
 
 describe('uiTween — test mode (instant apply)', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); });
 
   it('applies props via gsap.set in test mode', async () => {
     const target = { alpha: 0, x: 0 };
@@ -73,7 +73,7 @@ describe('uiTween — test mode (instant apply)', () => {
 // ── pauseUITweens / resumeUITweens ────────────────────────────────────────────
 
 describe('pauseUITweens', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); });
 
   it('pauses the global timeline', () => {
     pauseUITweens();
@@ -82,7 +82,7 @@ describe('pauseUITweens', () => {
 });
 
 describe('resumeUITweens', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); });
 
   it('resumes the global timeline', () => {
     resumeUITweens();
@@ -93,7 +93,7 @@ describe('resumeUITweens', () => {
 // ── killUITweens ──────────────────────────────────────────────────────────────
 
 describe('killUITweens', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); });
 
   it('kills tweens on the given target', () => {
     const target = { alpha: 1 };

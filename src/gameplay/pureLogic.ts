@@ -32,6 +32,8 @@ export interface PlayerForPickup {
 export interface TrailPoint {
   x: number;
   y: number;
+  // NOTE: not in original — speed at emission time for per-segment width variation (arena-drifter/world.js:500).
+  speed?: number;
 }
 
 export interface WaveTiming {

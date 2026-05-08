@@ -29,12 +29,13 @@ export class TrailRenderer {
     const b = state.colorB;
     const color = (r << 16) | (g << 8) | b;
 
-    // Draw trail as a series of segments with linearly increasing width
+    // Draw trail as a series of segments; width scales with speed at emission (arena-drifter/world.js:500-501).
     for (let i = 1; i < state.count; i++) {
       const p0 = getTrailPoint(state, i - 1);
       const p1 = getTrailPoint(state, i);
       const frac = i / (state.count - 1);
-      const width = 2 + 3 * frac;
+      const speedFrac = Math.min(1, (p1.speed ?? 0) / (CFG.MAX_SPEED || 500));
+      const width = 2 + 3 * speedFrac;
       const alpha = 0.08 + 0.30 * frac;
 
       this._gfx

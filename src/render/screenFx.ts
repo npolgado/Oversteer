@@ -1,10 +1,10 @@
-// screenFx.ts — Transient screen effects: shake, flash, slowmo, freeze, desaturation.
+// screenFx.ts — Transient screen effects: shake, flash, slowmo, freeze, desaturation, chromatic aberration.
 // Ported from arena-drifter/fx.js:268-390 (source of truth for all numeric values).
 // Vignette ported from arena-drifter/fx.js:51-61.
-// TODO: port chromatic aberration from arena-drifter/game.js:1297-1318 (red/blue edge tints at >80% speed or DYING).
+// Chromatic aberration ported from arena-drifter/game.js:1297-1314.
 
 import { Graphics, Container, Sprite, getCanvasTexture } from 'pixi.js';
-import { CFG } from '@core/config';
+import { CFG, S } from '@core/config';
 import { lerp } from '@core/utils';
 
 export class ScreenFX {
@@ -36,9 +36,13 @@ export class ScreenFX {
   private _desatAmount = 0;
   private _desatTarget = 0;
 
+  // Chromatic aberration (speed or dying) — port of game.js:1297-1314
+  private _aberrIntensity = 0;
+
   // PixiJS overlay graphics on screenFxContainer
   private _flashGfx: Graphics;
   private _desatGfx: Graphics;
+  private _aberrGfx: Graphics;
   private _container: Container;
   private _vignetteSprite: Sprite | null = null;
 
@@ -46,8 +50,10 @@ export class ScreenFX {
     this._container = screenFxContainer;
     this._flashGfx = new Graphics();
     this._desatGfx = new Graphics();
-    // flash/desat first; vignette on top; SpeedLines (added externally) sits on top of all.
-    screenFxContainer.addChild(this._flashGfx, this._desatGfx);
+    this._aberrGfx = new Graphics();
+    this._aberrGfx.blendMode = 'screen';
+    // flash/desat first; aberration above; vignette on top; SpeedLines (added externally) sits on top of all.
+    screenFxContainer.addChild(this._flashGfx, this._desatGfx, this._aberrGfx);
     if (enableVignette) this._vignetteSprite = this._buildVignette(screenFxContainer);
   }
 
@@ -103,6 +109,15 @@ export class ScreenFX {
     this._desatTarget = target;
   }
 
+  /** Port of arena-drifter/game.js:1299-1300 — red/blue edge tints at high speed or while dying. */
+  setAberration(speedFrac: number, isDying: boolean): void {
+    this._aberrIntensity = isDying
+      ? CFG.ABERRATION_DYING_INTENSITY
+      : (speedFrac > CFG.ABERRATION_SPEED_THRESHOLD
+        ? (speedFrac - CFG.ABERRATION_SPEED_THRESHOLD) * 2
+        : 0);
+  }
+
   reset(): void {
     this._shakeTimer = 0;
     this._flashTimer = 0;
@@ -110,8 +125,10 @@ export class ScreenFX {
     this._timeDilation = 1; this._timeTimer = 0;
     this._desatAmount = 0; this._desatTarget = 0;
     this._freezeTimer = 0;
+    this._aberrIntensity = 0;
     this._flashGfx.clear();
     this._desatGfx.clear();
+    this._aberrGfx.clear();
   }
 
   /**
@@ -190,11 +207,26 @@ export class ScreenFX {
         .rect(0, 0, CFG.W, CFG.H)
         .fill({ color: 0x1A2233, alpha: this._desatAmount }); // CFG.C_PANEL = '#1A2233'
     }
+
+    // Chromatic aberration — port of arena-drifter/game.js:1306-1313.
+    // Red strip on left edge, blue on right, screen-blend composite.
+    this._aberrGfx.clear();
+    if (this._aberrIntensity > 0.01) {
+      const alpha = this._aberrIntensity * 0.08;
+      const w = S(60);
+      this._aberrGfx
+        .rect(0, 0, w, CFG.H)
+        .fill({ color: 0xFF3232, alpha });
+      this._aberrGfx
+        .rect(CFG.W - w, 0, w, CFG.H)
+        .fill({ color: 0x3232FF, alpha });
+    }
   }
 
   destroy(): void {
     this._flashGfx.destroy();
     this._desatGfx.destroy();
+    this._aberrGfx.destroy();
     this._vignetteSprite?.destroy();
   }
 }
