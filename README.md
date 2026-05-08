@@ -101,7 +101,7 @@ test/                    Legacy test suite (node:test)
 src/**/__tests__/        Vitest unit tests (14 files, 300 tests)
 ```
 
-See [patch_notes.md](patch_notes.md) for version history.
+See [patch_notes.md](docs/patch_notes.md) for version history.
 
 ## License
 im trying to use only CC0 content for the beta's and transistion to original assets 
