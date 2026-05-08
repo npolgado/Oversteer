@@ -1,10 +1,11 @@
 // hud.test.ts — Lightweight tests for EventLog behavior and HudManager smoke test.
 // HUD is primarily visual; logic tested here is entry lifecycle and limits.
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from 'pixi.js';
 import { EventLog } from '../eventLog';
 import { HudManager, type HudData } from '../hudManager';
+import { uiTween } from '@render/tween';
 
 // ── Mock @render/tween ───────────────────────────────────────────
 // uiTween returns a resolved Promise; killUITweens is a no-op.
@@ -214,5 +215,115 @@ describe('HudManager — off-screen enemy indicators', () => {
     hud.update(makeBaseHudData({ enemies, cameraX: 0, cameraY: 0 }));
     const offLeft = (hud as unknown as Record<string, { rect: ReturnType<typeof vi.fn> }>)._offLeft;
     expect(offLeft.rect).not.toHaveBeenCalled();
+  });
+});
+
+// ── HudManager — newBest animation state ──────────────────────────────────────
+
+describe('HudManager — newBest animation', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('_newBestShown starts false', () => {
+    const hud = makeHud();
+    expect((hud as any)._newBestShown).toBe(false);
+  });
+
+  it('_newBestShown becomes true on first newBest=true update', () => {
+    const hud = makeHud();
+    hud.update(makeBaseHudData({ newBest: true }));
+    expect((hud as any)._newBestShown).toBe(true);
+  });
+
+  it('_newBestText.scale.set(0.5) is called on first trigger', () => {
+    const hud = makeHud();
+    const text = (hud as any)._newBestText;
+    hud.update(makeBaseHudData({ newBest: true }));
+    expect(text.scale.set).toHaveBeenCalledWith(0.5);
+  });
+
+  it('scale.set NOT called again on second newBest=true update', () => {
+    const hud = makeHud();
+    const text = (hud as any)._newBestText;
+    hud.update(makeBaseHudData({ newBest: true }));
+    vi.clearAllMocks();
+    hud.update(makeBaseHudData({ newBest: true }));
+    expect(text.scale.set).not.toHaveBeenCalled();
+  });
+
+  it('_newBestShown resets to false when newBest goes false', () => {
+    const hud = makeHud();
+    hud.update(makeBaseHudData({ newBest: true }));
+    hud.update(makeBaseHudData({ newBest: false }));
+    expect((hud as any)._newBestShown).toBe(false);
+  });
+
+  it('_newBestText.alpha=0 when newBest goes false after being true', () => {
+    const hud = makeHud();
+    const text = (hud as any)._newBestText;
+    hud.update(makeBaseHudData({ newBest: true }));
+    hud.update(makeBaseHudData({ newBest: false }));
+    expect(text.alpha).toBe(0);
+  });
+});
+
+// ── HudManager — wave timer visibility transitions ────────────────────────────
+
+describe('HudManager — wave timer visibility transitions', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('uiTween is called when combat phase becomes active', () => {
+    const hud = makeHud();
+    // Fresh hud: _waveTimerVisible=false, phase='combat' → transition fires
+    hud.update(makeBaseHudData({ phase: 'combat' }));
+    // Expects at least 4 tweens (waveBg, waveBar, waveLabel, enemyText)
+    expect(vi.mocked(uiTween).mock.calls.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('uiTween NOT called when phase stays combat', () => {
+    const hud = makeHud();
+    hud.update(makeBaseHudData({ phase: 'combat' })); // establishes state
+    vi.clearAllMocks();
+    hud.update(makeBaseHudData({ phase: 'combat' })); // no change
+    expect(vi.mocked(uiTween).mock.calls.length).toBe(0);
+  });
+
+  it('uiTween is called when combat phase ends', () => {
+    const hud = makeHud();
+    hud.update(makeBaseHudData({ phase: 'combat' }));
+    vi.clearAllMocks();
+    hud.update(makeBaseHudData({ phase: 'break' })); // transition out
+    expect(vi.mocked(uiTween).mock.calls.length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+// ── HudManager — combo bar visibility transitions ─────────────────────────────
+
+describe('HudManager — combo bar visibility transitions', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('uiTween is called (×3) when drift combo becomes visible', () => {
+    const hud = makeHud();
+    // Settle initial state: not drifting, combo=0
+    hud.update(makeBaseHudData({ drifting: false, comboLevel: 0 }));
+    vi.clearAllMocks();
+    hud.update(makeBaseHudData({ drifting: true }));
+    // 3 tweens: comboBg, comboBar, comboLabel
+    expect(vi.mocked(uiTween).mock.calls.length).toBe(3);
+  });
+
+  it('uiTween NOT called when combo visibility does not change', () => {
+    const hud = makeHud();
+    hud.update(makeBaseHudData({ drifting: true })); // show combo
+    vi.clearAllMocks();
+    hud.update(makeBaseHudData({ drifting: true })); // no change
+    expect(vi.mocked(uiTween).mock.calls.length).toBe(0);
+  });
+
+  it('combo is visible when comboLevel > 0.5 even without drifting', () => {
+    const hud = makeHud();
+    hud.update(makeBaseHudData({ drifting: false, comboLevel: 0 }));
+    vi.clearAllMocks();
+    hud.update(makeBaseHudData({ drifting: false, comboLevel: 1 }));
+    expect(vi.mocked(uiTween).mock.calls.length).toBe(3);
   });
 });
