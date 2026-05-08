@@ -90,7 +90,7 @@ export class UpgradeBreakPhase {
           eventBus.emit('upgradeApplied', { id: upgrade.id });
           this._chosenUpgrade = upgrade;
           this._upgradeChosen = true;
-          this._upgradeCards.hide(); // async — cards animate out; countdown starts immediately
+          this._upgradeCards.hide(); // fire-and-forget; cards animate out via update()
         }
       } else if (cardAction === 'reroll' && this._rerollsLeft > 0) {
         this._audio.play('ui_click');
@@ -120,6 +120,6 @@ export class UpgradeBreakPhase {
   }
 
   destroy(): void {
-    this._upgradeCards.hide();
+    this._upgradeCards.destroy();
   }
 }

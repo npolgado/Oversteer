@@ -57,7 +57,7 @@ import { PerfOverlay } from '@ui/PerfOverlay';
 import { ScreenFX } from '@render/screenFx';
 import { SpeedLines } from '@render/speedLines';
 import { ParticleSystem } from '@render/particles';
-import { pauseUITweens, resumeUITweens } from '@render/tween';
+import { uiTween, pauseUITweens, resumeUITweens } from '@render/tween';
 import { DIFFICULTY_MODIFIERS, computeModifierScoreMult } from '@content/maps';
 import { sceneManager } from './sceneManager';
 import { GameOverScene, type GameOverData } from './gameOverScene';
@@ -130,6 +130,7 @@ export class GameLoop {
   // NOTE: not in original — edge detection for handbrake burst and boost zone FX.
   private _wasHandbraking = false;
   private _wasInBoostZone = false;
+  private _cdVisible = false;
 
   // Sub-managers
   private _death: DeathSequence;
@@ -407,8 +408,6 @@ export class GameLoop {
           this._upgradeBreak.upgradeConfirmTimer,
           this._waveState.waveIndex,
         );
-      } else {
-        this._hideUpgradeCountdown();
       }
       // Render scene during break (same as end of main loop, minus enemies)
       this._trailRenderer.update(this._trailState);
@@ -449,7 +448,10 @@ export class GameLoop {
       return;
     }
 
-    this._hideUpgradeCountdown();
+    if (this._cdVisible) {
+      this._cdVisible = false;
+      this._hideUpgradeCountdown();
+    }
     this._runSystems(rawDt, dilatedDt, input);
   }
 
@@ -1024,25 +1026,28 @@ export class GameLoop {
 
     this._cdBg.clear();
     this._cdBg.rect(0, 0, CFG.W, CFG.H).fill({ color: 0x000000, alpha: 0.7 });
+    this._cdBg.alpha   = 1;
     this._cdBg.visible = true;
     if (upgrade) {
       this._cdIcon.text = upgrade.icon;
       this._cdName.text = upgrade.name;
     }
-    this._cdNum.text = `${Math.ceil(Math.max(0, timer))}`;
+    this._cdNum.text  = `${Math.ceil(Math.max(0, timer))}`;
     this._cdWave.text = `Wave ${waveIndex + 1} incoming...`;
-    this._cdIcon.visible = true;
-    this._cdName.visible = true;
-    this._cdNum.visible = true;
-    this._cdWave.visible = true;
+    this._cdIcon.alpha   = 1; this._cdIcon.visible   = true;
+    this._cdName.alpha   = 1; this._cdName.visible   = true;
+    this._cdNum.alpha    = 1; this._cdNum.visible    = true;
+    this._cdWave.alpha   = 1; this._cdWave.visible   = true;
+    this._cdVisible = true;
   }
 
   private _hideUpgradeCountdown(): void {
-    if (this._cdBg)   this._cdBg.visible   = false;
-    if (this._cdIcon) this._cdIcon.visible  = false;
-    if (this._cdName) this._cdName.visible  = false;
-    if (this._cdNum)  this._cdNum.visible   = false;
-    if (this._cdWave) this._cdWave.visible  = false;
+    if (!this._cdBg) return;
+    this._cdBg.visible   = false;
+    if (this._cdIcon)  this._cdIcon.visible  = false;
+    if (this._cdName)  this._cdName.visible  = false;
+    if (this._cdNum)   this._cdNum.visible   = false;
+    if (this._cdWave)  this._cdWave.visible  = false;
   }
 
   private _setupBenchmark(scenario: string): void {

@@ -3,9 +3,13 @@
 // All UI motion goes through uiTween() so the category can be paused/killed uniformly.
 
 import gsap from 'gsap';
+import { PixiPlugin } from 'gsap/PixiPlugin';
+import * as PIXI from 'pixi.js';
 
 // Disable GSAP lag smoothing — the game has its own dt clamping.
 gsap.ticker.lagSmoothing(0);
+gsap.registerPlugin(PixiPlugin);
+PixiPlugin.registerPIXI(PIXI);
 
 /**
  * Tween a PixiJS Container property (alpha, x, y, etc.).

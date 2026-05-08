@@ -1,19 +1,31 @@
 // upgradeCards.ts — Upgrade card selection overlay (3 cards, keyboard 1/2/3, touch).
 
+import { gsap } from 'gsap';
 import { Graphics, Text, TextStyle, Container } from 'pixi.js';
 import type { UpgradeDef } from '@gameplay/upgrades/upgradeRegistry';
 import { UPGRADE_REGISTRY } from '@gameplay/upgrades/upgradeRegistry';
 import type { InputState } from '@input/inputManager';
 import { CFG, S } from '@core/config';
-import { uiTween, killUITweens } from '@render/tween';
 
 const CARD_W = S(220);
 const CARD_H = S(300);
 const CARD_GAP = S(30);
 
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+// back.out(1.7) — matches the feel of the old GSAP ease
+function backOut(t: number): number {
+  const s = 1.70158;
+  const t1 = t - 1;
+  return t1 * t1 * ((s + 1) * t1 + s) + 1;
+}
+
 interface CardGraphics {
   container: Container;
   targetY: number;
+  hideStartY: number;
 }
 
 export class UpgradeCardsUI {
@@ -25,6 +37,11 @@ export class UpgradeCardsUI {
   private _rerollBounds: { x: number; y: number; w: number; h: number } | null = null;
   private _visible = false;
 
+  // Game-loop-driven animation state (replaces GSAP for container tweens)
+  private _animState: 'idle' | 'in' | 'out' = 'idle';
+  private _animTimer = 0;
+  private _offscreenY = 0;
+
   constructor(overlayLayer: Container) {
     this._layer = overlayLayer;
   }
@@ -32,7 +49,12 @@ export class UpgradeCardsUI {
   show(cards: UpgradeDef[], rerollsLeft: number, ownedUpgrades: string[] = []): void {
     this._clearLayer();
     this._visible = true;
+    this._animState = 'in';
+    this._animTimer = 0;
     this._cardBounds = [];
+
+    const offscreenY = CFG.H + CARD_H;
+    this._offscreenY = offscreenY;
 
     // Background dim
     const dim = new Graphics();
@@ -49,14 +71,12 @@ export class UpgradeCardsUI {
     const totalW = cards.length * CARD_W + (cards.length - 1) * CARD_GAP;
     const startX = (CFG.W - totalW) / 2;
     const cardY = (CFG.H - CARD_H) / 2 - S(20);
-    const offscreenY = CFG.H + CARD_H;
 
     this._cards = cards.map((card, i) => {
       const cx = startX + i * (CARD_W + CARD_GAP);
       const container = new Container();
       container.x = cx;
       container.y = offscreenY;
-      container.alpha = 0;
 
       // Card background
       const bg = new Graphics();
@@ -101,14 +121,7 @@ export class UpgradeCardsUI {
       this._layer.addChild(container);
       this._cardBounds.push({ x: cx, y: cardY, w: CARD_W, h: CARD_H });
 
-      // Staggered slide-up + fade-in (restores original arena-drifter stagger)
-      uiTween(container, {
-        y: cardY, alpha: 1,
-        duration: 0.35, delay: i * 0.08,
-        ease: 'back.out(1.4)',
-      });
-
-      return { container, targetY: cardY };
+      return { container, targetY: cardY, hideStartY: offscreenY };
     });
 
     // Reroll button
@@ -165,30 +178,61 @@ export class UpgradeCardsUI {
     }
   }
 
-  async hide(): Promise<void> {
+  hide(): void {
     if (!this._visible) return;
     this._visible = false;
 
-    // Fade cards out and slide down before clearing
-    if (this._cards.length > 0) {
-      await Promise.all(this._cards.map(c =>
-        uiTween(c.container, { alpha: 0, y: c.container.y + S(20), duration: 0.2, ease: 'power2.in' }),
-      ));
+    if (this._cards.length === 0) {
+      this._clearLayer();
+      return;
     }
 
-    // Kill any in-flight card tweens before destroying
-    for (const c of this._cards) killUITweens(c.container);
-    this._clearLayer();
+    // Record current y as start of slide-out (may be mid-slide-in)
+    for (const c of this._cards) c.hideStartY = c.container.y;
+    this._animState = 'out';
+    this._animTimer = 0;
   }
 
   /** Pulse reroll button when clicked. */
   pulseRerollBtn(): void {
-    if (!this._rerollText) return;
-    uiTween(this._rerollText, { scaleX: 0.92, scaleY: 0.92, duration: 0.08, yoyo: true, repeat: 1 });
+    // Capture ref: show() may nullify _rerollText before the tween fires
+    const rt = this._rerollText;
+    if (!rt) return;
+    const proxy = { s: 1 };
+    gsap.to(proxy, { s: 0.92, duration: 0.08, yoyo: true, repeat: 1, onUpdate: () => { rt.scale.set(proxy.s); } });
   }
 
-  // No-op: animation is driven by GSAP, not the game loop.
-  update(_dt: number): void {}
+  update(dt: number): void {
+    if (this._animState === 'idle' || this._cards.length === 0) return;
+    this._animTimer += dt;
+
+    if (this._animState === 'in') {
+      let allDone = true;
+      for (let i = 0; i < this._cards.length; i++) {
+        const c = this._cards[i];
+        const elapsed = this._animTimer - i * 0.1; // stagger delay
+        if (elapsed <= 0) { allDone = false; continue; }
+        const t = Math.min(elapsed / 0.4, 1);
+        c.container.y = lerp(this._offscreenY, c.targetY, backOut(t));
+        if (t < 1) allDone = false;
+      }
+      if (allDone) {
+        for (const c of this._cards) c.container.y = c.targetY;
+        this._animState = 'idle';
+      }
+    } else {
+      // 'out' — power2.in slide back off-screen
+      const t = Math.min(this._animTimer / 0.2, 1);
+      const eased = t * t;
+      for (const c of this._cards) {
+        c.container.y = lerp(c.hideStartY, this._offscreenY, eased);
+      }
+      if (t >= 1) {
+        this._clearLayer();
+        this._animState = 'idle';
+      }
+    }
+  }
 
   checkInput(
     input: Pick<InputState, 'select1' | 'select2' | 'select3' | 'reroll'>,
@@ -220,6 +264,7 @@ export class UpgradeCardsUI {
   }
 
   destroy(): void {
+    this._animState = 'idle';
     this._clearLayer();
   }
 

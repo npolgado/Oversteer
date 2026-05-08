@@ -169,15 +169,14 @@ export class HudManager {
     this._waveBannerText.text = `WAVE ${num}`;
     this._waveBanner.alpha = 0;
     this._waveBannerText.alpha = 0;
-    this._waveBannerText.y = CFG.H / 2 - S(40);
+    this._waveBannerText.x = CFG.W / 2;
+    this._waveBannerText.y = CFG.H / 2;
 
-    // Rebuild background rect at slide-in position then tween
     this._waveBanner.clear();
-    this._waveBanner.roundRect(CFG.W / 2 - S(100), CFG.H / 2 - S(18) - S(40), S(200), S(36), S(6))
+    this._waveBanner.roundRect(CFG.W / 2 - S(100), CFG.H / 2 - S(18), S(200), S(36), S(6))
       .fill({ color: 0x000000, alpha: 0.5 });
-
     const tl = [
-      uiTween(this._waveBannerText, { alpha: 1, y: CFG.H / 2, duration: 0.3, ease: 'power2.out' }),
+      uiTween(this._waveBannerText, { alpha: 1, duration: 0.3, ease: 'power2.out' }),
       uiTween(this._waveBanner,     { alpha: 1, duration: 0.3, ease: 'power2.out' }),
     ];
     Promise.all(tl).then(() => {
