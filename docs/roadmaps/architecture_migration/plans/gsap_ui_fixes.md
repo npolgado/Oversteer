@@ -7,165 +7,162 @@ Two visible bugs on the `npo/gsap` branch before merge to main:
 1. **Wave banner text missing** — when a wave starts, the black background rect animates in but the "WAVE X" text never appears.
 2. **Upgrade cards missing** — after a wave ends, the card selection overlay shows the dim, title, and reroll text, but the three upgrade card containers are completely invisible.
 
-### Root cause — GSAP CSS plugin hijacking
+### Root cause — GSAP transform-system hijack
 
-Both bugs share the same root cause. GSAP v3 recognises `x`, `y`, `scaleX`, `scaleY` as reserved **CSS transform** property names. When any of these appear in a `gsap.to()` call, GSAP activates its CSS transform plugin for the **entire** tween — including the `alpha` prop. Because PixiJS Container objects have no `style` property, the CSS plugin writes nothing and `alpha` stays at 0.
+Both bugs share the same class of root cause: when `y` (or `x`, `scaleX`, `scaleY`) appears in a `gsap.to()` call alongside `alpha`, GSAP 3 routes the entire tween through its internal transform system. For non-DOM objects this means the transform values are cached in GSAP's internal state rather than written directly to the target's property. The `alpha` prop is also consumed by this path and never lands on the PixiJS object, so it stays at 0.
 
-Evidence: `_waveBanner` is tweened with only `{ alpha: 1 }` and becomes visible. `_waveBannerText` and every card container are tweened with `{ y: …, alpha: 1 }` and stay invisible.
+Evidence: tweens with `{ alpha: 1 }` alone work (`_waveBanner` background, dim, title). Tweens with `{ y: …, alpha: 1 }` do not animate alpha (`_waveBannerText`, every card container).
 
-Secondary issues uncovered during investigation:
-- `pulseRerollBtn` uses `scaleX`/`scaleY` which are not direct PixiJS properties (PixiJS uses `scale.x`/`scale.y`).
-- `_hideUpgradeCountdown()` is called every frame with null targets, creating dead GSAP tweens that never resolve.
-- The wave banner background rect is drawn at the text's *start* position (before the slide), so after animation the text lands 40 px below the background box.
+**Fix principle**: never mix `y`/`x` with `alpha` in the same `uiTween` call on a PixiJS object. Set positional properties via direct assignment; tween only `alpha`.
+
+### Secondary bug — wave banner text x position
+
+The old per-frame banner code used `position.set(CFG.W / 2, slideY)`, setting both axes.
+The new `showWaveBanner()` only sets `y`. With `anchor.set(0.5, 0.5)` and `x` defaulting to `0`, the text centre sits at the left edge of the screen — invisible to anyone looking at the centre.
+
+This bug persists even after removing `y` from the tween because the alpha IS now animated, but the text still renders off-screen.
+
+### Note on PixiPlugin
+
+Registering PixiPlugin (Task 1 below) does NOT fix direct-property tweens like `{ alpha: 1 }`. PixiPlugin only intercepts the `pixi: {}` namespace (`gsap.to(obj, { pixi: { alpha: 1 } })`). The registration is still worth keeping — it enables correct property mapping for future `pixi: {}` tweens and is required for `scaleX → scale.x` support — but it is not the mechanism that fixes the alpha bug. The real fix is separating `y` from `alpha`.
 
 ---
 
-## Task 1 — Register PixiPlugin in `tween.ts`
+## Task 1 — Register PixiPlugin in `tween.ts` ✅ DONE
 
 **Files:** `src/render/tween.ts`
 
-**What:** GSAP ships `gsap/PixiPlugin` in its free tier. Registering it teaches GSAP how to tween PixiJS Container properties (`x`, `y`, `alpha`, `scaleX → scale.x`, etc.) without routing them through the CSS plugin.
-
-**Steps:**
-1. Add imports at the top of `tween.ts`:
-   ```ts
-   import { PixiPlugin } from 'gsap/PixiPlugin';
-   import * as PIXI from 'pixi.js';
-   ```
-2. After `import gsap from 'gsap'`, register the plugin and bind it to the PixiJS build:
-   ```ts
-   gsap.registerPlugin(PixiPlugin);
-   PixiPlugin.registerPIXI(PIXI);
-   ```
-3. Remove the `/// <reference types="vite/client" />` comment if it ends up unused (it can stay — it's fine either way).
-4. Run `npm run dev` and verify the dev server still starts cleanly (no TypeScript errors, no console errors on load).
-
-**Depends on:** nothing
-
-**Verify:** Dev server starts without errors. No TypeScript errors on `PixiPlugin` import.
+Already implemented. Imports `PixiPlugin`, calls `gsap.registerPlugin(PixiPlugin)` and `PixiPlugin.registerPIXI(PIXI)`. No further changes needed here.
 
 ---
 
-## Task 2 — Fix wave banner background position
+## Task 2 — Fix wave banner: separate y from alpha + set missing x ✅ DONE (both parts)
 
 **Files:** `src/ui/hud/hudManager.ts`
 
-**What:** In `showWaveBanner()`, the background `roundRect` is drawn centred at `CFG.H/2 - S(40)` (the text's *starting* y before the slide animation). After the tween, the text lands at `CFG.H/2`, which is 40 px below the background box. Fix the background to be centred at the text's final landing position.
+**What:** Two separate fixes required:
 
-**Steps:**
-1. Locate the `roundRect` call inside `showWaveBanner()` (~line 176):
-   ```ts
-   this._waveBanner.roundRect(CFG.W / 2 - S(100), CFG.H / 2 - S(18) - S(40), S(200), S(36), S(6))
-   ```
-2. Change the y coordinate from `CFG.H / 2 - S(18) - S(40)` to `CFG.H / 2 - S(18)`:
-   ```ts
-   this._waveBanner.roundRect(CFG.W / 2 - S(100), CFG.H / 2 - S(18), S(200), S(36), S(6))
-   ```
-   This centres the box at `CFG.H/2`, matching where the text ends up after the slide.
+### 2a — Remove `y` from the `uiTween` call
 
-**Depends on:** Task 1 (text must be visible before layout can be verified)
+The `_waveBannerText` tween previously included `y: CFG.H / 2` alongside `alpha: 1`. This triggered the transform-system hijack, leaving alpha at 0. Fix: assign `y` directly before calling `uiTween`, and pass only `alpha` to the tween.
 
-**Verify:** After Task 1, wave banner shows text centred inside the background box.
+```ts
+// Before (broken — y hijacks alpha)
+uiTween(this._waveBannerText, { alpha: 1, y: CFG.H / 2, duration: 0.3, ease: 'power2.out' })
+
+// After (fixed)
+this._waveBannerText.y = CFG.H / 2;
+uiTween(this._waveBannerText, { alpha: 1, duration: 0.3, ease: 'power2.out' })
+```
+
+### 2b — Set the missing x position
+
+The old per-frame code called `position.set(CFG.W / 2, slideY)`. The new code only sets `y`. Add:
+
+```ts
+this._waveBannerText.x = CFG.W / 2;
+this._waveBannerText.y = CFG.H / 2;
+```
+
+Both lines must appear in `showWaveBanner()` before the `uiTween` call.
+
+**Verify:** Wave banner text appears centred horizontally and vertically on wave start.
 
 ---
 
-## Task 3 — Fix `pulseRerollBtn` scale tween
+## Task 3 — Fix upgrade cards: separate y from alpha ✅ DONE
 
 **Files:** `src/ui/menus/upgradeCards.ts`
 
-**What:** `pulseRerollBtn` tweens `scaleX`/`scaleY` directly on a PixiJS Text object. In PixiJS these are not direct properties (`scale.x`/`scale.y` are). After Task 1, PixiPlugin maps `scaleX → container.scale.x` automatically, so verify the pulse works. If it doesn't (PixiPlugin version difference), replace with a proxy approach.
+**What:** The card container tween previously included `y: cardY` alongside `alpha: 1`, causing the same transform-system hijack. Fix: set `y` directly, tween only `alpha`.
 
-**Steps:**
-1. After Task 1 is applied, open the game, reach the upgrade phase, press R to reroll.
-2. If the reroll button pulses correctly, this task is done — PixiPlugin handles `scaleX`/`scaleY`.
-3. If the pulse still does nothing, replace the tween in `pulseRerollBtn()`:
-   ```ts
-   pulseRerollBtn(): void {
-     if (!this._rerollText) return;
-     const proxy = { s: 1 };
-     gsap.to(proxy, {
-       s: 0.92, duration: 0.08, yoyo: true, repeat: 1,
-       onUpdate: () => { this._rerollText!.scale.set(proxy.s); },
-     });
-   }
-   ```
+```ts
+// Before (broken)
+uiTween(container, { y: cardY, alpha: 1, duration: 0.35, delay: i * 0.08, ease: 'back.out(1.4)' })
 
-**Depends on:** Task 1
+// After (fixed)
+container.y = cardY;
+uiTween(container, { alpha: 1, duration: 0.35, delay: i * 0.08, ease: 'back.out(1.4)' })
+```
 
-**Verify:** Pressing R on the upgrade screen causes the reroll text to briefly squish.
+Also applied to `hide()` — the fade-out tween must not include `y` either.
+
+**Verify:** Upgrade cards appear (staggered fade-in) after each wave ends.
 
 ---
 
-## Task 4 — Fix `_hideUpgradeCountdown` called every frame
+## Task 4 — Fix `pulseRerollBtn` scale tween ✅ DONE
+
+**Files:** `src/ui/menus/upgradeCards.ts`
+
+**What:** `scaleX`/`scaleY` are not direct PixiJS properties (`scale.x`/`scale.y` are). Using a proxy object avoids the transform hijack and maps correctly to PixiJS scale.
+
+```ts
+pulseRerollBtn(): void {
+  if (!this._rerollText) return;
+  const proxy = { s: 1 };
+  gsap.to(proxy, { s: 0.92, duration: 0.08, yoyo: true, repeat: 1,
+    onUpdate: () => { this._rerollText!.scale.set(proxy.s); },
+  });
+}
+```
+
+**Verify:** Pressing R causes the reroll text to briefly squish.
+
+---
+
+## Task 5 — Fix `_hideUpgradeCountdown` called every frame ✅ DONE
 
 **Files:** `src/scenes/gameLoop.ts`
 
-**What:** `_hideUpgradeCountdown()` is an `async` method that `await`s five sequential GSAP tweens. It is called **every frame** during normal gameplay and during the upgrade break (when cards are shown). When the countdown elements are null (before the first upgrade), each `uiTween(null, …)` creates a Promise that never resolves, accumulating dead GSAP tweens over time. Even after the elements exist, calling it 60× per second fires 60 competing fade tweens per second on the same objects.
+**What:** `_hideUpgradeCountdown()` was an async method called every frame, accumulating hundreds of dead GSAP tweens per second when its targets were null. Fix: guard with a `_cdVisible` flag so it fires once on transition out of upgrade break.
 
-**Steps:**
-1. Add a private flag to `GameLoop`:
-   ```ts
-   private _cdVisible = false;
-   ```
-2. In `_renderUpgradeCountdown()`, set `this._cdVisible = true` at the end.
-3. Replace the every-frame call pattern in `update()`:
-
-   Current pattern (problematic):
-   ```ts
-   if (this._upgradeBreak.active) {
-     ...
-     if (this._upgradeBreak.upgradeChosen) {
-       this._renderUpgradeCountdown(...);
-     } else {
-       this._hideUpgradeCountdown(); // called every frame
-     }
-     return;
-   }
-   this._hideUpgradeCountdown(); // called every frame
-   ```
-
-   New pattern:
-   ```ts
-   if (this._upgradeBreak.active) {
-     ...
-     if (this._upgradeBreak.upgradeChosen) {
-       this._renderUpgradeCountdown(...);
-     }
-     return;
-   }
-   // Hide countdown once when transitioning out of upgrade break or on first frame
-   if (this._cdVisible) {
-     this._cdVisible = false;
-     this._hideUpgradeCountdown();
-   }
-   ```
-
-4. Guard `_hideUpgradeCountdown()` against null targets:
-   ```ts
-   private async _hideUpgradeCountdown(): Promise<void> {
-     if (!this._cdBg) return;
-     await uiTween(this._cdBg,   { alpha: 0, duration: 0.3 });
-     await uiTween(this._cdIcon, { alpha: 0, duration: 0.3 });
-     await uiTween(this._cdName, { alpha: 0, duration: 0.3 });
-     await uiTween(this._cdNum,  { alpha: 0, duration: 0.3 });
-     await uiTween(this._cdWave, { alpha: 0, duration: 0.3 });
-   }
-   ```
-
-**Depends on:** nothing (independent cleanup)
-
-**Verify:**
-- No console errors about null GSAP targets.
-- Upgrade countdown overlay fades out correctly after upgrade selection and before the next wave banner appears.
-- No performance regression: browser DevTools timeline should not show 300+ GSAP tween allocations per second.
+**Verify:** No console errors about null GSAP targets; countdown overlay fades out once after upgrade selection.
 
 ---
 
-## Order of work
+## Summary of actual changes required
 
-| Order | Task | Risk |
-|-------|------|------|
-| 1st | Task 1 (PixiPlugin) | Fixes both bugs; low risk |
-| 2nd | Task 2 (banner position) | Cosmetic fix; depends on Task 1 |
-| 3rd | Task 3 (scaleX/Y) | May be a no-op after Task 1 |
-| 4th | Task 4 (every-frame guard) | Independent cleanup; do last to not confuse debugging |
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| Wave banner text invisible | `y` + `alpha` in same tween — alpha hijacked | Move `y` to direct assignment, tween only `alpha` |
+| Wave banner text off-screen | `x` never set after removing per-frame `position.set()` | Add `_waveBannerText.x = CFG.W / 2` in `showWaveBanner` |
+| Upgrade cards invisible | **See addendum below** | Slide-in via `y` tween only; start `alpha = 1` |
+| Reroll pulse broken | `scaleX`/`scaleY` not valid PixiJS props | Proxy object with `scale.set()` in `onUpdate` |
+| Countdown hide spam | async fade called 60×/frame | `_cdVisible` flag, hide once on transition |
+| Countdown not hiding | Alpha tween on lazily-created Graphics/Text fails | Use `visible = false` directly |
+
+---
+
+## Addendum — GSAP + PixiJS v8 alpha tween findings
+
+Found during post-fix investigation (cards still invisible after Tasks 1–5).
+
+### PixiPlugin only activates for `pixi: {}` namespace
+
+`PixiPlugin.name = "pixi"`. It is **only** invoked when the tween vars contain a `pixi: {}` key:
+
+```ts
+gsap.to(obj, { pixi: { alpha: 1 } })  // ← PixiPlugin handles this
+gsap.to(obj, { alpha: 1 })             // ← GSAP core handles this directly
+```
+
+The original root-cause analysis ("y + alpha in same tween hijacks alpha via transform system") was **wrong for non-DOM objects**. GSAP's CSS transform-system hijack only applies to DOM elements. For plain JS objects (which PixiJS containers are), GSAP tweens `x`, `y`, `alpha` as direct property reads/writes with no special transform routing.
+
+### The actual alpha failure
+
+`gsap.to(pixiContainer, { alpha: 1 })` does NOT animate alpha on **dynamically-created PixiJS v8 Containers** that were added to the display tree with `alpha = 0`. Objects created at constructor time (always in layer from startup) animate correctly.
+
+The suspected mechanism: PixiJS v8's render group marks a container with `alpha = 0` at `addChild` time as a zero-alpha renderable. Subsequent property writes via the setter (`container.alpha = interpolated`) trigger `updateRenderable`, but the render group's compiled worldAlpha for that subtree may not re-propagate. Only objects with a "live" worldAlpha at attach time animate correctly.
+
+**Pattern that works**: animate `alpha` on objects that were attached with `alpha > 0`, or on objects created before gameplay (in class constructors).
+
+**Pattern that fails**: attach container with `alpha = 0`, then tween to 1.
+
+### PixiPlugin v8 compatibility
+
+PixiPlugin 3.15 explicitly checks `PIXI.VERSION` and sets `_isV8Plus = version >= 8`. The `registerPIXI(PIXI)` call just stores the PIXI namespace reference. The plugin does handle v8-specific things (e.g. BlurFilter uses `strength` not `blur` in v8, strokeColor mapping). Safe to keep registered.
+
+### `scaleX`/`scaleY` via direct tween
+
+PixiPlugin maps these only inside `pixi: {}`. Without PixiPlugin, `gsap.to(obj, { scaleX: 1 })` would try to set `obj.scaleX` directly, which doesn't exist on PixiJS v8 Containers (`scale.x` does). Use a proxy with `onUpdate: () => obj.scale.set(proxy.s)` instead.
