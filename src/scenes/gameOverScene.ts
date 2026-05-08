@@ -125,15 +125,13 @@ export class GameOverScene implements Scene {
     const d = this._data;
 
     if (input.reroll || input.enter) {
-      this.exit(context);
       sceneManager.switchTo(new GameplayScene({
         mapId: d.lastMapId,
         modifierIds: d.lastModifierIds,
         sandbox: d.sandbox,
       }));
     } else if (input.mute || input.escape) {
-      this.exit(context);
-      sceneManager.switchTo(new MenuScene());
+      sceneManager.switchTo(new MenuScene(), { fade: 0.25 });
     }
   }
 

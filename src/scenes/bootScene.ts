@@ -77,12 +77,11 @@ export class BootScene implements Scene {
     this._drawBar(1);
   }
 
-  update(_dt: number, context: GameContext): void {
+  update(_dt: number, _context: GameContext): void {
     if (this._done && this._onReady) {
       const cb = this._onReady;
       this._onReady = null;
-      this.exit(context);
-      cb();
+      cb(); // sceneManager.switchTo in cb handles exit via fade
     }
   }
 

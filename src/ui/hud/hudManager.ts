@@ -4,6 +4,7 @@
 import { Graphics, Text, TextStyle, Container } from 'pixi.js';
 import { CFG, S } from '@core/config';
 import type { WavePhase } from '@gameplay/spawning/waveManager';
+import { uiTween, killUITweens } from '@render/tween';
 
 export interface HudData {
   score: number;
@@ -21,8 +22,6 @@ export interface HudData {
   phase: WavePhase;
   waveTimer: number;
   combatDuration: number;
-  waveAnnounceTimer: number;
-  waveAnnounceNum: number;
   enemies: Array<{ x: number; y: number; alive: boolean }>;
   cameraX: number;
   cameraY: number;
@@ -46,6 +45,7 @@ export class HudManager {
   private _scoreLabel: Text;
   private _scoreValue: Text;
   private _newBestText: Text;
+  private _newBestShown = false;
 
   // HP bar
   private _hpBg: Graphics;
@@ -57,6 +57,7 @@ export class HudManager {
   private _waveBg: Graphics;
   private _waveBar: Graphics;
   private _waveLabel: Text;
+  private _waveTimerVisible = false;
 
   // Enemy count (top-right)
   private _enemyText: Text;
@@ -65,6 +66,7 @@ export class HudManager {
   private _comboBg: Graphics;
   private _comboBar: Graphics;
   private _comboLabel: Text;
+  private _comboVisible = false;
 
   // Speed indicator (bottom-right)
   private _speedBg: Graphics;
@@ -93,7 +95,7 @@ export class HudManager {
     this._scoreValue.position.set(S(20), S(30));
     this._newBestText = new Text({ text: 'NEW BEST!', style: makeStyle(10, '#FFB000', true) });
     this._newBestText.position.set(S(20), S(54));
-    this._newBestText.visible = false;
+    this._newBestText.alpha = 0;
 
     // --- HP bar ---
     this._hpBg = new Graphics();
@@ -106,16 +108,23 @@ export class HudManager {
     this._waveBar = new Graphics();
     this._waveLabel = new Text({ text: 'WAVE 1', style: makeStyle(11, '#AAAAAA') });
     this._waveLabel.anchor.set(0.5, 0);
+    this._waveBg.alpha = 0;
+    this._waveBar.alpha = 0;
+    this._waveLabel.alpha = 0;
 
     // --- Enemy count ---
     this._enemyText = new Text({ text: 'ENEMIES: 0', style: makeStyle(11, '#AAAAAA') });
     this._enemyText.anchor.set(1, 0);
     this._enemyText.position.set(CFG.W - S(20), S(14));
+    this._enemyText.alpha = 0;
 
     // --- Drift combo ---
     this._comboBg = new Graphics();
     this._comboBar = new Graphics();
     this._comboLabel = new Text({ text: 'DRIFT x0', style: makeStyle(13, '#35F2D0', true) });
+    this._comboBg.alpha = 0;
+    this._comboBar.alpha = 0;
+    this._comboLabel.alpha = 0;
 
     // --- Speed indicator ---
     this._speedBg = new Graphics();
@@ -130,8 +139,8 @@ export class HudManager {
     this._waveBanner = new Graphics();
     this._waveBannerText = new Text({ text: 'WAVE 1', style: makeStyle(26, '#35F2D0', true) });
     this._waveBannerText.anchor.set(0.5, 0.5);
-    this._waveBanner.visible = false;
-    this._waveBannerText.visible = false;
+    this._waveBanner.alpha = 0;
+    this._waveBannerText.alpha = 0;
 
     // --- Off-screen enemy indicators ---
     this._offLeft = new Graphics();
@@ -152,6 +161,30 @@ export class HudManager {
     );
   }
 
+  /** Trigger the wave banner animation (replaces the per-frame waveAnnounceTimer math). */
+  showWaveBanner(num: number): void {
+    killUITweens(this._waveBanner);
+    killUITweens(this._waveBannerText);
+
+    this._waveBannerText.text = `WAVE ${num}`;
+    this._waveBanner.alpha = 0;
+    this._waveBannerText.alpha = 0;
+    this._waveBannerText.x = CFG.W / 2;
+    this._waveBannerText.y = CFG.H / 2;
+
+    this._waveBanner.clear();
+    this._waveBanner.roundRect(CFG.W / 2 - S(100), CFG.H / 2 - S(18), S(200), S(36), S(6))
+      .fill({ color: 0x000000, alpha: 0.5 });
+    const tl = [
+      uiTween(this._waveBannerText, { alpha: 1, duration: 0.3, ease: 'power2.out' }),
+      uiTween(this._waveBanner,     { alpha: 1, duration: 0.3, ease: 'power2.out' }),
+    ];
+    Promise.all(tl).then(() => {
+      uiTween(this._waveBannerText, { alpha: 0, duration: 0.3, delay: 1.4, ease: 'power2.in' });
+      uiTween(this._waveBanner,     { alpha: 0, duration: 0.3, delay: 1.4, ease: 'power2.in' });
+    });
+  }
+
   update(data: HudData): void {
     const scoreH = data.newBest ? S(56) : S(42);
     const hpY = scoreH + S(12);
@@ -162,7 +195,16 @@ export class HudManager {
 
     this._scoreValue.text = Math.floor(data.score).toLocaleString();
     this._scoreValue.style.fill = data.newBest ? '#FFB000' : '#EAEFF7';
-    this._newBestText.visible = data.newBest;
+
+    // NEW BEST: animate in once when it first becomes true
+    if (data.newBest && !this._newBestShown) {
+      this._newBestShown = true;
+      this._newBestText.scale.set(0.5);
+      uiTween(this._newBestText, { alpha: 1, scaleX: 1, scaleY: 1, duration: 0.25, ease: 'back.out(2)' });
+    } else if (!data.newBest && this._newBestShown) {
+      this._newBestShown = false;
+      this._newBestText.alpha = 0;
+    }
 
     // --- HP bar ---
     const hpFrac = Math.max(0, data.hp / data.maxHp);
@@ -192,10 +234,15 @@ export class HudManager {
 
     // --- Wave timer (top-center, combat only) ---
     const inCombat = data.phase === 'combat';
-    this._waveBg.visible = inCombat;
-    this._waveBar.visible = inCombat;
-    this._waveLabel.visible = inCombat;
-    this._enemyText.visible = inCombat;
+
+    if (inCombat !== this._waveTimerVisible) {
+      this._waveTimerVisible = inCombat;
+      const targetAlpha = inCombat ? 1 : 0;
+      uiTween(this._waveBg,    { alpha: targetAlpha, duration: 0.2 });
+      uiTween(this._waveBar,   { alpha: targetAlpha, duration: 0.2 });
+      uiTween(this._waveLabel, { alpha: targetAlpha, duration: 0.2 });
+      uiTween(this._enemyText, { alpha: targetAlpha, duration: 0.2 });
+    }
 
     if (inCombat) {
       const bw = S(200);
@@ -221,9 +268,13 @@ export class HudManager {
 
     // --- Drift combo bar (bottom-left, only when drifting or combo > 0.5) ---
     const showCombo = data.drifting || data.comboLevel > 0.5;
-    this._comboBg.visible = showCombo;
-    this._comboBar.visible = showCombo;
-    this._comboLabel.visible = showCombo;
+    if (showCombo !== this._comboVisible) {
+      this._comboVisible = showCombo;
+      const targetAlpha = showCombo ? 1 : 0;
+      uiTween(this._comboBg,    { alpha: targetAlpha, duration: 0.15 });
+      uiTween(this._comboBar,   { alpha: targetAlpha, duration: 0.15 });
+      uiTween(this._comboLabel, { alpha: targetAlpha, duration: 0.15 });
+    }
 
     if (showCombo) {
       const cbx = S(20);
@@ -271,29 +322,6 @@ export class HudManager {
       .fill({ color: 0xaaaaaa });
 
     this._speedLabel.position.set(sbx - S(6), sby + sbh / 2);
-
-    // --- Wave announce banner (game.js:1325-1338, repositioned to screen center) ---
-    if (data.waveAnnounceTimer > 0) {
-      const fadeIn = Math.min(1, (2.0 - data.waveAnnounceTimer) / 0.3);
-      const fadeOut = Math.min(1, data.waveAnnounceTimer / 0.3);
-      const alpha = Math.min(fadeIn, fadeOut);
-      const slideY = CFG.H / 2 - (1 - fadeIn) * S(40);
-
-      this._waveBanner.visible = true;
-      this._waveBannerText.visible = true;
-      this._waveBanner.alpha = alpha;
-      this._waveBannerText.alpha = alpha;
-
-      this._waveBanner.clear();
-      this._waveBanner.roundRect(CFG.W / 2 - S(100), slideY - S(18), S(200), S(36), S(6))
-        .fill({ color: 0x000000, alpha: 0.5 });
-
-      this._waveBannerText.text = `WAVE ${data.waveAnnounceNum}`;
-      this._waveBannerText.position.set(CFG.W / 2, slideY);
-    } else {
-      this._waveBanner.visible = false;
-      this._waveBannerText.visible = false;
-    }
 
     // --- Off-screen enemy indicators (game.js:1528-1562) ---
     const sides = { left: false, right: false, top: false, bottom: false };

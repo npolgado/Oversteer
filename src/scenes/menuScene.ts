@@ -88,9 +88,8 @@ export class MenuScene implements Scene {
     }
   }
 
-  private _go(context: GameContext, sandbox: boolean): void {
-    this.exit(context);
-    sceneManager.switchTo(new MapSelectScene({ sandbox }));
+  private _go(_context: GameContext, sandbox: boolean): void {
+    sceneManager.switchTo(new MapSelectScene({ sandbox }), { fade: 0.25 });
   }
 
   exit(context: GameContext): void {

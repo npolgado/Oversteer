@@ -57,6 +57,7 @@ import { PerfOverlay } from '@ui/PerfOverlay';
 import { ScreenFX } from '@render/screenFx';
 import { SpeedLines } from '@render/speedLines';
 import { ParticleSystem } from '@render/particles';
+import { uiTween, pauseUITweens, resumeUITweens } from '@render/tween';
 import { DIFFICULTY_MODIFIERS, computeModifierScoreMult } from '@content/maps';
 import { sceneManager } from './sceneManager';
 import { GameOverScene, type GameOverData } from './gameOverScene';
@@ -124,15 +125,12 @@ export class GameLoop {
   private _cdNum: Text | null = null;
   private _cdWave: Text | null = null;
 
-  // Wave announce (game.js:280-281)
-  private _waveAnnounceTimer = 0;
-  private _waveAnnounceNum = 0;
-
   // Drift squeal edge detection
   private _wasDrifting = false;
   // NOTE: not in original — edge detection for handbrake burst and boost zone FX.
   private _wasHandbraking = false;
   private _wasInBoostZone = false;
+  private _cdVisible = false;
 
   // Sub-managers
   private _death: DeathSequence;
@@ -157,8 +155,6 @@ export class GameLoop {
 
     this._playerState = makePlayerState();
     this._paused = false;
-    this._waveAnnounceTimer = 0;
-    this._waveAnnounceNum = 0;
 
     // Apply difficulty modifiers (mutates CFG spawn intervals + player stats)
     if (_opts.modifierIds && _opts.modifierIds.length > 0) {
@@ -217,10 +213,7 @@ export class GameLoop {
     this._upgradeBreak = new UpgradeBreakPhase(
       new UpgradeCardsUI(_ctx.pixiApp.overlayLayer),
       _ctx.audioManager,
-      (waveIndex) => {
-        this._waveAnnounceTimer = 2.0;
-        this._waveAnnounceNum = waveIndex;
-      },
+      (waveIndex) => { this._hudManager.showWaveBanner(waveIndex); },
     );
 
     // --- Event subscriptions ---
@@ -313,8 +306,7 @@ export class GameLoop {
     if (!_opts.sandbox && !_opts.benchmark) {
       startWave(this._waveState);
       eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
-      this._waveAnnounceTimer = 2.0;
-      this._waveAnnounceNum = this._waveState.waveIndex;
+      this._hudManager.showWaveBanner(this._waveState.waveIndex);
       _ctx.audioManager.startEngine();
       _ctx.audioManager.startMusic();
     }
@@ -376,9 +368,11 @@ export class GameLoop {
         this._ctx.audioManager.setVolume('music', this._preMuteMusicVol * 0.3);
         this._ctx.audioManager.stopEngine();
         this._ctx.audioManager.stopDrift();
+        pauseUITweens();
       } else {
         this._ctx.audioManager.setVolume('music', this._preMuteMusicVol);
         this._ctx.audioManager.startEngine();
+        resumeUITweens();
       }
     }
     if (input.perfToggle) this._perf.toggle();
@@ -414,8 +408,6 @@ export class GameLoop {
           this._upgradeBreak.upgradeConfirmTimer,
           this._waveState.waveIndex,
         );
-      } else {
-        this._hideUpgradeCountdown();
       }
       // Render scene during break (same as end of main loop, minus enemies)
       this._trailRenderer.update(this._trailState);
@@ -436,8 +428,6 @@ export class GameLoop {
         phase:              'break',
         waveTimer:          0,
         combatDuration:     this._waveState.currentCombatDuration,
-        waveAnnounceTimer:  this._waveAnnounceTimer,
-        waveAnnounceNum:    this._waveAnnounceNum,
         enemies:            this._enemies,
         cameraX:            this._ctx.camera.state.x,
         cameraY:            this._ctx.camera.state.y,
@@ -458,7 +448,10 @@ export class GameLoop {
       return;
     }
 
-    this._hideUpgradeCountdown();
+    if (this._cdVisible) {
+      this._cdVisible = false;
+      this._hideUpgradeCountdown();
+    }
     this._runSystems(rawDt, dilatedDt, input);
   }
 
@@ -594,8 +587,7 @@ export class GameLoop {
       } else if (ev.type === 'break_end') {
         startWave(this._waveState);
         eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
-        this._waveAnnounceTimer = 2.0;
-        this._waveAnnounceNum = this._waveState.waveIndex;
+        this._hudManager.showWaveBanner(this._waveState.waveIndex);
       }
     }
     return changed;
@@ -831,9 +823,6 @@ export class GameLoop {
     this._trailRenderer.update(this._trailState);
     this._playerRenderer.update(this._playerState);
 
-    // --- Wave announce timer (game.js:1019) ---
-    if (this._waveAnnounceTimer > 0) this._waveAnnounceTimer -= dilatedDt;
-
     // --- HUD ---
     const hudData: HudData = {
       score:             this._scoringState.score,
@@ -851,8 +840,6 @@ export class GameLoop {
       phase:             this._waveState.phase,
       waveTimer:         this._waveState.waveTimer,
       combatDuration:    this._waveState.currentCombatDuration,
-      waveAnnounceTimer: this._waveAnnounceTimer,
-      waveAnnounceNum:   this._waveAnnounceNum,
       enemies:           this._enemies,
       cameraX:           this._ctx.camera.state.x,
       cameraY:           this._ctx.camera.state.y,
@@ -1039,25 +1026,28 @@ export class GameLoop {
 
     this._cdBg.clear();
     this._cdBg.rect(0, 0, CFG.W, CFG.H).fill({ color: 0x000000, alpha: 0.7 });
+    this._cdBg.alpha   = 1;
     this._cdBg.visible = true;
     if (upgrade) {
       this._cdIcon.text = upgrade.icon;
       this._cdName.text = upgrade.name;
     }
-    this._cdNum.text = `${Math.ceil(Math.max(0, timer))}`;
+    this._cdNum.text  = `${Math.ceil(Math.max(0, timer))}`;
     this._cdWave.text = `Wave ${waveIndex + 1} incoming...`;
-    this._cdIcon.visible = true;
-    this._cdName.visible = true;
-    this._cdNum.visible = true;
-    this._cdWave.visible = true;
+    this._cdIcon.alpha   = 1; this._cdIcon.visible   = true;
+    this._cdName.alpha   = 1; this._cdName.visible   = true;
+    this._cdNum.alpha    = 1; this._cdNum.visible    = true;
+    this._cdWave.alpha   = 1; this._cdWave.visible   = true;
+    this._cdVisible = true;
   }
 
   private _hideUpgradeCountdown(): void {
-    if (this._cdBg)   this._cdBg.visible   = false;
-    if (this._cdIcon) this._cdIcon.visible  = false;
-    if (this._cdName) this._cdName.visible  = false;
-    if (this._cdNum)  this._cdNum.visible   = false;
-    if (this._cdWave) this._cdWave.visible  = false;
+    if (!this._cdBg) return;
+    this._cdBg.visible   = false;
+    if (this._cdIcon)  this._cdIcon.visible  = false;
+    if (this._cdName)  this._cdName.visible  = false;
+    if (this._cdNum)   this._cdNum.visible   = false;
+    if (this._cdWave)  this._cdWave.visible  = false;
   }
 
   private _setupBenchmark(scenario: string): void {

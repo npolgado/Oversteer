@@ -21,29 +21,6 @@ Globals via `window.*` (call-time resolution). Order: `logic.js` → `audio.js` 
 
 Key exports: `OversteerLogic`, `Audio`, `FXCache` / `Particles` / `ScreenFX` / `Camera` / `EventLog`, `Assets` / `Input`, `updatePhysics`, `Player` / `Enemy` / `enemyDeathFX`, `Props` / `Trail`, `Waves` / `ARENA_UPGRADES`, `STATE` / `Game`.
 
-## States & controls
-
-**Flow:** `MENU` → `MAP_SELECT` → `PLAYING` (combat / break) → `UPGRADE` → … → `DYING` → `GAME_OVER`. `PAUSED` (P/Esc), `SANDBOX` (S on menu, then map select).
-
-**Input:** WASD/steer, Space/S+speed = handbrake, P/Esc pause, R reroll upgrades, 1–4 cards & map modifiers, Enter confirm. Touch: left stick, right drift, two-finger pause. Pause: M mute, `[]` / `-=` SFX/music.
-
-## Gameplay (where numbers live)
-
-- **Player:** Angle heading; drift changes lateral/forward friction; handbrake when reversing above speed threshold; sprite heading follows velocity when moving fast. Wall-riding near edge while drifting speeds up; drift chains within 0.5s apply score multipliers. Details: `physics.js`, `entities.js`, `CFG`.
-- **Trail:** Points on an interval, loop check on another; `MAX_POINTS` / `CLOSE_DIST` upgradeable — see `world.js` / `Trail`.
-- **Enemies:** Same physics as player; types (Chaser, Interceptor, Drifter, Blocker, Flanker, Bomber, Elite) differ by AI, speed, turn rate, unlock score — **full table in `CFG` / `entities.js`**. Bombers drop timed hazard zones (`BOMB_ZONE_*` in CFG).
-- **Waves:** Combat timer ramps per wave; break phase for 1-of-3 upgrades; spawn intervals ramp; bursts; optional horde event; high-score enemy speed bonus — **`waves.js` / `CFG`**.
-- **Health / damage:** Base HP, per-type hit damage, wave scaling after 5, i-frames, regen after delay — **`CFG`, `game.js`**.
-- **Score / combo:** Passive tick, near-misses (enemy vs hazard radii in CFG), encirclement + combo, milestones — **`logic.js`, `game.js`**.
-- **Upgrades:** 26 stackable/non-stackable perks (rerolls, trail, combat, economy) — definitions in **`waves.js` / `ARENA_UPGRADES`**; don’t duplicate the table here.
-- **Pickups & boost zones:** Periodic scraps with weighted types; speed zones — **`waves.js` / `CFG`**.
-- **Props:** Chunked procedural props, seeded RNG, collision types — **`world.js` / `CFG.PROP_*`**.
-- **Maps:** `MAPS` + `applyMap()`, localStorage `oversteer_map_v1`.
-- **Modifiers (map select):** Hard, Speed Rush, Fragile, Double Enemies — score multipliers in **`logic.js`** (`computeModifierScoreMult`).
-- **Audio:** Howler one-shots + Web Audio loops; prefs `oversteer_audio_v1`. **`audio.js`**.
-- **FX:** ScreenFX slowmo/shake/zoom, particles, EventLog HUD, death sequence — **`fx.js`, `game.js`**.
-- **Assets:** Under `arena-drifter/assets/` (serve root). Cars point **up**; gameplay rotates +90° to face right; swap W/H when drawing if needed — **`input.js` / `Assets`**.
-
 ## Testing & conventions
 
 - Extract testable logic into **`arena-drifter/logic.js`** with exports; mirror in **`test/*.test.js`**. Run **`npm test`** (Vitest) and **`npm run test:old`** before push.
@@ -58,10 +35,3 @@ Key exports: `OversteerLogic`, `Audio`, `FXCache` / `Particles` / `ScreenFX` / `
 - **Trace coordinate systems before porting spatial checks.** `camera.isVisible()` is the viewport check; raw world boundary comparisons (`x < -300`) are not equivalent. Always confirm which system the original uses.
 - **Per-frame flag resets travel with their physics call.** If `playerUpdate` resets `wallHit` and `driftJustStarted` before `updatePhysics()`, every other caller must do the same. Resets are part of the call contract.
 
-## Tutorial
-
-Wave 1 hint until first encircle or timeout — **`game.js`**.
-
----
-Old Roadmaps: [0.9.6 Cleanup](docs/roadmaps/version_0_9_6_cleanup/cleanup.md).
-Historical versions: [HISTORY](docs/HISTORY.md).

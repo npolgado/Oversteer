@@ -13,9 +13,10 @@ import type { InputState } from '@input/inputManager';
 function makeCards() {
   return {
     show: vi.fn(),
-    hide: vi.fn(),
+    hide: vi.fn().mockResolvedValue(undefined),
     update: vi.fn(),
     checkInput: vi.fn().mockReturnValue(null),
+    pulseRerollBtn: vi.fn(),
   };
 }
 
