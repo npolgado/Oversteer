@@ -24,6 +24,7 @@ import { PropsRenderer } from '@gameplay/world/propsRenderer';
 import { makeEnemyState, type EnemyState } from '@gameplay/enemies/enemyState';
 import { updateEnemy } from '@gameplay/enemies/enemyUpdate';
 import { EnemyRenderer } from '@gameplay/enemies/enemyRenderer';
+import { PickupRenderer } from '@render/pickupRenderer';
 import { getDeathParticles, type EnemyDeathEvent } from '@gameplay/enemies/enemyDeathFx';
 import { checkPlayerEnemyCollision, checkNearMiss } from '@gameplay/combat/collision';
 import { processPlayerHit } from '@gameplay/combat/damage';
@@ -36,6 +37,7 @@ import {
   updateScraps,
   computeEncircleOutcome,
   applyComboHeal,
+  updateRunStats,
 } from '@gameplay/pureLogic';
 import { makeScoringState, updateScoring, addScore, type ScoringState } from '@gameplay/scoring';
 import { saveManager } from '@core/saveManager';
@@ -45,6 +47,7 @@ import {
   updateWave,
   tickScrapSpawn,
   type WaveState,
+  type HazardZone,
 } from '@gameplay/spawning/waveManager';
 import { clamp } from '@core/utils';
 import { eventBus } from '@core/eventBus';
@@ -85,6 +88,7 @@ export class GameLoop {
   private _propsRenderer: PropsRenderer;
   private _enemies: EnemyState[] = [];
   private _enemyRenderer: EnemyRenderer;
+  private _pickupRenderer: PickupRenderer;
   private _gameClock = 0;
   private _scoringState: ScoringState;
   private _waveState: WaveState;
@@ -190,6 +194,7 @@ export class GameLoop {
 
     this._enemyRenderer = new EnemyRenderer({ enemiesLayer });
     this._enemyRenderer.sync(this._enemies);
+    this._pickupRenderer = new PickupRenderer(this._ctx.pixiApp.pickupsLayer);
     this._waveState = makeWaveState();
     if (_opts.modifierIds?.includes('hard_mode')) {
       this._waveState.speedBonus = (this._waveState.speedBonus ?? 0) + 100;
@@ -475,6 +480,7 @@ export class GameLoop {
     let enemiesChanged = this._tickWave(dilatedDt);
     this._tickScraps(dilatedDt);
     this._tickProps(dilatedDt);
+    this._tickHazardZones(dilatedDt);
     enemiesChanged = this._tickEnemies(dilatedDt) || enemiesChanged;
     enemiesChanged = this._tickCombat(rawDt, dilatedDt) || enemiesChanged;
     enemiesChanged = this._tickTrail(dilatedDt) || enemiesChanged;
@@ -606,6 +612,18 @@ export class GameLoop {
         eventBus.emit('waveEnded', { wave: this._waveState.waveIndex });
         // Enter upgrade break phase (from game.js:911-928)
         this._upgradeBreak.enter(this._playerState, this._waveState);
+      } else if (ev.type === 'horde') {
+        for (const req of ev.spawnRequests) {
+          const rawX = this._playerState.x + Math.cos(req.angle) * req.distance;
+          const rawY = this._playerState.y + Math.sin(req.angle) * req.distance;
+          const x = clamp(rawX, 10, CFG.WORLD_W - 10);
+          const y = clamp(rawY, 10, CFG.WORLD_H - 10);
+          this._enemies.push(makeEnemyState(req.type, x, y, this._waveState.speedBonus));
+          changed = true;
+        }
+        this._eventLog.add('HORDE! x' + ev.count, 0xFF4444);
+        this._hudManager.showMilestoneBanner('HORDE! x' + ev.count, '#FF4444');
+        this._screenFx.shake(5, 0.3);
       } else if (ev.type === 'break_end') {
         startWave(this._waveState);
         eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
@@ -671,18 +689,67 @@ export class GameLoop {
     }
   }
 
-  /** Returns true if any enemies were despawned. */
+  /** Updates and applies damage/slow effects from bomb/hazard zones. */
+  private _tickHazardZones(dilatedDt: number): void {
+    const zones = this._waveState.hazardZones;
+    for (let i = zones.length - 1; i >= 0; i--) {
+      zones[i].life -= dilatedDt;
+      zones[i].phase += dilatedDt;
+      if (zones[i].life <= 0) {
+        zones[i] = zones[zones.length - 1];
+        zones.pop();
+        continue;
+      }
+      const dx = this._playerState.x - zones[i].x;
+      const dy = this._playerState.y - zones[i].y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < zones[i].radius) {
+        // Only apply damage when invuln and ghost frames are expired (game.js:2056-2057)
+        if (this._playerState.invulnTimer <= 0 && this._playerState.ghostFrameTimer <= 0) {
+          const dmg = CFG.BOMB_ZONE_DMG * dilatedDt * (1 - this._playerState.damageResist);
+          this._playerState.hp = Math.max(0, this._playerState.hp - dmg);
+          this._playerState.lastHitTimer = 0;
+          if (this._playerState.hp <= 0 && !this._death.active) {
+            this._death.trigger();
+          }
+        }
+        this._playerState.slowTimer = Math.max(this._playerState.slowTimer ?? 0, 0.1);
+        this._playerState.slowStrength = CFG.BOMB_ZONE_SLOW;
+      }
+    }
+  }
+
+  /** Returns true if enemies array was modified. */
   private _tickEnemies(dilatedDt: number): boolean {
     let changed = false;
+    const trailPts = Array.from(
+      { length: this._trailState.count },
+      (_, i) => getTrailPoint(this._trailState, i),
+    );
+
     for (let i = this._enemies.length - 1; i >= 0; i--) {
+      const enemy = this._enemies[i];
       const result = updateEnemy(
-        this._enemies[i],
+        enemy,
         this._playerState,
         dilatedDt,
         this._gameClock,
         this._ctx.camera.isVisible,
+        trailPts,
       );
-      checkEnemyPropCollision(this._propsState, this._enemies[i]);
+
+      // Check for bomb drop and spawn hazard zone
+      if (enemy._dropBomb) {
+        enemy._dropBomb = false;
+        this._waveState.hazardZones.push({
+          x: enemy.x,
+          y: enemy.y,
+          life: CFG.BOMB_ZONE_DURATION,
+          radius: CFG.BOMB_ZONE_RADIUS,
+          phase: 0,
+        });
+      }
+      checkEnemyPropCollision(this._propsState, enemy);
       if (result.despawned) {
         // swap-and-pop
         this._enemies[i] = this._enemies[this._enemies.length - 1];
@@ -708,6 +775,7 @@ export class GameLoop {
         this._scoringState.score      = nmResult.score;
         this._scoringState.comboLevel = nmResult.comboLevel;
         this._playerState.comboLevel  = nmResult.comboLevel;
+        updateRunStats(this._scoringState.runStats, { type: 'near_miss', comboLevel: nmResult.comboLevel });
         // Combo heal at milestones 3/5/8 (intentional: also fires from near-miss like original)
         this._playerState.hp = applyComboHeal(
           oldCombo, nmResult.comboLevel,
@@ -763,6 +831,7 @@ export class GameLoop {
         addScore(this._scoringState, encircleResult.scoreDelta);
         this._scoringState.comboLevel = encircleResult.comboLevel;
         this._playerState.comboLevel  = encircleResult.comboLevel;
+        updateRunStats(this._scoringState.runStats, { type: 'encircle', killCount, comboLevel: encircleResult.comboLevel });
         // Combo heal at milestones (intentional improvement: also fires from encirclement)
         this._playerState.hp = applyComboHeal(
           oldCombo, encircleResult.comboLevel,
@@ -842,6 +911,7 @@ export class GameLoop {
 
   private _tickRenderers(dilatedDt: number): void {
     this._enemyRenderer.update(this._enemies);
+    this._pickupRenderer.update(this._waveState.scraps, this._waveState.hazardZones);
     this._trailRenderer.update(this._trailState);
     this._playerRenderer.update(this._playerState);
 
@@ -1177,6 +1247,7 @@ export class GameLoop {
     this._trailRenderer.destroy();
     this._propsRenderer.destroy();
     this._enemyRenderer.destroy();
+    this._pickupRenderer.destroy();
     this._upgradeBreak.destroy();
     this._death.destroy();
     this._hudManager.destroy();

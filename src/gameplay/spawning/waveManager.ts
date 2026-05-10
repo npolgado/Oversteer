@@ -3,16 +3,20 @@
 
 import { CFG, type EnemyType } from '@core/config';
 import { clamp } from '@core/utils';
-import {
-  computeWaveTiming,
-  getEnemyPool,
-  shouldSpawnElite,
-  type ScrapPickup,
-} from '@gameplay/pureLogic';
+import { makeRng } from '@core/rng';
+import { rollHordeTrigger, computeHordeCount, shouldTriggerHorde, type ScrapPickup } from '@gameplay/pureLogic';
 
-// ── Types ──────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────
 
 export type WavePhase = 'combat' | 'break' | 'idle';
+
+export interface HazardZone {
+  x: number;
+  y: number;
+  life: number;       // seconds remaining (from CFG.BOMB_ZONE_DURATION)
+  radius: number;     // from CFG.BOMB_ZONE_RADIUS
+  phase: number;      // animation phase, starts at 0, increases each frame
+}
 
 export interface WaveState {
   waveIndex: number;
@@ -31,6 +35,10 @@ export interface WaveState {
   cadenceMult: number;
   scraps: ScrapPickup[];
   scrapTimer: number;
+  hazardZones: HazardZone[];
+  hordeTriggered: boolean;
+  hordeSpawnTimer: number;
+  hordeTrigger: number;
 }
 
 export interface SpawnRequest {
@@ -43,9 +51,10 @@ export interface SpawnRequest {
 export type WaveEvent =
   | { type: 'spawn'; requests: SpawnRequest[] }
   | { type: 'wave_end' }
-  | { type: 'break_end' };
+  | { type: 'break_end' }
+  | { type: 'horde'; spawnRequests: SpawnRequest[]; count: number };
 
-// ── Factory ────────────────────────────────────────────────────
+// ── Factory ────┐───────┐─────────────┐───────┐─────────
 
 export function makeWaveState(): WaveState {
   return {
@@ -65,10 +74,14 @@ export function makeWaveState(): WaveState {
     cadenceMult: 1,
     scraps: [],
     scrapTimer: CFG.SCRAP_INTERVAL,
+    hazardZones: [],
+    hordeTriggered: false,
+    hordeSpawnTimer: 0,
+    hordeTrigger: 0,
   };
 }
 
-// ── startWave ──────────────────────────────────────────────────
+// ── startWave ────┐─────────┐───────────┐─────────
 
 export function startWave(state: WaveState): void {
   state.waveIndex++;
@@ -87,15 +100,19 @@ export function startWave(state: WaveState): void {
   // startWave clears scraps (matches original waves.js startWave)
   state.scraps.length = 0;
   state.scrapTimer = CFG.SCRAP_INTERVAL;
+  state.hazardZones.length = 0;
+  state.hordeTriggered = false;
+  state.hordeSpawnTimer = 0;
+  state.hordeTrigger = rollHordeTrigger(makeRng(Date.now() + Math.random() * 0xFFFFFF | 0));
 }
 
-// ── Speed bonus — matches game.js:1002 exactly ────────────────
+// ── Speed bonus ─────────────────┐─────────
 
 export function computeSpeedBonus(score: number): number {
   return Math.min(120, Math.max(0, Math.floor((score - 2000) / 500) * 12));
 }
 
-// ── Spawn type selection ───────────────────────────────────────
+// ── Spawn type selection ──────┐────────
 
 function pickEnemyType(score: number, waveIndex: number): EnemyType {
   const pool = getEnemyPool(score);
@@ -105,7 +122,21 @@ function pickEnemyType(score: number, waveIndex: number): EnemyType {
   return type;
 }
 
-// ── Update ─────────────────────────────────────────────────────
+function getEnemyPool(score: number): EnemyType[] {
+  const pool: EnemyType[] = ['chaser'];
+  if (score >= 1000) pool.push('interceptor');
+  if (score >= 1500) pool.push('drifter');
+  if (score >= 2000) pool.push('blocker');
+  if (score >= 2500) pool.push('flanker');
+  if (score >= 3000) pool.push('bomber');
+  return pool;
+}
+
+function shouldSpawnElite(waveIndex: number, roll: number): boolean {
+  return waveIndex >= 4 && roll < 0.12;
+}
+
+// ── Update ────┐───────────┐───────────────┐──────────
 
 export function updateWave(
   state: WaveState,
@@ -129,6 +160,27 @@ export function updateWave(
       // wave_end does NOT clear scraps (they persist into break phase)
       events.push({ type: 'wave_end' });
       return events;
+    }
+
+    // Horde event logic (wave 2+, fires once per wave at 75% of combat time)
+    if (!state.hordeTriggered && state.waveIndex >= 2 &&
+        shouldTriggerHorde(state.waveTimer, state.currentCombatDuration, state.hordeTrigger)) {
+      state.hordeTriggered = true;
+      state.hordeSpawnTimer = CFG.HORDE_DELAY;
+    }
+
+    // Horde spawn countdown
+    if (state.hordeTriggered && state.hordeSpawnTimer > 0) {
+      state.hordeSpawnTimer -= dt;
+      if (state.hordeSpawnTimer <= 0) {
+        const count = computeHordeCount(state.waveIndex);
+        const requests: SpawnRequest[] = [];
+        for (let i = 0; i < count; i++) {
+          const angle = (Math.PI * 2 * i) / count;
+          requests.push({ type: pickEnemyType(score, state.waveIndex), count: 1, angle, distance: CFG.HORDE_SPAWN_DIST });
+        }
+        events.push({ type: 'horde', spawnRequests: requests, count });
+      }
     }
 
     // Regular spawn timer
@@ -179,7 +231,7 @@ export function updateWave(
   return events;
 }
 
-// ── Scrap spawning helper ──────────────────────────────────────
+// ── Scrap spawning helper ──
 
 export interface ScrapSpawnResult {
   x: number;
@@ -204,4 +256,18 @@ export function tickScrapSpawn(
   const x = clamp(playerX + Math.cos(angle) * dist, 40, CFG.WORLD_W - 40);
   const y = clamp(playerY + Math.sin(angle) * dist, 40, CFG.WORLD_H - 40);
   return { x, y };
+}
+
+export function computeWaveTiming(waveIndex: number): {
+  firstSpawn: number;
+  spawnInterval: number;
+  combatDuration: number;
+  noBursts: boolean;
+} {
+  const ramp = Math.min(1, (waveIndex - 1) / 4);
+  const firstSpawn = 2.5 + (4 - 2.5) * ramp * 0.2;
+  const spawnInterval = 4.0 * (0.8 + ramp * 0.2);
+  const combatDuration = Math.min(120, 30 + 10 * (waveIndex - 1));
+  const noBursts = waveIndex === 1;
+  return { firstSpawn, spawnInterval, combatDuration, noBursts };
 }

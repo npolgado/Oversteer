@@ -7,6 +7,7 @@ import {
   updateWave,
   computeSpeedBonus,
 } from '../waveManager';
+import { HazardZone } from '../waveManager';
 
 // ── computeWaveTiming (already covered in pureLogic tests, but verify key values) ──
 
@@ -177,6 +178,35 @@ describe('burst spawning', () => {
       }
     }
     expect(burstFired).toBe(true);
+  });
+});
+
+// ── startWave — hazardZones ─────────────────────────────────────────
+
+// Test 1 — hazardZones cleared on startWave
+describe('startWave — hazardZones', () => {
+  it('clears hazardZones array on wave start', () => {
+    const s = makeWaveState();
+    s.hazardZones.push({ x: 100, y: 100, life: 5, radius: 55, phase: 0 });
+    startWave(s);
+    expect(s.hazardZones.length).toBe(0);
+  });
+});
+
+// ── updateWave — horde event —────────────────────────────────────────
+
+// Test 2 — horde event emitted by updateWave
+describe('updateWave — horde event', () => {
+  it('emits horde event on wave 2+ after hordeTrigger fraction of combat elapses', () => {
+    const s = makeWaveState();
+    startWave(s); // wave 1
+    startWave(s); // wave 2 — horde eligible
+    // Force hordeTrigger to 0 so horde fires immediately
+    s.hordeTrigger = 0;
+    s.hordeTriggered = false;
+    // Advance past HORDE_DELAY so the spawn fires
+    const events = updateWave(s, CFG.HORDE_DELAY + 0.1, 0, 0);
+    expect(events.some(e => e.type === 'horde')).toBe(true);
   });
 });
 
