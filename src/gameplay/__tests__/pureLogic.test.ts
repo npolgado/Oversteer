@@ -31,6 +31,8 @@ import {
   applyDriftShield,
   applyComboHeal,
   applyBombZoneDamage,
+  applyHazardZoneDamage,
+  HazardZoneEffect,
   // Stats
   makeRunStats,
   updateRunStats,
@@ -658,3 +660,30 @@ describe('CFG constants', () => {
     expect(CFG.ENEMY_SPRITES_BY_TYPE.bomber.length).toBeGreaterThan(0);
   });
 });
+
+// ── applyHazardZoneDamage ─────────────────────────────────────────────
+
+describe('applyHazardZoneDamage', () => {
+  it('returns unchanged HP when outside zone radius', () => {
+    const result = applyHazardZoneDamage(1, 0, 0, 0, 0, 0, 0, 50, 100, 0, 0.016);
+    expect(result.hp).toBe(1);
+    expect(result.slowStrength).toBe(0);
+  });
+
+  it('reduces HP when inside zone and not invulnerable', () => {
+    const result = applyHazardZoneDamage(1, 0, 0, 0, 0, 0, 0, 50, 10, 0, 0.1);
+    expect(result.hp).toBeLessThan(1);
+  });
+
+  it('does not reduce HP when invulnTimer greater than 0', () => {
+    const result = applyHazardZoneDamage(1, 0, 1.0, 0, 0, 0, 0, 50, 10, 0, 0.1);
+    expect(result.hp).toBe(1);
+  });
+
+  it('applies slow when inside zone', () => {
+    const result = applyHazardZoneDamage(1, 0, 0, 0, 0, 0, 0, 50, 10, 0, 0.016);
+    expect(result.slowTimer).toBeGreaterThan(0);
+    expect(result.slowStrength).toBe(CFG.BOMB_ZONE_SLOW);
+  });
+});
+

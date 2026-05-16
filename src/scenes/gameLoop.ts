@@ -38,6 +38,8 @@ import {
   computeEncircleOutcome,
   applyComboHeal,
   updateRunStats,
+  applyHazardZoneDamage,
+  type HazardZoneEffect,
 } from '@gameplay/pureLogic';
 import { makeScoringState, updateScoring, addScore, type ScoringState } from '@gameplay/scoring';
 import { saveManager } from '@core/saveManager';
@@ -704,17 +706,29 @@ export class GameLoop {
       const dy = this._playerState.y - zones[i].y;
       const dist = Math.hypot(dx, dy);
       if (dist < zones[i].radius) {
-        // Only apply damage when invuln and ghost frames are expired (game.js:2056-2057)
-        if (this._playerState.invulnTimer <= 0 && this._playerState.ghostFrameTimer <= 0) {
-          const dmg = CFG.BOMB_ZONE_DMG * dilatedDt * (1 - this._playerState.damageResist);
-          this._playerState.hp = Math.max(0, this._playerState.hp - dmg);
+        const prevHp = this._playerState.hp;
+        const effect = applyHazardZoneDamage(
+          this._playerState.hp,
+          this._playerState.slowTimer ?? 0,
+          this._playerState.invulnTimer,
+          this._playerState.ghostFrameTimer,
+          this._playerState.damageResist,
+          zones[i].x,
+          zones[i].y,
+          zones[i].radius,
+          this._playerState.x,
+          this._playerState.y,
+          dilatedDt,
+        );
+        this._playerState.hp = effect.hp;
+        this._playerState.slowTimer = effect.slowTimer;
+        this._playerState.slowStrength = effect.slowStrength;
+        if (prevHp !== effect.hp) {
           this._playerState.lastHitTimer = 0;
-          if (this._playerState.hp <= 0 && !this._death.active) {
-            this._death.trigger();
-          }
         }
-        this._playerState.slowTimer = Math.max(this._playerState.slowTimer ?? 0, 0.1);
-        this._playerState.slowStrength = CFG.BOMB_ZONE_SLOW;
+        if (this._playerState.hp <= 0 && !this._death.active) {
+          this._death.trigger();
+        }
       }
     }
   }

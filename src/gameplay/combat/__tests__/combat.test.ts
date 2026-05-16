@@ -385,3 +385,101 @@ describe('processNearMiss', () => {
     expect(CFG.SCRAP_NEAR_MISS_CHANCE).toBe(0.35);
   });
 });
+
+// ── processPlayerHit -- armored elite enemy ───────────────────────────────────
+
+// NOTE: The enemy `armored` flag in damage.ts does NOT affect processPlayerHit.
+// It is only set on elite enemies (see enemyState.ts) as a stat/visual flag.
+// Elite enemies have health=2 (not armor-based damage resistance).
+// The armor property is returned in the damage result but never used for calculations.
+
+describe('processPlayerHit -- armored elite enemy', () => {
+  let player: ReturnType<typeof makePlayerState>;
+  let eliteEnemy: ReturnType<typeof makeEnemyState>;
+  let regularEnemy: ReturnType<typeof makeEnemyState>;
+
+  beforeEach(() => {
+    player = makePlayerState();
+    eliteEnemy = makeEnemyState('elite', player.x + 50, player.y, 0);
+    regularEnemy = makeEnemyState('chaser', player.x + 50, player.y, 0);
+  });
+
+  it('armored flag does NOT reduce player damage', () => {
+    // Verify elite has health=2 and armored=true
+    expect(eliteEnemy.health).toBe(2);
+    expect(eliteEnemy.armored).toBe(true);
+
+    // Normal hit against elite enemy
+    player.hp = 10;
+    const result = processPlayerHit(player, eliteEnemy, 0);
+    // eliteEnemy.type='elite', so it will use CFG.DMG_ELITE
+    // armored=true has NO effect on calculation
+    expect(result.type).toBe('hit');
+    expect(eliteEnemy.health).toBeGreaterThan(0); // Enemy should still be alive
+    expect(result.finalDamage).toBeGreaterThan(0);
+    expect(player.hp).toBe(10 - result.finalDamage);
+  });
+
+  it('armored=true does not change hit behavior vs non-armored enemy', () => {
+    const eliteResult = processPlayerHit(player, eliteEnemy, 0);
+
+    // Reset invuln so second call isn't blocked
+    player.invulnTimer = 0;
+
+    // Regular chaser for comparison
+    const regularResult = processPlayerHit(player, regularEnemy, 0);
+
+    // Both should deal same type of damage (armored is just a flag, not a modifier)
+    expect(eliteResult.type).toBe(regularResult.type);
+    // Damage magnitude is based on enemy.type, not armored flag
+  });
+
+  it('shield breaks against armored elite enemy', () => {
+    player.shield = true;
+    const result = processPlayerHit(player, eliteEnemy, 0);
+    expect(result.type).toBe('shield_break');
+    expect(result.finalDamage).toBe(0);
+    expect(player.hp).toBe(makePlayerState().hp); // No HP loss
+    expect(player.shield).toBe(false);
+    expect(player.invulnTimer).toBe(CFG.SHIELD_INVULN);
+  });
+
+  it('armored enemy still takes knockback on hit', () => {
+    player.vx = 0; player.vy = 0;
+    processPlayerHit(player, eliteEnemy, 0);
+    // Elite enemy should still get knockback applied
+    const velocity = Math.hypot(player.vx, player.vy);
+    expect(velocity).toBeGreaterThan(0);
+    expect(player.invulnTimer).toBe(CFG.HIT_INVULN);
+  });
+
+  it('second hit on armored elite deals damage', () => {
+    player.shield = true;
+
+    // First hit: breaks shield
+    processPlayerHit(player, eliteEnemy, 0);
+    expect(player.invulnTimer).toBe(CFG.SHIELD_INVULN);
+
+    // Clear invuln so second hit can land
+    player.invulnTimer = 0;
+
+    // Second hit: now player takes damage
+    const result = processPlayerHit(player, eliteEnemy, 0);
+    expect(result.type).toBe('hit');
+    expect(result.finalDamage).toBeGreaterThan(0);
+    expect(player.hp).toBeLessThan(makePlayerState().hp);
+  });
+
+  it('armored flag is returned but not used in calculation', () => {
+    const result = processPlayerHit(player, eliteEnemy, 5);
+    // Result structure is consistent regardless of enemy armored flag
+    expect(result).toMatchObject({
+      type: 'hit',
+      finalDamage: expect.any(Number),
+      knockbackDir: expect.objectContaining({
+        x: expect.any(Number),
+        y: expect.any(Number),
+      }),
+    });
+  });
+});

@@ -57,6 +57,8 @@ export function updatePhysics(
       let driftBoost = CFG.DRIFT_BOOST;
       if (ent.driftKing) driftBoost *= 1.5;
       if (ent.afterburner) driftBoost *= 2;
+      // NOTE: combined upgrade speed cap -- prevents Nitro Drift + Afterburner + Drift King stacking past terminal velocity
+      driftBoost = Math.min(driftBoost, CFG.MAX_SPEED * 0.7);
       if (isPlayer && ent.lastDriftEndTime > 0) {
         // NOTE: diverges from original — original uses performance.now()/1000 (physics.js:20).
         const elapsed = gameClock - ent.lastDriftEndTime;

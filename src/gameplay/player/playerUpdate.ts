@@ -72,7 +72,8 @@ export function updatePlayer(state: PlayerState, ctx: PlayerUpdateContext): void
   if (state.tightTurns) state.turnRate = CFG.TURN_RATE * 1.25;
   if (state.handbrakeTimer > 0) state.turnRate *= CFG.HANDBRAKE_TURN_MULT;
   if (state.speedBoostTimer > 0) state.maxSpeed *= CFG.BOOST_ZONE_MULT;
-  if (state.nitroDrift && state.drifting) state.maxSpeed *= 1.3;
+  const speedNow = Math.hypot(state.vx, state.vy);
+  if (state.nitroDrift && (state.drifting || (ctx.drift && speedNow >= CFG.DRIFT_THRESHOLD))) state.maxSpeed *= 1.3;
 
   // Dash burst
   if (state.dashCooldown > 0) state.dashCooldown -= dt;

@@ -4,7 +4,7 @@
 import { CFG, type EnemyType } from '@core/config';
 import { clamp } from '@core/utils';
 import { makeRng } from '@core/rng';
-import { rollHordeTrigger, computeHordeCount, shouldTriggerHorde, type ScrapPickup } from '@gameplay/pureLogic';
+import { rollHordeTrigger, computeHordeCount, shouldTriggerHorde, type ScrapPickup, getEnemyPool, shouldSpawnElite, computeWaveTiming } from '@gameplay/pureLogic';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -118,22 +118,8 @@ function pickEnemyType(score: number, waveIndex: number): EnemyType {
   const pool = getEnemyPool(score);
   const type = pool[Math.floor(Math.random() * pool.length)];
   // Elite override: 20% chance from wave 4+
-  if (shouldSpawnElite(waveIndex, Math.random())) return 'elite';
+  if (waveIndex >= 4 && Math.random() < 0.12) return 'elite';
   return type;
-}
-
-function getEnemyPool(score: number): EnemyType[] {
-  const pool: EnemyType[] = ['chaser'];
-  if (score >= 1000) pool.push('interceptor');
-  if (score >= 1500) pool.push('drifter');
-  if (score >= 2000) pool.push('blocker');
-  if (score >= 2500) pool.push('flanker');
-  if (score >= 3000) pool.push('bomber');
-  return pool;
-}
-
-function shouldSpawnElite(waveIndex: number, roll: number): boolean {
-  return waveIndex >= 4 && roll < 0.12;
 }
 
 // ── Update ────┐───────────┐───────────────┐──────────
@@ -258,16 +244,4 @@ export function tickScrapSpawn(
   return { x, y };
 }
 
-export function computeWaveTiming(waveIndex: number): {
-  firstSpawn: number;
-  spawnInterval: number;
-  combatDuration: number;
-  noBursts: boolean;
-} {
-  const ramp = Math.min(1, (waveIndex - 1) / 4);
-  const firstSpawn = 2.5 + (4 - 2.5) * ramp * 0.2;
-  const spawnInterval = 4.0 * (0.8 + ramp * 0.2);
-  const combatDuration = Math.min(120, 30 + 10 * (waveIndex - 1));
-  const noBursts = waveIndex === 1;
-  return { firstSpawn, spawnInterval, combatDuration, noBursts };
-}
+

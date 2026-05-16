@@ -388,6 +388,46 @@ export function applyHpRegen(player: PlayerForRegen, dt: number): void {
   }
 }
 
+export interface HazardZoneEffect {
+  hp: number;
+  slowTimer: number;
+  slowStrength: number;
+}
+
+export function applyHazardZoneDamage(
+  playerHp: number,
+  playerSlowTimer: number,
+  playerInvulnTimer: number,
+  playerGhostFrameTimer: number,
+  playerDamageResist: number,
+  zoneX: number,
+  zoneY: number,
+  zoneRadius: number,
+  playerX: number,
+  playerY: number,
+  dt: number,
+): HazardZoneEffect {
+  const dist = Math.hypot(playerX - zoneX, playerY - zoneY);
+  if (dist >= zoneRadius) {
+    return {
+      hp: playerHp,
+      slowTimer: playerSlowTimer,
+      slowStrength: 0,
+    };
+  }
+
+  let hp = playerHp;
+  if (playerInvulnTimer <= 0 && playerGhostFrameTimer <= 0) {
+    const dmg = CFG.BOMB_ZONE_DMG * dt * (1 - playerDamageResist);
+    hp = Math.max(0, hp - dmg);
+  }
+  return {
+    hp,
+    slowTimer: Math.max(playerSlowTimer, 0.1),
+    slowStrength: CFG.BOMB_ZONE_SLOW,
+  };
+}
+
 export function applyGhostFrameNearMiss(player: PlayerForGhostFrame, hasGhostFrame: boolean): void {
   if (hasGhostFrame) player.ghostFrameTimer = 0.3;
 }
@@ -438,6 +478,7 @@ export function applyBombZoneDamage(dmg: number, dt: number, damageResist: numbe
   if (raw < 1) return 0;
   return Math.max(1, Math.round(raw * (1 - (damageResist || 0))));
 }
+
 
 // ── Stats ──────────────────────────────────────────────────────
 

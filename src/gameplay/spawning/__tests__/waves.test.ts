@@ -6,6 +6,7 @@ import {
   startWave,
   updateWave,
   computeSpeedBonus,
+  type WaveEvent,
 } from '../waveManager';
 import { HazardZone } from '../waveManager';
 
@@ -207,6 +208,27 @@ describe('updateWave — horde event', () => {
     // Advance past HORDE_DELAY so the spawn fires
     const events = updateWave(s, CFG.HORDE_DELAY + 0.1, 0, 0);
     expect(events.some(e => e.type === 'horde')).toBe(true);
+  });
+
+  it('horde fires exactly once per wave even if combat continues past trigger', () => {
+    const s = makeWaveState();
+    startWave(s); // wave 1
+    startWave(s); // wave 2 — horde eligible, waveIndex = 2
+    // Set hordeTrigger to fire early in combat
+    s.hordeTrigger = 0.1;
+    s.hordeTriggered = false;
+    // Set spawn timer to 0 so spawn fires immediately when hordeTrigger fires
+    s.hordeSpawnTimer = 0;
+    const waveDuration = s.currentCombatDuration;
+    const events: WaveEvent[] = [];
+    // Tick through the full combat duration in 0.1 steps, collecting events
+    for (let t = 0.1; t <= waveDuration; t += 0.1) {
+      const e = updateWave(s, 0.1, 0, 0);
+      events.push(...e);
+    }
+    // Filter for horde events
+    const hordeEvents = events.filter(e => e.type === 'horde');
+    expect(hordeEvents.length).toBe(1);
   });
 });
 
