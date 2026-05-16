@@ -676,6 +676,9 @@ export class GameLoop {
       if (ev === 'scrap') {
         addScore(this._scoringState, 10); // +10 per scrap (intentional improvement over original)
         eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: 10 });
+        eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 8 });
+        eventBus.emit('eventLog', { text: '+SCRAP', color: '#35f2d0' });
+        this._ctx.audioManager.play('scrap_pickup');
       } else if (ev === 'speed_pickup' || ev === 'boost') {
         this._playerState.speedBoostTimer = CFG.BOOST_ZONE_DURATION;
         eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 10 });
@@ -705,9 +708,16 @@ export class GameLoop {
       const bonus = Math.round(kills * 50 * this._playerState.scoreMult);
       addScore(this._scoringState, bonus);
       eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: bonus });
-      updateRunStats(this._scoringState.runStats, { type: 'encircle', killCount: kills, comboLevel: this._playerState.comboLevel });
+      updateRunStats(this._scoringState.runStats, { type: 'bomb', killCount: kills });
       eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'shard', count: 20 });
       eventBus.emit('eventLog', { text: `BOMB! x${kills}`, color: '#FF4444' });
+    }
+    // Sweep bomb-killed enemies out immediately (swap-and-pop)
+    for (let i = this._enemies.length - 1; i >= 0; i--) {
+      if (!this._enemies[i].alive) {
+        this._enemies[i] = this._enemies[this._enemies.length - 1];
+        this._enemies.pop();
+      }
     }
   }
 
@@ -781,6 +791,12 @@ export class GameLoop {
 
     for (let i = this._enemies.length - 1; i >= 0; i--) {
       const enemy = this._enemies[i];
+      if (!enemy.alive) {
+        this._enemies[i] = this._enemies[this._enemies.length - 1];
+        this._enemies.pop();
+        changed = true;
+        continue;
+      }
       const result = updateEnemy(
         enemy,
         this._playerState,
@@ -827,7 +843,7 @@ export class GameLoop {
         this._scoringState.score      = nmResult.score;
         this._scoringState.comboLevel = nmResult.comboLevel;
         this._playerState.comboLevel  = nmResult.comboLevel;
-        updateRunStats(this._scoringState.runStats, { type: 'near_miss', comboLevel: nmResult.comboLevel });
+        updateRunStats(this._scoringState.runStats, { type: 'near_miss', comboLevel: oldCombo });
         // Combo heal at milestones 3/5/8 (intentional: also fires from near-miss like original)
         this._playerState.hp = applyComboHeal(
           oldCombo, nmResult.comboLevel,
@@ -883,7 +899,7 @@ export class GameLoop {
         addScore(this._scoringState, encircleResult.scoreDelta);
         this._scoringState.comboLevel = encircleResult.comboLevel;
         this._playerState.comboLevel  = encircleResult.comboLevel;
-        updateRunStats(this._scoringState.runStats, { type: 'encircle', killCount, comboLevel: encircleResult.comboLevel });
+        updateRunStats(this._scoringState.runStats, { type: 'encircle', killCount, comboLevel: oldCombo });
         // Combo heal at milestones (intentional improvement: also fires from encirclement)
         this._playerState.hp = applyComboHeal(
           oldCombo, encircleResult.comboLevel,
@@ -963,7 +979,7 @@ export class GameLoop {
 
   private _tickRenderers(dilatedDt: number): void {
     this._enemyRenderer.update(this._enemies);
-    this._pickupRenderer.update(this._waveState.scraps, this._waveState.hazardZones);
+    this._pickupRenderer.update(this._waveState.scraps, this._waveState.hazardZones, this._waveState.boostZones);
     this._trailRenderer.update(this._trailState);
     this._playerRenderer.update(this._playerState);
 
@@ -1052,6 +1068,9 @@ export class GameLoop {
       this._pauseHint.position.set(CFG.W / 2, CFG.H / 2 - S(20));
       this._ctx.pixiApp.hudLayer.addChild(this._pauseHint);
     }
+    this._pauseOverlay.visible = true;
+    this._pauseText.visible    = true;
+
     const sfxPct = Math.round(this._ctx.audioManager.sfxVolume   * 100);
     const musPct = Math.round(this._preMuteMusicVol               * 100);
     const muteStr = this._ctx.audioManager.muted ? ' (MUTED)' : '';
@@ -1059,7 +1078,7 @@ export class GameLoop {
     this._pauseHint.visible = true;
 
     this._pauseOverlay.clear();
-    this._pauseOverlay.rect(0, 0, CFG.W, CFG.H).fill({ color: 0x000000, alpha: 0.6 });
+    this._pauseOverlay.rect(0, 0, CFG.W, CFG.H).fill({ color: 0x000000, alpha: 0.5 });
   }
 
   /** Trigger combo milestone FX + audio when combo crosses 3, 5, or 8. (game.js:1032-1051) */

@@ -1,6 +1,6 @@
 import { Graphics, Container } from 'pixi.js';
 import { CFG } from '@core/config';
-import type { ScrapPickup } from '@gameplay/pureLogic';
+import type { ScrapPickup, BoostZone } from '@gameplay/pureLogic';
 import type { HazardZone } from '@gameplay/spawning/waveManager';
 
 export class PickupRenderer {
@@ -11,8 +11,16 @@ export class PickupRenderer {
     layer.addChild(this._g);
   }
 
-  update(scraps: ScrapPickup[], hazardZones: HazardZone[]): void {
+  update(scraps: ScrapPickup[], hazardZones: HazardZone[], boostZones: BoostZone[]): void {
     this._g.clear();
+
+    // Draw boost zones (pulsing cyan rings)
+    for (const z of boostZones) {
+      const pulse = 0.5 + 0.3 * Math.sin(Date.now() / 300);
+      this._g.circle(z.x, z.y, 30).fill({ color: 0x35F2D0, alpha: pulse * 0.2 });
+      this._g.circle(z.x, z.y, 30).stroke({ color: 0x35F2D0, width: 2, alpha: pulse + 0.3 });
+      this._g.circle(z.x, z.y, 18).stroke({ color: 0xFFFFFF, width: 1, alpha: pulse * 0.5 });
+    }
 
     // Draw hazard zones (pulsing red circles — bomber bomb zones)
     for (const z of hazardZones) {

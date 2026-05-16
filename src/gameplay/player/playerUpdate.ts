@@ -104,7 +104,7 @@ export function updatePlayer(state: PlayerState, ctx: PlayerUpdateContext): void
 
   // Wall riding detection
   const pad = CFG.ARENA_PAD;
-  const wd = CFG.WALL_RIDE_DIST;
+  const wd = CFG.WALL_RIDE_DIST_FRAC * Math.min(CFG.WORLD_W, CFG.WORLD_H);
   state.wallRiding = state.drifting && (
     state.x < pad + wd || state.x > CFG.WORLD_W - pad - wd ||
     state.y < pad + wd || state.y > CFG.WORLD_H - pad - wd

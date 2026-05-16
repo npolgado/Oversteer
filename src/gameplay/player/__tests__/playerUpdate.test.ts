@@ -209,7 +209,7 @@ describe('wall riding detection', () => {
     s.vx = 0;
     s.vy = CFG.DRIFT_THRESHOLD + 200; // enough speed for drift, perpendicular to wall
     s.drifting = true;
-    s.x = CFG.ARENA_PAD + 10; // well inside wall-ride zone (ARENA_PAD + WALL_RIDE_DIST = 54)
+    s.x = CFG.ARENA_PAD + 10; // well inside wall-ride zone (ARENA_PAD + WALL_RIDE_DIST_FRAC*3000 ≈ 113)
     s.y = CFG.WORLD_H / 2;
     updatePlayer(s, withInput({ up: true, drift: true }));
     expect(s.wallRiding).toBe(true);

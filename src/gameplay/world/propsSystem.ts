@@ -160,7 +160,7 @@ export function handlePropCollisions(hits: Prop[], player: PlayerState): PropCol
         player.vy *= 0.3;
       }
       player.wallHit = true;
-      events.push({ type: 'solid_bounce', x: prop.x, y: prop.y });
+      events.push({ type: 'solid_bounce', x: prop.x + nx * prop.radius, y: prop.y + ny * prop.radius });
     } else if (prop.type === 'slow') {
       player.slowTimer = prop.duration ?? 2.0;
       player.slowStrength = prop.strength ?? 0.5;

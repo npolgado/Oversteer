@@ -176,7 +176,7 @@ export interface CfgShape {
   DRIFT_CHAIN_MULT_1: number;
   DRIFT_CHAIN_MULT_2: number;
   // Wall riding
-  WALL_RIDE_DIST: number;
+  WALL_RIDE_DIST_FRAC: number;
   WALL_RIDE_SPEED_BONUS: number;
   // Early-game balancing
   FIRST_SPAWN_INITIAL: number;
@@ -353,7 +353,7 @@ export const CFG: CfgShape = {
   DRIFT_CHAIN_MULT_1: 1.5,
   DRIFT_CHAIN_MULT_2: 2.0,
   // Wall riding
-  WALL_RIDE_DIST: 140,
+  WALL_RIDE_DIST_FRAC: 0.033,
   WALL_RIDE_SPEED_BONUS: 0.10,
   // Early-game balancing
   FIRST_SPAWN_INITIAL: 2.5,

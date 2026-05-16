@@ -519,6 +519,29 @@ describe('makeRunStats / updateRunStats', () => {
     updateRunStats(stats, { type: 'drift_tick', drifting: true, dt: 0.3 });
     expect(Math.abs(stats.totalDriftTime - 0.8)).toBeLessThan(1e-6);
   });
+
+  it('peakCombo uses pre-event combo so it is not double-counted for near_miss', () => {
+    // Bug 8: near_miss event should receive pre-event combo (old) not post-event (new)
+    // updateRunStats adds 1 internally; passing pre-event=2 → newCombo=3
+    const stats = makeRunStats();
+    updateRunStats(stats, { type: 'near_miss', comboLevel: 2 });
+    expect(stats.peakCombo).toBe(3);
+  });
+
+  it('bomb event does not inflate peakCombo', () => {
+    // Bug 8: bomb kills should use type:'bomb', not 'encircle' — bomb branch never touches peakCombo
+    const stats = makeRunStats();
+    updateRunStats(stats, { type: 'bomb', killCount: 5 });
+    expect(stats.peakCombo).toBe(0);
+    expect(stats.enemiesKilled).toBe(5);
+  });
+
+  it('peakCombo uses pre-event combo for encircle', () => {
+    // Bug 8: encircle event should receive pre-event combo — updateRunStats adds 2*killCount internally
+    const stats = makeRunStats();
+    updateRunStats(stats, { type: 'encircle', killCount: 2, comboLevel: 1 });
+    expect(stats.peakCombo).toBe(5); // 1 + 2*2 = 5
+  });
 });
 
 // ── Geometry ───────────────────────────────────────────────────
