@@ -72,7 +72,8 @@ export function updatePlayer(state: PlayerState, ctx: PlayerUpdateContext): void
   if (state.tightTurns) state.turnRate = CFG.TURN_RATE * 1.25;
   if (state.handbrakeTimer > 0) state.turnRate *= CFG.HANDBRAKE_TURN_MULT;
   if (state.speedBoostTimer > 0) state.maxSpeed *= CFG.BOOST_ZONE_MULT;
-  if (state.nitroDrift && state.drifting) state.maxSpeed *= 1.3;
+  const speedNow = Math.hypot(state.vx, state.vy);
+  if (state.nitroDrift && (state.drifting || (ctx.drift && speedNow >= CFG.DRIFT_THRESHOLD))) state.maxSpeed *= 1.3;
 
   // Dash burst
   if (state.dashCooldown > 0) state.dashCooldown -= dt;
@@ -103,7 +104,7 @@ export function updatePlayer(state: PlayerState, ctx: PlayerUpdateContext): void
 
   // Wall riding detection
   const pad = CFG.ARENA_PAD;
-  const wd = CFG.WALL_RIDE_DIST;
+  const wd = CFG.WALL_RIDE_DIST_FRAC * Math.min(CFG.WORLD_W, CFG.WORLD_H);
   state.wallRiding = state.drifting && (
     state.x < pad + wd || state.x > CFG.WORLD_W - pad - wd ||
     state.y < pad + wd || state.y > CFG.WORLD_H - pad - wd

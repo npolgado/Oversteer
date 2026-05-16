@@ -24,6 +24,7 @@ import { PropsRenderer } from '@gameplay/world/propsRenderer';
 import { makeEnemyState, type EnemyState } from '@gameplay/enemies/enemyState';
 import { updateEnemy } from '@gameplay/enemies/enemyUpdate';
 import { EnemyRenderer } from '@gameplay/enemies/enemyRenderer';
+import { PickupRenderer } from '@render/pickupRenderer';
 import { getDeathParticles, type EnemyDeathEvent } from '@gameplay/enemies/enemyDeathFx';
 import { checkPlayerEnemyCollision, checkNearMiss } from '@gameplay/combat/collision';
 import { processPlayerHit } from '@gameplay/combat/damage';
@@ -34,8 +35,13 @@ import {
   updateNearMissStreak,
   applyHpRegen,
   updateScraps,
+  updateBoostZones,
+  selectPickupType,
   computeEncircleOutcome,
   applyComboHeal,
+  updateRunStats,
+  applyHazardZoneDamage,
+  type HazardZoneEffect,
 } from '@gameplay/pureLogic';
 import { makeScoringState, updateScoring, addScore, type ScoringState } from '@gameplay/scoring';
 import { saveManager } from '@core/saveManager';
@@ -44,7 +50,9 @@ import {
   startWave,
   updateWave,
   tickScrapSpawn,
+  tickBoostZoneSpawn,
   type WaveState,
+  type HazardZone,
 } from '@gameplay/spawning/waveManager';
 import { clamp } from '@core/utils';
 import { eventBus } from '@core/eventBus';
@@ -85,6 +93,7 @@ export class GameLoop {
   private _propsRenderer: PropsRenderer;
   private _enemies: EnemyState[] = [];
   private _enemyRenderer: EnemyRenderer;
+  private _pickupRenderer: PickupRenderer;
   private _gameClock = 0;
   private _scoringState: ScoringState;
   private _waveState: WaveState;
@@ -190,6 +199,7 @@ export class GameLoop {
 
     this._enemyRenderer = new EnemyRenderer({ enemiesLayer });
     this._enemyRenderer.sync(this._enemies);
+    this._pickupRenderer = new PickupRenderer(this._ctx.pixiApp.pickupsLayer);
     this._waveState = makeWaveState();
     if (_opts.modifierIds?.includes('hard_mode')) {
       this._waveState.speedBonus = (this._waveState.speedBonus ?? 0) + 100;
@@ -475,6 +485,7 @@ export class GameLoop {
     let enemiesChanged = this._tickWave(dilatedDt);
     this._tickScraps(dilatedDt);
     this._tickProps(dilatedDt);
+    this._tickHazardZones(dilatedDt);
     enemiesChanged = this._tickEnemies(dilatedDt) || enemiesChanged;
     enemiesChanged = this._tickCombat(rawDt, dilatedDt) || enemiesChanged;
     enemiesChanged = this._tickTrail(dilatedDt) || enemiesChanged;
@@ -606,6 +617,18 @@ export class GameLoop {
         eventBus.emit('waveEnded', { wave: this._waveState.waveIndex });
         // Enter upgrade break phase (from game.js:911-928)
         this._upgradeBreak.enter(this._playerState, this._waveState);
+      } else if (ev.type === 'horde') {
+        for (const req of ev.spawnRequests) {
+          const rawX = this._playerState.x + Math.cos(req.angle) * req.distance;
+          const rawY = this._playerState.y + Math.sin(req.angle) * req.distance;
+          const x = clamp(rawX, 10, CFG.WORLD_W - 10);
+          const y = clamp(rawY, 10, CFG.WORLD_H - 10);
+          this._enemies.push(makeEnemyState(req.type, x, y, this._waveState.speedBonus));
+          changed = true;
+        }
+        this._eventLog.add('HORDE! x' + ev.count, 0xFF4444);
+        this._hudManager.showMilestoneBanner('HORDE! x' + ev.count, '#FF4444');
+        this._screenFx.shake(5, 0.3);
       } else if (ev.type === 'break_end') {
         startWave(this._waveState);
         eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
@@ -616,7 +639,7 @@ export class GameLoop {
   }
 
   private _tickScraps(dilatedDt: number): void {
-    // --- Scrap spawning ---
+    // --- Scrap spawning (type selected per wave) ---
     const scrapPos = tickScrapSpawn(
       this._waveState,
       dilatedDt,
@@ -624,10 +647,16 @@ export class GameLoop {
       this._playerState.y,
     );
     if (scrapPos) {
-      this._waveState.scraps.push({ x: scrapPos.x, y: scrapPos.y, life: 15, type: 'scrap' });
+      this._waveState.scraps.push({
+        x: scrapPos.x, y: scrapPos.y, life: 15,
+        type: selectPickupType(this._waveState.waveIndex, Math.random()),
+      });
     }
 
-    // --- Scrap collection ---
+    // --- Boost zone spawning ---
+    tickBoostZoneSpawn(this._waveState, dilatedDt, this._playerState.x, this._playerState.y);
+
+    // --- Collection ---
     const trailPointsForScraps = Array.from(
       { length: this._trailState.count },
       (_, i) => getTrailPoint(this._trailState, i),
@@ -639,16 +668,55 @@ export class GameLoop {
       magnetRange: this._playerState.magnetRange,
       trailMagnet: this._playerState.trailMagnet,
     };
-    const scrapEvents = updateScraps(
-      this._waveState.scraps,
-      pickupForPlayer,
-      dilatedDt,
-      trailPointsForScraps,
-    );
-    for (const ev of scrapEvents) {
+    const allEvents = [
+      ...updateScraps(this._waveState.scraps, pickupForPlayer, dilatedDt, trailPointsForScraps),
+      ...updateBoostZones(this._waveState.boostZones, pickupForPlayer, dilatedDt),
+    ];
+    for (const ev of allEvents) {
       if (ev === 'scrap') {
         addScore(this._scoringState, 10); // +10 per scrap (intentional improvement over original)
         eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: 10 });
+        eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 8 });
+        eventBus.emit('eventLog', { text: '+SCRAP', color: '#35f2d0' });
+        this._ctx.audioManager.play('scrap_pickup');
+      } else if (ev === 'speed_pickup' || ev === 'boost') {
+        this._playerState.speedBoostTimer = CFG.BOOST_ZONE_DURATION;
+        eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 10 });
+        eventBus.emit('eventLog', { text: ev === 'boost' ? 'SPEED BOOST!' : 'SPEED!', color: '#35f2d0' });
+      } else if (ev === 'trail_boost') {
+        this._trailState.maxPoints = Math.min(600, this._trailState.maxPoints + 200);
+        eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 10 });
+        eventBus.emit('eventLog', { text: 'TRAIL+', color: '#cc66ff' });
+      } else if (ev === 'bomb') {
+        this._applyBombPickup();
+      }
+    }
+  }
+
+  private _applyBombPickup(): void {
+    const isVisible = this._ctx.camera.isVisible;
+    let kills = 0;
+    for (const e of this._enemies) {
+      if (!e.alive) continue;
+      if (isVisible(e.x, e.y, 50)) {
+        e.alive = false;
+        kills++;
+        eventBus.emit('enemyKilled', { x: e.x, y: e.y, type: e.type, isElite: e.armored });
+      }
+    }
+    if (kills > 0) {
+      const bonus = Math.round(kills * 50 * this._playerState.scoreMult);
+      addScore(this._scoringState, bonus);
+      eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: bonus });
+      updateRunStats(this._scoringState.runStats, { type: 'bomb', killCount: kills });
+      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'shard', count: 20 });
+      eventBus.emit('eventLog', { text: `BOMB! x${kills}`, color: '#FF4444' });
+    }
+    // Sweep bomb-killed enemies out immediately (swap-and-pop)
+    for (let i = this._enemies.length - 1; i >= 0; i--) {
+      if (!this._enemies[i].alive) {
+        this._enemies[i] = this._enemies[this._enemies.length - 1];
+        this._enemies.pop();
       }
     }
   }
@@ -671,18 +739,85 @@ export class GameLoop {
     }
   }
 
-  /** Returns true if any enemies were despawned. */
+  /** Updates and applies damage/slow effects from bomb/hazard zones. */
+  private _tickHazardZones(dilatedDt: number): void {
+    const zones = this._waveState.hazardZones;
+    for (let i = zones.length - 1; i >= 0; i--) {
+      zones[i].life -= dilatedDt;
+      zones[i].phase += dilatedDt;
+      if (zones[i].life <= 0) {
+        zones[i] = zones[zones.length - 1];
+        zones.pop();
+        continue;
+      }
+      const dx = this._playerState.x - zones[i].x;
+      const dy = this._playerState.y - zones[i].y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < zones[i].radius) {
+        const prevHp = this._playerState.hp;
+        const effect = applyHazardZoneDamage(
+          this._playerState.hp,
+          this._playerState.slowTimer ?? 0,
+          this._playerState.invulnTimer,
+          this._playerState.ghostFrameTimer,
+          this._playerState.damageResist,
+          zones[i].x,
+          zones[i].y,
+          zones[i].radius,
+          this._playerState.x,
+          this._playerState.y,
+          dilatedDt,
+        );
+        this._playerState.hp = effect.hp;
+        this._playerState.slowTimer = effect.slowTimer;
+        this._playerState.slowStrength = effect.slowStrength;
+        if (prevHp !== effect.hp) {
+          this._playerState.lastHitTimer = 0;
+        }
+        if (this._playerState.hp <= 0 && !this._death.active) {
+          this._death.trigger();
+        }
+      }
+    }
+  }
+
+  /** Returns true if enemies array was modified. */
   private _tickEnemies(dilatedDt: number): boolean {
     let changed = false;
+    const trailPts = Array.from(
+      { length: this._trailState.count },
+      (_, i) => getTrailPoint(this._trailState, i),
+    );
+
     for (let i = this._enemies.length - 1; i >= 0; i--) {
+      const enemy = this._enemies[i];
+      if (!enemy.alive) {
+        this._enemies[i] = this._enemies[this._enemies.length - 1];
+        this._enemies.pop();
+        changed = true;
+        continue;
+      }
       const result = updateEnemy(
-        this._enemies[i],
+        enemy,
         this._playerState,
         dilatedDt,
         this._gameClock,
         this._ctx.camera.isVisible,
+        trailPts,
       );
-      checkEnemyPropCollision(this._propsState, this._enemies[i]);
+
+      // Check for bomb drop and spawn hazard zone
+      if (enemy._dropBomb) {
+        enemy._dropBomb = false;
+        this._waveState.hazardZones.push({
+          x: enemy.x,
+          y: enemy.y,
+          life: CFG.BOMB_ZONE_DURATION,
+          radius: CFG.BOMB_ZONE_RADIUS,
+          phase: 0,
+        });
+      }
+      checkEnemyPropCollision(this._propsState, enemy);
       if (result.despawned) {
         // swap-and-pop
         this._enemies[i] = this._enemies[this._enemies.length - 1];
@@ -708,6 +843,7 @@ export class GameLoop {
         this._scoringState.score      = nmResult.score;
         this._scoringState.comboLevel = nmResult.comboLevel;
         this._playerState.comboLevel  = nmResult.comboLevel;
+        updateRunStats(this._scoringState.runStats, { type: 'near_miss', comboLevel: oldCombo });
         // Combo heal at milestones 3/5/8 (intentional: also fires from near-miss like original)
         this._playerState.hp = applyComboHeal(
           oldCombo, nmResult.comboLevel,
@@ -763,6 +899,7 @@ export class GameLoop {
         addScore(this._scoringState, encircleResult.scoreDelta);
         this._scoringState.comboLevel = encircleResult.comboLevel;
         this._playerState.comboLevel  = encircleResult.comboLevel;
+        updateRunStats(this._scoringState.runStats, { type: 'encircle', killCount, comboLevel: oldCombo });
         // Combo heal at milestones (intentional improvement: also fires from encirclement)
         this._playerState.hp = applyComboHeal(
           oldCombo, encircleResult.comboLevel,
@@ -842,6 +979,7 @@ export class GameLoop {
 
   private _tickRenderers(dilatedDt: number): void {
     this._enemyRenderer.update(this._enemies);
+    this._pickupRenderer.update(this._waveState.scraps, this._waveState.hazardZones, this._waveState.boostZones);
     this._trailRenderer.update(this._trailState);
     this._playerRenderer.update(this._playerState);
 
@@ -930,6 +1068,9 @@ export class GameLoop {
       this._pauseHint.position.set(CFG.W / 2, CFG.H / 2 - S(20));
       this._ctx.pixiApp.hudLayer.addChild(this._pauseHint);
     }
+    this._pauseOverlay.visible = true;
+    this._pauseText.visible    = true;
+
     const sfxPct = Math.round(this._ctx.audioManager.sfxVolume   * 100);
     const musPct = Math.round(this._preMuteMusicVol               * 100);
     const muteStr = this._ctx.audioManager.muted ? ' (MUTED)' : '';
@@ -937,7 +1078,7 @@ export class GameLoop {
     this._pauseHint.visible = true;
 
     this._pauseOverlay.clear();
-    this._pauseOverlay.rect(0, 0, CFG.W, CFG.H).fill({ color: 0x000000, alpha: 0.6 });
+    this._pauseOverlay.rect(0, 0, CFG.W, CFG.H).fill({ color: 0x000000, alpha: 0.5 });
   }
 
   /** Trigger combo milestone FX + audio when combo crosses 3, 5, or 8. (game.js:1032-1051) */
@@ -1177,6 +1318,7 @@ export class GameLoop {
     this._trailRenderer.destroy();
     this._propsRenderer.destroy();
     this._enemyRenderer.destroy();
+    this._pickupRenderer.destroy();
     this._upgradeBreak.destroy();
     this._death.destroy();
     this._hudManager.destroy();

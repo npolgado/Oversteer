@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { CFG } from '@core/config';
 import { makeScoringState, updateScoring, addScore } from '../scoring';
+import { makeRunStats, updateRunStats } from '../pureLogic';
 
 function makeState(highScore = 0) {
   return makeScoringState(highScore);
@@ -143,5 +144,49 @@ describe('addScore', () => {
     addScore(s, 25);
     addScore(s, 50);
     expect(s.score).toBe(85);
+  });
+});
+
+// ── Run stats: drift time accumulation (via updateScoring) ────────────────────
+
+// Block 1: runStats -- drift time accumulation via updateScoring
+describe('runStats -- drift time accumulation via updateScoring', () => {
+  it('totalDriftTime increases when drifting each frame', () => {
+    const state = makeScoringState(0);
+    updateScoring(state, true, 1.0, 1, false, 0.5);
+    updateScoring(state, true, 1.5, 1, false, 0.5);
+    expect(state.runStats.totalDriftTime).toBeCloseTo(1.0);
+  });
+
+  it('totalDriftTime does not increase when not drifting', () => {
+    const state = makeScoringState(0);
+    updateScoring(state, false, 0, 1, false, 0.5);
+    expect(state.runStats.totalDriftTime).toBe(0);
+  });
+});
+
+// ── Run stats: near_miss and encircle events (gameLoop contract) ─────────────
+
+// Block 2: runStats -- near_miss and encircle events
+describe('runStats -- near_miss and encircle events (gameLoop contract)', () => {
+  it('nearMissTotal increments and peakCombo updates on near_miss event', () => {
+    const stats = makeRunStats();
+    updateRunStats(stats, { type: 'near_miss', comboLevel: 4 });
+    expect(stats.nearMissTotal).toBe(1);
+    expect(stats.peakCombo).toBeGreaterThanOrEqual(4);
+  });
+
+  it('enemiesKilled accumulates on encircle event', () => {
+    const stats = makeRunStats();
+    updateRunStats(stats, { type: 'encircle', killCount: 3, comboLevel: 0 });
+    expect(stats.enemiesKilled).toBe(3);
+  });
+
+  it('peakCombo tracks highest seen across multiple events', () => {
+    const stats = makeRunStats();
+    updateRunStats(stats, { type: 'near_miss', comboLevel: 2 });
+    updateRunStats(stats, { type: 'encircle', killCount: 1, comboLevel: 5 });
+    updateRunStats(stats, { type: 'near_miss', comboLevel: 3 });
+    expect(stats.peakCombo).toBeGreaterThanOrEqual(5);
   });
 });

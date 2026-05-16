@@ -1,12 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { CFG } from '@core/config';
-import { computeWaveTiming } from '@gameplay/pureLogic';
+import { computeWaveTiming, updateBoostZones } from '@gameplay/pureLogic';
 import {
   makeWaveState,
   startWave,
   updateWave,
   computeSpeedBonus,
+  tickBoostZoneSpawn,
+  type WaveEvent,
 } from '../waveManager';
+import { HazardZone } from '../waveManager';
 
 // ── computeWaveTiming (already covered in pureLogic tests, but verify key values) ──
 
@@ -177,6 +180,151 @@ describe('burst spawning', () => {
       }
     }
     expect(burstFired).toBe(true);
+  });
+});
+
+// ── startWave — hazardZones ─────────────────────────────────────────
+
+// Test 1 — hazardZones cleared on startWave
+describe('startWave — hazardZones', () => {
+  it('clears hazardZones array on wave start', () => {
+    const s = makeWaveState();
+    s.hazardZones.push({ x: 100, y: 100, life: 5, radius: 55, phase: 0 });
+    startWave(s);
+    expect(s.hazardZones.length).toBe(0);
+  });
+});
+
+// ── updateWave — horde event —────────────────────────────────────────
+
+// Test 2 — horde event emitted by updateWave
+describe('updateWave — horde event', () => {
+  it('emits horde event on wave 2+ after hordeTrigger fraction of combat elapses', () => {
+    const s = makeWaveState();
+    startWave(s); // wave 1
+    startWave(s); // wave 2 — horde eligible
+    // Force hordeTrigger to 0 so horde fires immediately
+    s.hordeTrigger = 0;
+    s.hordeTriggered = false;
+    // Advance past HORDE_DELAY so the spawn fires
+    const events = updateWave(s, CFG.HORDE_DELAY + 0.1, 0, 0);
+    expect(events.some(e => e.type === 'horde')).toBe(true);
+  });
+
+  it('horde fires exactly once per wave even if combat continues past trigger', () => {
+    const s = makeWaveState();
+    startWave(s); // wave 1
+    startWave(s); // wave 2 — horde eligible, waveIndex = 2
+    // Set hordeTrigger to fire early in combat
+    s.hordeTrigger = 0.1;
+    s.hordeTriggered = false;
+    // Set spawn timer to 0 so spawn fires immediately when hordeTrigger fires
+    s.hordeSpawnTimer = 0;
+    const waveDuration = s.currentCombatDuration;
+    const events: WaveEvent[] = [];
+    // Tick through the full combat duration in 0.1 steps, collecting events
+    for (let t = 0.1; t <= waveDuration; t += 0.1) {
+      const e = updateWave(s, 0.1, 0, 0);
+      events.push(...e);
+    }
+    // Filter for horde events
+    const hordeEvents = events.filter(e => e.type === 'horde');
+    expect(hordeEvents.length).toBe(1);
+  });
+});
+
+// ── tickBoostZoneSpawn ─────────────────────────────────────────────
+
+describe('tickBoostZoneSpawn', () => {
+  it('does not spawn outside combat phase', () => {
+    const s = makeWaveState(); // phase = 'idle'
+    s.boostZoneTimer = 0;
+    tickBoostZoneSpawn(s, 1.0, 500, 500);
+    expect(s.boostZones.length).toBe(0);
+  });
+
+  it('does not spawn before timer elapses', () => {
+    const s = makeWaveState();
+    startWave(s);
+    s.boostZoneTimer = 5;
+    tickBoostZoneSpawn(s, 0.016, 500, 500);
+    expect(s.boostZones.length).toBe(0);
+  });
+
+  it('spawns a boost zone when combat phase and timer fires', () => {
+    const s = makeWaveState();
+    startWave(s);
+    s.boostZoneTimer = 0;
+    tickBoostZoneSpawn(s, 0.016, 500, 500);
+    expect(s.boostZones.length).toBe(1);
+    expect(s.boostZones[0].life).toBe(12);
+  });
+
+  it('resets boostZoneTimer after spawn', () => {
+    const s = makeWaveState();
+    startWave(s);
+    s.boostZoneTimer = 0;
+    tickBoostZoneSpawn(s, 0.016, 500, 500);
+    expect(s.boostZoneTimer).toBe(CFG.BOOST_ZONE_SPAWN_INTERVAL);
+  });
+
+  it('spawns zone within world bounds', () => {
+    const s = makeWaveState();
+    startWave(s);
+    s.boostZoneTimer = 0;
+    for (let i = 0; i < 20; i++) {
+      s.boostZones.length = 0;
+      s.boostZoneTimer = 0;
+      tickBoostZoneSpawn(s, 0.016, 500, 500);
+      const z = s.boostZones[0];
+      expect(z.x).toBeGreaterThanOrEqual(60);
+      expect(z.x).toBeLessThanOrEqual(CFG.WORLD_W - 60);
+      expect(z.y).toBeGreaterThanOrEqual(60);
+      expect(z.y).toBeLessThanOrEqual(CFG.WORLD_H - 60);
+    }
+  });
+
+  it('startWave clears boost zones and resets timer', () => {
+    const s = makeWaveState();
+    startWave(s);
+    s.boostZoneTimer = 0;
+    tickBoostZoneSpawn(s, 0.016, 500, 500);
+    expect(s.boostZones.length).toBe(1);
+    startWave(s);
+    expect(s.boostZones.length).toBe(0);
+    expect(s.boostZoneTimer).toBe(CFG.BOOST_ZONE_SPAWN_INTERVAL);
+  });
+});
+
+// ── updateBoostZones (collection) ─────────────────────────────────
+
+describe('updateBoostZones — collection and expiry', () => {
+  const player = { x: 500, y: 500, radius: 10, magnetRange: 0 };
+
+  it('emits boost event when player overlaps zone', () => {
+    const zones = [{ x: 500, y: 500, life: 10 }];
+    const events = updateBoostZones(zones, player, 0.016);
+    expect(events).toContain('boost');
+    expect(zones.length).toBe(0);
+  });
+
+  it('does not emit event when player is out of range', () => {
+    const zones = [{ x: 1000, y: 1000, life: 10 }];
+    const events = updateBoostZones(zones, player, 0.016);
+    expect(events.length).toBe(0);
+    expect(zones.length).toBe(1);
+  });
+
+  it('removes zone when life expires without collection', () => {
+    const zones = [{ x: 1000, y: 1000, life: 0.01 }];
+    updateBoostZones(zones, player, 0.02); // life goes negative
+    expect(zones.length).toBe(0);
+  });
+
+  it('decrements zone life each tick', () => {
+    const zones = [{ x: 1000, y: 1000, life: 5 }];
+    updateBoostZones(zones, player, 1.0);
+    expect(zones[0].life).toBeCloseTo(4);
   });
 });
 

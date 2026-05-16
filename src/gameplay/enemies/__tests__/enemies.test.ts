@@ -282,3 +282,84 @@ describe('computeBlockerTarget', () => {
     expect(computeBlockerTarget(null)).toBeNull();
   });
 });
+
+// ── makeEnemyState — new enemy types ────────────────────────────────────────
+
+describe('makeEnemyState — new enemy types', () => {
+  it('drifter has correct speed and driftToggleTimer', () => {
+    const e = makeEnemyState('drifter', 0, 0, 0);
+    expect(e.maxSpeed).toBe(CFG.DRIFTER_SPEED);
+    expect(typeof e.driftToggleTimer).toBe('number');
+    expect(e.driftToggleTimer!).toBeGreaterThanOrEqual(2);
+    expect(e.driftToggleTimer!).toBeLessThanOrEqual(5);
+    expect(e.driftDuration).toBe(0);
+  });
+
+  it('blocker has correct speed and holdingTrail=false', () => {
+    const e = makeEnemyState('blocker', 0, 0, 0);
+    expect(e.maxSpeed).toBe(CFG.BLOCKER_SPEED);
+    expect(e.holdingTrail).toBe(false);
+  });
+
+  it('flanker has correct speed, flankSide +-1, striking=false', () => {
+    const e = makeEnemyState('flanker', 0, 0, 0);
+    expect(e.maxSpeed).toBe(CFG.FLANKER_SPEED);
+    expect(Math.abs(e.flankSide!)).toBe(1);
+    expect(e.striking).toBe(false);
+    expect(e.strikeTimer).toBe(0);
+  });
+
+  it('bomber has correct speed and bombTimer=BOMB_ZONE_INTERVAL', () => {
+    const e = makeEnemyState('bomber', 0, 0, 0);
+    expect(e.maxSpeed).toBe(CFG.BOMBER_SPEED);
+    expect(e.bombTimer).toBeCloseTo(CFG.BOMB_ZONE_INTERVAL);
+    expect(e._dropBomb).toBe(false);
+  });
+
+  it('elite has health=2, armored=true, radius=14', () => {
+    const e = makeEnemyState('elite', 0, 0, 0);
+    expect(e.health).toBe(2);
+    expect(e.armored).toBe(true);
+    expect(e.radius).toBe(14);
+    expect(e.lifespan).toBeGreaterThanOrEqual(CFG.ENEMY_LIFESPAN_MIN * 1.5);
+    expect(e.lifespan).toBeLessThanOrEqual(CFG.ENEMY_LIFESPAN_MAX * 1.5);
+  });
+});
+
+// ── updateEnemy — new enemy type behaviors ──────────────────────────────────
+
+describe('updateEnemy — new enemy type behaviors', () => {
+  it('bomber sets _dropBomb=true when bombTimer expires', () => {
+    const e = makeEnemyState('bomber', 1500, 1500, 0);
+    e.bombTimer = 0.01;
+    const player = makePlayerState();
+    updateEnemy(e, player, 0.1, 0, () => true);
+    expect(e._dropBomb).toBe(true);
+  });
+
+  it('drifter sets driftDuration>0 when driftToggleTimer expires', () => {
+    const e = makeEnemyState('drifter', 1500, 1500, 0);
+    e.driftToggleTimer = 0.01;
+    const player = makePlayerState();
+    updateEnemy(e, player, 0.1, 0, () => true);
+    expect((e.driftDuration ?? 0)).toBeGreaterThan(0);
+  });
+
+  it('blocker sets holdingTrail=true when within 80px of trail midpoint', () => {
+    const e = makeEnemyState('blocker', 1500, 1500, 0);
+    const player = makePlayerState();
+    const trailPoints = [{ x: e.x + 78, y: e.y }];
+    updateEnemy(e, player, 0.016, 0, () => true, trailPoints);
+    expect(e.holdingTrail).toBe(true);
+  });
+
+  it('flanker transitions to striking when within 120px of player', () => {
+    const e = makeEnemyState('flanker', 1500, 1500, 0);
+    const player = makePlayerState();
+    player.x = e.x + 100;
+    player.y = e.y;
+    player.vx = 200;
+    updateEnemy(e, player, 0.016, 0, () => true);
+    expect(e.striking).toBe(true);
+  });
+});
