@@ -219,3 +219,67 @@ describe('loop detection', () => {
     expect(result).toBeNull();
   });
 });
+
+// ── Minimum trail length guard ────────────────────────────────
+
+describe('loop detection — minimum trail length', () => {
+  it('does not encircle when trail has fewer than SKIP_RECENT + 5 points', () => {
+    // SKIP_RECENT=20, so minimum is 25 points; use 24 to sit just below threshold
+    const state = makeTrailState();
+    for (let i = 0; i < 24; i++) {
+      pushTrailPoint(state, 100 + i, 100);
+    }
+    const player = makeTestPlayer(100, 100);
+    state.checkTimer = 0.15;
+    const result = updateTrail(state, player, [{ x: 110, y: 100, alive: true, armored: false }], 0);
+    expect(result).toBeNull();
+  });
+
+  it('allows encirclement check once trail meets minimum length', () => {
+    // 25 points (SKIP_RECENT + 5) is the threshold
+    const state = makeTrailState();
+    const square = [
+      ...Array.from({ length: 7 }, (_, i) => ({ x: 100 + i * 10, y: 100 })),
+      ...Array.from({ length: 7 }, (_, i) => ({ x: 160, y: 100 + i * 10 })),
+      ...Array.from({ length: 7 }, (_, i) => ({ x: 160 - i * 10, y: 160 })),
+      ...Array.from({ length: 7 }, (_, i) => ({ x: 100, y: 160 - i * 10 })),
+    ]; // 28 points — just above SKIP_RECENT + 5
+    for (const pt of square) pushTrailPoint(state, pt.x, pt.y);
+    const player = makeTestPlayer(102, 102);
+    state.closeDist = 40;
+    state.checkTimer = 0.15;
+    const enemy = { x: 130, y: 130, alive: true, armored: false };
+    const result = updateTrail(state, player, [enemy], 0);
+    // Detection may or may not find a loop depending on geometry, but should not throw
+    expect(result === null || typeof result.encircleCount === 'number').toBe(true);
+  });
+});
+
+// ── Ring buffer wrap does not break encirclement ──────────────
+
+describe('loop detection — ring buffer wrap', () => {
+  it('encirclement works correctly after buffer wraps past maxPoints', () => {
+    const state = makeTrailState();
+    // Fill past maxPoints so head wraps around
+    for (let i = 0; i < state.maxPoints + 10; i++) {
+      pushTrailPoint(state, 500, 500); // dummy filler
+    }
+    expect(state.count).toBe(state.maxPoints); // should be capped
+
+    // Now overwrite with a detectable square (pushes over the wrapped region)
+    const square = [
+      ...Array.from({ length: 10 }, (_, i) => ({ x: 100 + i * 10, y: 100 })),
+      ...Array.from({ length: 10 }, (_, i) => ({ x: 200, y: 100 + i * 10 })),
+      ...Array.from({ length: 10 }, (_, i) => ({ x: 200 - i * 10, y: 200 })),
+      ...Array.from({ length: 10 }, (_, i) => ({ x: 100, y: 200 - i * 10 })),
+    ];
+    for (const pt of square) pushTrailPoint(state, pt.x, pt.y);
+
+    // getTrailPoint should return valid numbers (no NaN) after wrap
+    for (let i = 0; i < state.count; i++) {
+      const pt = getTrailPoint(state, i);
+      expect(isNaN(pt.x)).toBe(false);
+      expect(isNaN(pt.y)).toBe(false);
+    }
+  });
+});

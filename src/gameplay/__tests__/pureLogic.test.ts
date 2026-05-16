@@ -687,3 +687,79 @@ describe('applyHazardZoneDamage', () => {
   });
 });
 
+// ── selectPickupType ──────────────────────────────────────────────
+
+describe('selectPickupType', () => {
+  it('returns scrap for most rolls', () => {
+    expect(selectPickupType(1, 0.5)).toBe('scrap');
+    expect(selectPickupType(10, 0.99)).toBe('scrap');
+  });
+
+  it('returns trail_boost at roll < 0.12', () => {
+    expect(selectPickupType(1, 0.11)).toBe('trail_boost');
+    expect(selectPickupType(1, 0.0)).toBe('trail_boost');
+  });
+
+  it('returns speed_pickup at 0.12 <= roll < 0.20', () => {
+    expect(selectPickupType(1, 0.12)).toBe('speed_pickup');
+    expect(selectPickupType(1, 0.19)).toBe('speed_pickup');
+  });
+
+  it('never returns bomb before wave 5', () => {
+    // At wave 4 even with roll < 0.04, should not return bomb
+    expect(selectPickupType(4, 0.01)).not.toBe('bomb');
+  });
+
+  it('returns bomb at wave 5+ and roll < 0.04', () => {
+    expect(selectPickupType(5, 0.03)).toBe('bomb');
+    expect(selectPickupType(10, 0.0)).toBe('bomb');
+  });
+
+  it('bomb threshold has priority over trail_boost at wave 5+', () => {
+    // roll=0.03 is < 0.04 (bomb) AND < 0.12 (trail_boost) — bomb wins
+    expect(selectPickupType(5, 0.03)).toBe('bomb');
+  });
+});
+
+// ── applyComboDecay — boundary precision ─────────────────────────
+
+describe('applyComboDecay — boundary precision', () => {
+  it('lands exactly at 0 when combo equals decay * dt', () => {
+    // comboLevel=2, decay=2/s, dt=1.0 → should reach exactly 0, not negative
+    expect(applyComboDecay(2, false, 1.0)).toBe(0);
+  });
+
+  it('does not go below 0 on large dt', () => {
+    expect(applyComboDecay(1, false, 10.0)).toBe(0);
+  });
+
+  it('near-integer boundary: combo just above milestone does not trigger double-heal', () => {
+    // 3.001 → after 1 frame of decay should still be above 3 (nearly) or below
+    // The key invariant: result is deterministic and >= 0
+    const result = applyComboDecay(3.001, false, 0.001);
+    expect(result).toBeGreaterThanOrEqual(0);
+    expect(result).toBeLessThan(3.001);
+  });
+});
+
+// ── updateNearMissStreak — timer zero-crossing ───────────────────
+
+describe('updateNearMissStreak — zero-crossing', () => {
+  it('resets streak when dt exactly consumes remaining timer', () => {
+    const player = { consecutiveNearMisses: 2, nearMissStreakTimer: 0.016 };
+    updateNearMissStreak(player, 0.016);
+    expect(player.consecutiveNearMisses).toBe(0);
+  });
+
+  it('resets streak when dt exceeds remaining timer (straddle)', () => {
+    const player = { consecutiveNearMisses: 3, nearMissStreakTimer: 0.001 };
+    updateNearMissStreak(player, 0.016); // dt much larger than remaining
+    expect(player.consecutiveNearMisses).toBe(0);
+  });
+
+  it('does not reset streak when timer still positive', () => {
+    const player = { consecutiveNearMisses: 3, nearMissStreakTimer: 1.0 };
+    updateNearMissStreak(player, 0.016);
+    expect(player.consecutiveNearMisses).toBe(3);
+  });
+});

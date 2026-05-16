@@ -269,3 +269,60 @@ describe('reverse behavior', () => {
     expect(s.heading).toBeCloseTo(initialHeading);
   });
 });
+
+// ── Temp modifier restoration ─────────────────────────────────
+
+describe('temp modifier restoration', () => {
+  it('maxSpeed is restored to base after updatePlayer (speedBoostTimer active)', () => {
+    const s = makePlayerState();
+    const basePre = s.maxSpeed;
+    s.speedBoostTimer = 1.0;
+    updatePlayer(s, noInput);
+    // After the call, maxSpeed must be back to original — not the boosted value
+    expect(s.maxSpeed).toBe(basePre);
+  });
+
+  it('maxSpeed is restored to base after updatePlayer (tightTurns active)', () => {
+    const s = makePlayerState();
+    const basePre = s.turnRate;
+    s.tightTurns = true;
+    updatePlayer(s, noInput);
+    expect(s.turnRate).toBe(basePre);
+  });
+
+  it('turnRate is restored after handbrake frame', () => {
+    const s = makePlayerState();
+    const baseTurn = s.turnRate;
+    s.handbrakeTimer = 0.5;
+    updatePlayer(s, noInput);
+    expect(s.turnRate).toBe(baseTurn);
+  });
+
+  it('calling updatePlayer twice in a row does not compound maxSpeed multipliers', () => {
+    const s = makePlayerState();
+    const base = s.maxSpeed;
+    s.speedBoostTimer = 1.0;
+    updatePlayer(s, noInput);
+    updatePlayer(s, noInput);
+    expect(s.maxSpeed).toBe(base);
+  });
+});
+
+// ── speedBoostTimer expiry ─────────────────────────────────────
+
+describe('speedBoostTimer expiry', () => {
+  it('boost no longer applied once timer reaches 0', () => {
+    const s = makePlayerState();
+    const base = s.maxSpeed;
+    s.speedBoostTimer = 0; // already expired
+    updatePlayer(s, noInput);
+    expect(s.maxSpeed).toBe(base);
+  });
+
+  it('speedBoostTimer clamps to 0, not negative', () => {
+    const s = makePlayerState();
+    s.speedBoostTimer = 0.001;
+    updatePlayer(s, withInput({ dt: 1.0 }));
+    expect(s.speedBoostTimer).toBeLessThanOrEqual(0);
+  });
+});

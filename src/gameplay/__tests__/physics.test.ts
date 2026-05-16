@@ -140,3 +140,82 @@ describe('updatePhysics — drift chaining', () => {
     expect(ent.driftChain).toBe(0);
   });
 });
+
+// ── Sequential wall bounces ────────────────────────────────────
+
+describe('updatePhysics — sequential bounces', () => {
+  it('bounces vx and vy independently when entity is in a corner', () => {
+    // Entity is at the bottom-left corner, moving down-left
+    const ent = makeEntity({ x: 0, y: CFG.WORLD_H, vx: -200, vy: 200 });
+    updatePhysics(ent, 0.001, 0, false, false, false, false, 0);
+    expect(ent.vx).toBeGreaterThan(0); // x bounced
+    expect(ent.vy).toBeLessThan(0);    // y bounced
+    expect(ent.wallHit).toBe(true);
+  });
+
+  it('BOUNCE_RETAIN applies to corner bounce without compounding', () => {
+    const ent = makeEntity({ x: 0, y: CFG.WORLD_H, vx: -100, vy: 100 });
+    updatePhysics(ent, 0.001, 0, false, false, false, false, 0);
+    // Each component bounced independently at BOUNCE_RETAIN factor
+    expect(Math.abs(ent.vx)).toBeCloseTo(100 * CFG.BOUNCE_RETAIN, 0);
+    expect(Math.abs(ent.vy)).toBeCloseTo(100 * CFG.BOUNCE_RETAIN, 0);
+  });
+});
+
+// ── Drift threshold hysteresis ─────────────────────────────────
+
+describe('updatePhysics — drift threshold hysteresis', () => {
+  it('drift activates at exactly DRIFT_THRESHOLD speed when wantDrift=true', () => {
+    const ent = makeEntity({ vx: CFG.DRIFT_THRESHOLD, vy: 0 });
+    updatePhysics(ent, 0.001, 0, false, false, true, true, 0);
+    expect(ent.drifting).toBe(true);
+  });
+
+  it('drift does not activate below DRIFT_THRESHOLD', () => {
+    const ent = makeEntity({ vx: CFG.DRIFT_THRESHOLD - 10, vy: 0 });
+    updatePhysics(ent, 0.001, 0, false, false, true, true, 0);
+    expect(ent.drifting).toBe(false);
+  });
+
+  it('drift exits when speed drops below DRIFT_THRESHOLD even if wantDrift stays true', () => {
+    // No hysteresis: the condition is always re-evaluated as wantDrift && speed >= threshold
+    const ent = makeEntity({ vx: CFG.DRIFT_THRESHOLD + 50, vy: 0 });
+    updatePhysics(ent, 0.001, 0, false, false, true, true, 0);
+    expect(ent.drifting).toBe(true);
+    ent.vx = CFG.DRIFT_THRESHOLD - 50;
+    updatePhysics(ent, 0.001, 0, false, false, true, true, 0);
+    expect(ent.drifting).toBe(false);
+  });
+
+  it('drift ends when wantDrift becomes false', () => {
+    const ent = makeEntity({ vx: CFG.DRIFT_THRESHOLD + 50, vy: 0 });
+    // Enter drift
+    updatePhysics(ent, 0.001, 0, false, false, true, true, 0);
+    expect(ent.drifting).toBe(true);
+    // Release drift input
+    updatePhysics(ent, 0.001, 0, false, false, false, true, 0);
+    expect(ent.drifting).toBe(false);
+  });
+});
+
+// ── Combined upgrade speed cap ─────────────────────────────────
+
+describe('updatePhysics — combined upgrade speed cap', () => {
+  it('driftBoost does not exceed MAX_SPEED * 0.7 with driftKing alone', () => {
+    const ent = makeEntity({ vx: CFG.DRIFT_THRESHOLD + 50, vy: 0, driftKing: true });
+    updatePhysics(ent, 0.016, 0, true, false, true, true, 0);
+    const speed = Math.hypot(ent.vx, ent.vy);
+    // Speed should not blow past world-reasonable bounds
+    expect(speed).toBeLessThanOrEqual(CFG.MAX_SPEED * 3);
+  });
+
+  it('afterburner + driftKing does not produce unbounded speed', () => {
+    const ent = makeEntity({
+      vx: CFG.DRIFT_THRESHOLD + 50, vy: 0,
+      driftKing: true, afterburner: true,
+    });
+    updatePhysics(ent, 0.016, 0, true, false, true, true, 0);
+    const speed = Math.hypot(ent.vx, ent.vy);
+    expect(speed).toBeLessThanOrEqual(CFG.MAX_SPEED * 3);
+  });
+});

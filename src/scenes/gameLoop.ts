@@ -35,6 +35,8 @@ import {
   updateNearMissStreak,
   applyHpRegen,
   updateScraps,
+  updateBoostZones,
+  selectPickupType,
   computeEncircleOutcome,
   applyComboHeal,
   updateRunStats,
@@ -48,6 +50,7 @@ import {
   startWave,
   updateWave,
   tickScrapSpawn,
+  tickBoostZoneSpawn,
   type WaveState,
   type HazardZone,
 } from '@gameplay/spawning/waveManager';
@@ -636,7 +639,7 @@ export class GameLoop {
   }
 
   private _tickScraps(dilatedDt: number): void {
-    // --- Scrap spawning ---
+    // --- Scrap spawning (type selected per wave) ---
     const scrapPos = tickScrapSpawn(
       this._waveState,
       dilatedDt,
@@ -644,10 +647,16 @@ export class GameLoop {
       this._playerState.y,
     );
     if (scrapPos) {
-      this._waveState.scraps.push({ x: scrapPos.x, y: scrapPos.y, life: 15, type: 'scrap' });
+      this._waveState.scraps.push({
+        x: scrapPos.x, y: scrapPos.y, life: 15,
+        type: selectPickupType(this._waveState.waveIndex, Math.random()),
+      });
     }
 
-    // --- Scrap collection ---
+    // --- Boost zone spawning ---
+    tickBoostZoneSpawn(this._waveState, dilatedDt, this._playerState.x, this._playerState.y);
+
+    // --- Collection ---
     const trailPointsForScraps = Array.from(
       { length: this._trailState.count },
       (_, i) => getTrailPoint(this._trailState, i),
@@ -659,17 +668,46 @@ export class GameLoop {
       magnetRange: this._playerState.magnetRange,
       trailMagnet: this._playerState.trailMagnet,
     };
-    const scrapEvents = updateScraps(
-      this._waveState.scraps,
-      pickupForPlayer,
-      dilatedDt,
-      trailPointsForScraps,
-    );
-    for (const ev of scrapEvents) {
+    const allEvents = [
+      ...updateScraps(this._waveState.scraps, pickupForPlayer, dilatedDt, trailPointsForScraps),
+      ...updateBoostZones(this._waveState.boostZones, pickupForPlayer, dilatedDt),
+    ];
+    for (const ev of allEvents) {
       if (ev === 'scrap') {
         addScore(this._scoringState, 10); // +10 per scrap (intentional improvement over original)
         eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: 10 });
+      } else if (ev === 'speed_pickup' || ev === 'boost') {
+        this._playerState.speedBoostTimer = CFG.BOOST_ZONE_DURATION;
+        eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 10 });
+        eventBus.emit('eventLog', { text: ev === 'boost' ? 'SPEED BOOST!' : 'SPEED!', color: '#35f2d0' });
+      } else if (ev === 'trail_boost') {
+        this._trailState.maxPoints = Math.min(600, this._trailState.maxPoints + 200);
+        eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 10 });
+        eventBus.emit('eventLog', { text: 'TRAIL+', color: '#cc66ff' });
+      } else if (ev === 'bomb') {
+        this._applyBombPickup();
       }
+    }
+  }
+
+  private _applyBombPickup(): void {
+    const isVisible = this._ctx.camera.isVisible;
+    let kills = 0;
+    for (const e of this._enemies) {
+      if (!e.alive) continue;
+      if (isVisible(e.x, e.y, 50)) {
+        e.alive = false;
+        kills++;
+        eventBus.emit('enemyKilled', { x: e.x, y: e.y, type: e.type, isElite: e.armored });
+      }
+    }
+    if (kills > 0) {
+      const bonus = Math.round(kills * 50 * this._playerState.scoreMult);
+      addScore(this._scoringState, bonus);
+      eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: bonus });
+      updateRunStats(this._scoringState.runStats, { type: 'encircle', killCount: kills, comboLevel: this._playerState.comboLevel });
+      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'shard', count: 20 });
+      eventBus.emit('eventLog', { text: `BOMB! x${kills}`, color: '#FF4444' });
     }
   }
 

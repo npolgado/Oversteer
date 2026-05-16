@@ -483,3 +483,50 @@ describe('processPlayerHit -- armored elite enemy', () => {
     });
   });
 });
+
+// ── invulnTimer sub-frame expiry ───────────────────────────────
+
+describe('checkPlayerEnemyCollision — invulnTimer boundary', () => {
+  it('blocks collision when invulnTimer is 0.001 (sub-frame, not yet expired)', () => {
+    const p = makePlayerState();
+    const e = makeEnemyState('chaser', p.x + 1, p.y, 0);
+    p.invulnTimer = 0.001;
+    expect(checkPlayerEnemyCollision(p, e)).toBe(false);
+  });
+
+  it('allows collision when invulnTimer is exactly 0 and entities overlap', () => {
+    const p = makePlayerState();
+    const e = makeEnemyState('chaser', p.x + 1, p.y, 0);
+    p.invulnTimer = 0;
+    expect(checkPlayerEnemyCollision(p, e)).toBe(true);
+  });
+
+  it('allows collision when invulnTimer is negative (fully expired)', () => {
+    const p = makePlayerState();
+    const e = makeEnemyState('chaser', p.x + 1, p.y, 0);
+    p.invulnTimer = -0.001;
+    expect(checkPlayerEnemyCollision(p, e)).toBe(true);
+  });
+});
+
+// ── applyKnockback — degenerate distance ──────────────────────
+
+describe('applyKnockback — degenerate case', () => {
+  it('does not produce NaN when player and source are at the same position', () => {
+    const p = makePlayerState();
+    applyKnockback(p, { x: p.x, y: p.y }, 200);
+    expect(isNaN(p.vx)).toBe(false);
+    expect(isNaN(p.vy)).toBe(false);
+  });
+
+  it('produces zero velocity delta when source is at exact same position (indeterminate direction)', () => {
+    // dx=0, dy=0 → normalized direction is (0,0) → knockback adds 0 to velocity.
+    // The || 1 guard prevents NaN but cannot synthesize a direction from nothing.
+    const p = makePlayerState();
+    const vxBefore = p.vx;
+    const vyBefore = p.vy;
+    applyKnockback(p, { x: p.x, y: p.y }, 200);
+    expect(p.vx).toBe(vxBefore);
+    expect(p.vy).toBe(vyBefore);
+  });
+});

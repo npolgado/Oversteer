@@ -4,7 +4,7 @@
 import { CFG, type EnemyType } from '@core/config';
 import { clamp } from '@core/utils';
 import { makeRng } from '@core/rng';
-import { rollHordeTrigger, computeHordeCount, shouldTriggerHorde, type ScrapPickup, getEnemyPool, shouldSpawnElite, computeWaveTiming } from '@gameplay/pureLogic';
+import { rollHordeTrigger, computeHordeCount, shouldTriggerHorde, type ScrapPickup, type BoostZone, getEnemyPool, shouldSpawnElite, computeWaveTiming } from '@gameplay/pureLogic';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -36,6 +36,8 @@ export interface WaveState {
   scraps: ScrapPickup[];
   scrapTimer: number;
   hazardZones: HazardZone[];
+  boostZones: BoostZone[];
+  boostZoneTimer: number;
   hordeTriggered: boolean;
   hordeSpawnTimer: number;
   hordeTrigger: number;
@@ -75,6 +77,8 @@ export function makeWaveState(): WaveState {
     scraps: [],
     scrapTimer: CFG.SCRAP_INTERVAL,
     hazardZones: [],
+    boostZones: [],
+    boostZoneTimer: CFG.BOOST_ZONE_SPAWN_INTERVAL,
     hordeTriggered: false,
     hordeSpawnTimer: 0,
     hordeTrigger: 0,
@@ -101,6 +105,8 @@ export function startWave(state: WaveState): void {
   state.scraps.length = 0;
   state.scrapTimer = CFG.SCRAP_INTERVAL;
   state.hazardZones.length = 0;
+  state.boostZones.length = 0;
+  state.boostZoneTimer = CFG.BOOST_ZONE_SPAWN_INTERVAL;
   state.hordeTriggered = false;
   state.hordeSpawnTimer = 0;
   state.hordeTrigger = rollHordeTrigger(makeRng(Date.now() + Math.random() * 0xFFFFFF | 0));
@@ -244,4 +250,21 @@ export function tickScrapSpawn(
   return { x, y };
 }
 
-
+export function tickBoostZoneSpawn(
+  state: WaveState,
+  dt: number,
+  playerX: number,
+  playerY: number,
+): void {
+  if (state.phase !== 'combat') return;
+  state.boostZoneTimer -= dt;
+  if (state.boostZoneTimer > 0) return;
+  state.boostZoneTimer = CFG.BOOST_ZONE_SPAWN_INTERVAL;
+  const spawnDist = 200 + Math.random() * 200;
+  const angle = Math.random() * Math.PI * 2;
+  state.boostZones.push({
+    x: clamp(playerX + Math.cos(angle) * spawnDist, 60, CFG.WORLD_W - 60),
+    y: clamp(playerY + Math.sin(angle) * spawnDist, 60, CFG.WORLD_H - 60),
+    life: 12,
+  });
+}
