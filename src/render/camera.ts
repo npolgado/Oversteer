@@ -11,6 +11,7 @@ export interface CameraState {
   targetX: number;
   targetY: number;
   zoom: number;
+  rotation: number;
 }
 
 const state: CameraState = {
@@ -19,12 +20,23 @@ const state: CameraState = {
   targetX: CFG.WORLD_W / 2,
   targetY: CFG.WORLD_H / 2,
   zoom: 1,
+  rotation: 0,
 };
 
 let _worldContainer: Container | null = null;
+let _headingUp = false;
 
 function attachContainer(container: Container): void {
   _worldContainer = container;
+}
+
+function setHeadingMode(enabled: boolean): void {
+  _headingUp = enabled;
+}
+
+function lerpAngle(current: number, target: number, t: number): number {
+  const delta = Math.atan2(Math.sin(target - current), Math.cos(target - current));
+  return current + delta * t;
 }
 
 function update(
@@ -34,6 +46,7 @@ function update(
   pvx: number,
   pvy: number,
   pSpeed: number,
+  heading: number,
 ): void {
   // Camera lead: offset target in direction of travel
   const leadAmount = 40;
@@ -55,29 +68,43 @@ function update(
   const targetZoom = 1 - leadFrac * 0.04;
   state.zoom = lerp(state.zoom, targetZoom, t);
 
+  // Heading-up mode rotates world so car forward faces up.
+  const targetRotation = _headingUp ? (-Math.PI / 2 - heading) : 0;
+  state.rotation = lerpAngle(state.rotation, targetRotation, t);
+
   // Apply to worldContainer
   if (_worldContainer) {
     _worldContainer.scale.set(state.zoom);
-    // Translate so (state.x, state.y) in world space maps to screen center
-    _worldContainer.position.set(
-      CFG.W / 2 - state.x * state.zoom,
-      CFG.H / 2 - state.y * state.zoom,
-    );
+    _worldContainer.pivot.set(state.x, state.y);
+    _worldContainer.position.set(CFG.W / 2, CFG.H / 2);
+    _worldContainer.rotation = state.rotation;
   }
 }
 
 function isVisible(wx: number, wy: number, margin = 0): boolean {
-  const sx = wx - state.x + CFG.W / 2;
-  const sy = wy - state.y + CFG.H / 2;
+  const dx = wx - state.x;
+  const dy = wy - state.y;
+  const cosR = Math.cos(state.rotation);
+  const sinR = Math.sin(state.rotation);
+  const sx = CFG.W / 2 + (dx * cosR - dy * sinR) * state.zoom;
+  const sy = CFG.H / 2 + (dx * sinR + dy * cosR) * state.zoom;
   return sx >= -margin && sx <= CFG.W + margin && sy >= -margin && sy <= CFG.H + margin;
 }
 
 function reset(px: number, py: number): void {
+  _headingUp = false;
   state.x = clamp(px, CFG.W / 2, CFG.WORLD_W - CFG.W / 2);
   state.y = clamp(py, CFG.H / 2, CFG.WORLD_H - CFG.H / 2);
   state.targetX = state.x;
   state.targetY = state.y;
   state.zoom = 1;
+  state.rotation = 0;
+  if (_worldContainer) {
+    _worldContainer.scale.set(state.zoom);
+    _worldContainer.pivot.set(state.x, state.y);
+    _worldContainer.position.set(CFG.W / 2, CFG.H / 2);
+    _worldContainer.rotation = state.rotation;
+  }
 }
 
-export const camera = { attachContainer, update, isVisible, reset, state };
+export const camera = { attachContainer, setHeadingMode, update, isVisible, reset, state };

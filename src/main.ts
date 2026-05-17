@@ -6,18 +6,27 @@ import { sceneManager, type GameContext } from '@scenes/sceneManager';
 import { BootScene } from '@scenes/bootScene';
 import { MenuScene } from '@scenes/menuScene';
 import { GameplayScene } from '@scenes/gameplayScene';
+import { log, logError } from '@debug/logger';
+import { initDebugOverlay } from '@debug/debugOverlay';
+import { initErrorBanner } from '@debug/errorBanner';
+import { initWatchdog } from '@debug/watchdog';
 
 // Register error reporters before any async work so failures are visible in benchmark.html
 window.addEventListener('error', (e) => {
+  logError('sys', `Uncaught: ${e.message}  (${e.filename}:${e.lineno})`, e.error);
   window.parent.postMessage({ type: 'bench_error', error: e.message }, '*');
 });
 window.addEventListener('unhandledrejection', (e) => {
+  logError('sys', `UnhandledRejection`, e.reason);
   window.parent.postMessage({ type: 'bench_error', error: String(e.reason) }, '*');
 });
 
 const isInIframe = window.parent !== window;
 const dbg = (step: string) => isInIframe && window.parent.postMessage({ type: 'bench_debug', step }, '*');
 
+initErrorBanner(); // must come before initDebugOverlay so logError can push to banner
+initDebugOverlay();
+log('sys', 'main.ts start');
 dbg('before_pixi_init');
 if (isInIframe) {
   // Pre-check: can we even create a WebGL context?
@@ -33,6 +42,7 @@ try {
   );
   await Promise.race([initPromise, timeoutPromise]);
   dbg('after_pixi_init');
+  initWatchdog(PixiApp.app);
 } catch (e) {
   window.parent.postMessage({ type: 'bench_error', error: `PixiApp.init failed: ${e}` }, '*');
   throw e;
@@ -78,9 +88,15 @@ if (isInIframe) {
   }));
 }
 
-// Main loop
+log('sys', 'entering main loop');
+// Main loop — try/catch because Pixi swallows ticker exceptions via console.error
+// and never re-throws them, so window.onerror never fires for these.
 PixiApp.app.ticker.add((ticker) => {
-  const dt = Math.min(ticker.deltaMS / 1000, 0.05);
-  sceneManager.update(dt);
+  try {
+    const dt = Math.min(ticker.deltaMS / 1000, 0.05);
+    sceneManager.update(dt);
+  } catch (err) {
+    logError('tick', 'uncaught error in main ticker', err);
+  }
 });
 dbg('ticker_started');

@@ -1,6 +1,6 @@
 // mapSelectScene.ts — Map + difficulty modifier selection.
 
-import { Graphics, Text, TextStyle } from 'pixi.js';
+import { Graphics, Text } from 'pixi.js';
 import type { Scene, GameContext } from './sceneManager';
 import { CFG, S, applyMap } from '@core/config';
 import { saveManager } from '@core/saveManager';
@@ -8,6 +8,7 @@ import { sceneManager } from './sceneManager';
 import { MAPS, DIFFICULTY_MODIFIERS, computeModifierScoreMult } from '@content/maps';
 import { MenuScene } from './menuScene';
 import { GameplayScene, type GameplayOptions } from './gameplayScene';
+import { makeUIStyle } from '@ui/textStyles';
 
 interface MapSelectOptions {
   sandbox: boolean;
@@ -40,29 +41,25 @@ export class MapSelectScene implements Scene {
     overlayLayer.addChild(bg);
 
     // Title
-    const titleStyle = new TextStyle({ fill: CFG.C_ACCENT, fontSize: S(28), fontFamily: 'Courier New, monospace', fontWeight: 'bold' });
-    const title = new Text({ text: this._sandbox ? 'SANDBOX — SELECT MAP' : 'SELECT MAP', style: titleStyle });
+    const title = new Text({ text: this._sandbox ? 'SANDBOX — SELECT MAP' : 'SELECT MAP', style: makeUIStyle({ size: S(28), color: CFG.C_ACCENT, bold: true }) });
     title.anchor.set(0.5, 0);
     title.position.set(CFG.W / 2, S(40));
     overlayLayer.addChild(title);
 
     // Map name
-    const nameStyle = new TextStyle({ fill: CFG.C_TEXT, fontSize: S(32), fontFamily: 'Courier New, monospace', fontWeight: 'bold' });
-    this._mapNameText = new Text({ text: '', style: nameStyle });
+    this._mapNameText = new Text({ text: '', style: makeUIStyle({ size: S(32), color: CFG.C_TEXT, bold: true }) });
     this._mapNameText.anchor.set(0.5);
     this._mapNameText.position.set(CFG.W / 2, CFG.H * 0.38);
     overlayLayer.addChild(this._mapNameText);
 
     // Map desc
-    const descStyle = new TextStyle({ fill: '#888888', fontSize: S(16), fontFamily: 'Courier New, monospace' });
-    this._mapDescText = new Text({ text: '', style: descStyle });
+    this._mapDescText = new Text({ text: '', style: makeUIStyle({ size: S(16), color: '#888888' }) });
     this._mapDescText.anchor.set(0.5);
     this._mapDescText.position.set(CFG.W / 2, CFG.H * 0.46);
     overlayLayer.addChild(this._mapDescText);
 
     // Map nav hint
-    const navStyle = new TextStyle({ fill: '#555555', fontSize: S(13), fontFamily: 'Courier New, monospace' });
-    const navTxt = new Text({ text: '← A/D →', style: navStyle });
+    const navTxt = new Text({ text: '← A/D →', style: makeUIStyle({ size: S(13), color: '#555555' }) });
     navTxt.anchor.set(0.5);
     navTxt.position.set(CFG.W / 2, CFG.H * 0.54);
     overlayLayer.addChild(navTxt);
@@ -72,8 +69,7 @@ export class MapSelectScene implements Scene {
     const modY = CFG.H * 0.65;
     for (let i = 0; i < DIFFICULTY_MODIFIERS.length; i++) {
       const mod = DIFFICULTY_MODIFIERS[i];
-      const mStyle = new TextStyle({ fill: '#888888', fontSize: S(15), fontFamily: 'Courier New, monospace' });
-      const mTxt = new Text({ text: `[${mod.key}] ${mod.label} — ${mod.desc}`, style: mStyle });
+      const mTxt = new Text({ text: `[${mod.key}] ${mod.label} — ${mod.desc}`, style: makeUIStyle({ size: S(15), color: '#888888' }) });
       mTxt.anchor.set(0.5);
       mTxt.position.set(CFG.W / 2, modY + i * S(28));
       overlayLayer.addChild(mTxt);
@@ -81,15 +77,13 @@ export class MapSelectScene implements Scene {
     }
 
     // Multiplier display
-    const multStyle = new TextStyle({ fill: CFG.C_ACCENT, fontSize: S(16), fontFamily: 'Courier New, monospace' });
-    this._multText = new Text({ text: '', style: multStyle });
+    this._multText = new Text({ text: '', style: makeUIStyle({ size: S(16), color: CFG.C_ACCENT }) });
     this._multText.anchor.set(0.5);
     this._multText.position.set(CFG.W / 2, CFG.H * 0.87);
     overlayLayer.addChild(this._multText);
 
     // Controls hint
-    const hintStyle = new TextStyle({ fill: '#555555', fontSize: S(13), fontFamily: 'Courier New, monospace' });
-    const hintTxt = new Text({ text: 'ENTER to start  •  ESC to go back', style: hintStyle });
+    const hintTxt = new Text({ text: 'ENTER to start  •  ESC to go back', style: makeUIStyle({ size: S(13), color: '#555555' }) });
     hintTxt.anchor.set(0.5);
     hintTxt.position.set(CFG.W / 2, CFG.H * 0.93);
     overlayLayer.addChild(hintTxt);

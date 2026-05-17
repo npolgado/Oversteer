@@ -1,17 +1,10 @@
 // AudioManager — engine, drift, music, one-shot SFX
 // Ported from arena-drifter/audio.js. Renamed Audio -> AudioManager to avoid
 // shadowing the browser's Audio constructor.
-import { Howl } from 'howler';
+import { Howl, Howler } from 'howler';
+import { log, logError } from '@debug/logger';
 
-interface MusicNodes {
-  osc1: OscillatorNode;
-  osc2: OscillatorNode;
-  osc3: OscillatorNode;
-  lfo: OscillatorNode;
-  lfoGain: GainNode;
-  filter: BiquadFilterNode;
-  gain: GainNode;
-}
+const _TRACK_NAMES = ['hype', 'neon', 'slipstream', 'tron'] as const;
 
 const audioManager = {
   ctx: null as AudioContext | null,
@@ -31,7 +24,8 @@ const audioManager = {
   driftFilter: null as BiquadFilterNode | null,
   _driftPlaying: false,
 
-  musicNodes: null as MusicNodes | null,
+  _bgTracks: [] as Howl[],
+  _currentBg: null as Howl | null,
   _musicPlaying: false,
 
   init(): void {
@@ -53,8 +47,33 @@ const audioManager = {
 
       this.masterGain.gain.value = this.muted ? 0 : 1;
       this._genAllSounds();
+      const base = import.meta.env.BASE_URL ?? '/';
+      this._bgTracks = _TRACK_NAMES.map(name =>
+        new Howl({
+          src: [`${base}audio/${name}.mp3`],
+          loop: true,
+          volume: this.musicVolume,
+          onloaderror: (_id: number, err: unknown) => logError('audio', `track "${name}" load error`, err),
+          onplayerror: (_id: number, err: unknown) => {
+            logError('audio', `track "${name}" play error`, err);
+            Howler.ctx?.resume().catch(() => {});
+          },
+        })
+      );
+
+      // Explicit verification line — visible in logs/game.log and debug overlay.
+      const soundCount = Object.keys(this.sounds).length;
+      const ctxState = this.ctx?.state ?? 'null';
+      const gainOk = this.masterGain != null;
+      const summary = `ctx=${ctxState}  sounds=${soundCount}/6  masterGain=${gainOk ? 'live' : 'null'}  sfxVol=${this.sfxVolume}  musicVol=${this.musicVolume}  muted=${this.muted}`;
+      if (soundCount < 6 || !gainOk) {
+        logError('audio', `DEGRADED — ${summary}`);
+      } else {
+        log('audio', `OK — ${summary}`);
+      }
     } catch (e) {
       console.warn('AudioManager init failed:', e);
+      logError('audio', 'init failed', e);
     }
   },
 
@@ -94,16 +113,19 @@ const audioManager = {
   },
 
   _genAllSounds(): void {
+    const wav = (fn: (b: Float32Array, sr: number, len: number) => void, dur: number) =>
+      ({ src: [this._generateWav(fn, dur)], format: ['wav'], volume: this.sfxVolume });
+
     // collision: white noise burst + sine thump 100Hz, 0.15s
-    this.sounds['collision'] = new Howl({ src: [this._generateWav((b, sr, len) => {
+    this.sounds['collision'] = new Howl(wav((b, sr, len) => {
       for (let i = 0; i < len; i++) {
         const t = i / sr, env = 1 - t / 0.15;
         b[i] = (Math.random() * 2 - 1) * 0.3 * env + Math.sin(2 * Math.PI * 100 * t) * 0.5 * env;
       }
-    }, 0.15)], volume: this.sfxVolume });
+    }, 0.15));
 
     // encircle: ascending sine sweep 400→1200Hz + harmonics, 0.4s
-    this.sounds['encircle'] = new Howl({ src: [this._generateWav((b, sr, len) => {
+    this.sounds['encircle'] = new Howl(wav((b, sr, len) => {
       for (let i = 0; i < len; i++) {
         const t = i / sr, env = 1 - t / 0.4;
         const freq = 400 + 800 * (t / 0.4);
@@ -111,51 +133,56 @@ const audioManager = {
                 Math.sin(2 * Math.PI * freq * 1.5 * t) * 0.2 +
                 Math.sin(2 * Math.PI * freq * 2 * t) * 0.1) * env;
       }
-    }, 0.4)], volume: this.sfxVolume });
+    }, 0.4));
 
     // near_miss: bandpass noise sweep 500→2kHz, 0.15s
-    this.sounds['near_miss'] = new Howl({ src: [this._generateWav((b, sr, len) => {
+    this.sounds['near_miss'] = new Howl(wav((b, sr, len) => {
       for (let i = 0; i < len; i++) {
         const t = i / sr, env = 1 - t / 0.15;
         const noise = Math.random() * 2 - 1;
         b[i] = noise * 0.4 * env * Math.sin(2 * Math.PI * (500 + 1500 * t / 0.15) * t);
       }
-    }, 0.15)], volume: this.sfxVolume });
+    }, 0.15));
 
     // horde_warn: square wave 440Hz, 8Hz on-off pulse, 0.8s
-    this.sounds['horde_warn'] = new Howl({ src: [this._generateWav((b, sr, len) => {
+    this.sounds['horde_warn'] = new Howl(wav((b, sr, len) => {
       for (let i = 0; i < len; i++) {
         const t = i / sr;
         const env = Math.sin(2 * Math.PI * 8 * t) > 0 ? 1 : 0;
         const sq = Math.sin(2 * Math.PI * 440 * t) > 0 ? 0.35 : -0.35;
         b[i] = sq * env * (1 - t / 0.8);
       }
-    }, 0.8)], volume: this.sfxVolume });
+    }, 0.8));
 
     // combo_sting: sine chord (root + fifth + octave), 0.25s
-    this.sounds['combo_sting'] = new Howl({ src: [this._generateWav((b, sr, len) => {
+    this.sounds['combo_sting'] = new Howl(wav((b, sr, len) => {
       for (let i = 0; i < len; i++) {
         const t = i / sr, env = 1 - t / 0.25;
         b[i] = (Math.sin(2 * Math.PI * 440 * t) * 0.3 +
                 Math.sin(2 * Math.PI * 660 * t) * 0.2 +
                 Math.sin(2 * Math.PI * 880 * t) * 0.15) * env;
       }
-    }, 0.25)], volume: this.sfxVolume });
+    }, 0.25));
 
     // ui_click: sine blip 800Hz fast decay, 0.05s
-    this.sounds['ui_click'] = new Howl({ src: [this._generateWav((b, sr, len) => {
+    this.sounds['ui_click'] = new Howl(wav((b, sr, len) => {
       for (let i = 0; i < len; i++) {
         const t = i / sr, env = 1 - t / 0.05;
         b[i] = Math.sin(2 * Math.PI * 800 * t) * 0.3 * env * env;
       }
-    }, 0.05)], volume: this.sfxVolume });
+    }, 0.05));
   },
 
   play(id: string): void {
     const snd = this.sounds[id];
-    if (!snd) return;
-    snd.volume(this.muted ? 0 : this.sfxVolume);
+    if (!snd) {
+      log('audio', `play(${id}) — MISSING sound id; nothing to play`);
+      return;
+    }
+    const vol = this.muted ? 0 : this.sfxVolume;
+    snd.volume(vol);
     snd.play();
+    log('audio', `play(${id})  vol=${vol.toFixed(2)}  muted=${this.muted}  ctx=${this.ctx?.state ?? 'null'}`);
   },
 
   // --- Engine (live oscillator) ---
@@ -234,90 +261,61 @@ const audioManager = {
     }
   },
 
-  // --- Music (ambient pad: A major triad with slow LFO breath) ---
-  startMusic(): void {
-    if (!this.ctx || this._musicPlaying) return;
-    this._resumeCtx();
-
-    // Master music gain
-    const g = this.ctx.createGain();
-    g.gain.value = this.muted ? 0 : this.musicVolume * 0.3;
-
-    // Slow LFO for gentle pitch breathing (0.2Hz, ±3Hz depth)
-    const lfo = this.ctx.createOscillator();
-    lfo.type = 'sine'; lfo.frequency.value = 0.2;
-    const lfoGain = this.ctx.createGain();
-    lfoGain.gain.value = 3;
-    lfo.connect(lfoGain);
-
-    // osc1: 110Hz sine — A2 root
-    const osc1 = this.ctx.createOscillator();
-    osc1.type = 'sine'; osc1.frequency.value = 110;
-    lfoGain.connect(osc1.frequency);
-
-    // osc2: 138.59Hz triangle — C#3 (major third), slightly detune for warmth
-    const osc2 = this.ctx.createOscillator();
-    osc2.type = 'triangle'; osc2.frequency.value = 138.59;
-    lfoGain.connect(osc2.frequency);
-
-    // osc3: 220Hz sine — A3 (octave), quieter for depth
-    const osc3 = this.ctx.createOscillator();
-    osc3.type = 'sine'; osc3.frequency.value = 220;
-    const osc3Gain = this.ctx.createGain();
-    osc3Gain.gain.value = 0.4;
-    osc3.connect(osc3Gain);
-    lfoGain.connect(osc3.frequency);
-
-    // Lowpass filter: 500Hz, gentle roll-off
-    const filt = this.ctx.createBiquadFilter();
-    filt.type = 'lowpass'; filt.frequency.value = 500;
-
-    osc1.connect(filt);
-    osc2.connect(filt);
-    osc3Gain.connect(filt);
-    filt.connect(g);
-    g.connect(this.masterGain!);
-
-    osc1.start(); osc2.start(); osc3.start(); lfo.start();
-    this.musicNodes = { osc1, osc2, osc3, lfo, lfoGain, filter: filt, gain: g };
+  // --- Background music (file-based, random track selection) ---
+  startBgMusic(): void {
+    if (this._bgTracks.length === 0) {
+      logError('audio', 'startBgMusic — _bgTracks empty; audioManager.init() may have failed');
+      return;
+    }
+    if (this._currentBg) {
+      this._currentBg.stop();
+      this._currentBg = null;
+    }
+    // Howler manages its own AudioContext; explicitly resume it if suspended
+    // so music starts immediately on first call rather than waiting for its
+    // own event-listener auto-resume (which fires too late during scene transitions).
+    if (Howler.ctx && Howler.ctx.state === 'suspended') {
+      Howler.ctx.resume().catch(() => {});
+    }
+    const track = this._bgTracks[Math.floor(Math.random() * this._bgTracks.length)];
+    track.volume(this.musicVolume);
+    track.mute(this.muted);
+    track.play();
+    this._currentBg = track;
     this._musicPlaying = true;
+    log('audio', `startBgMusic  musicVol=${this.musicVolume}  muted=${this.muted}  howlerCtx=${Howler.ctx?.state ?? 'null'}`);
   },
 
-  stopMusic(): void {
-    if (!this._musicPlaying || !this.musicNodes) return;
-    try { this.musicNodes.osc1.stop(); } catch (_) {}
-    try { this.musicNodes.osc2.stop(); } catch (_) {}
-    try { this.musicNodes.osc3.stop(); } catch (_) {}
-    try { this.musicNodes.lfo.stop(); } catch (_) {}
+  stopBgMusic(): void {
+    if (!this._currentBg) return;
+    this._currentBg.stop();
+    this._currentBg = null;
     this._musicPlaying = false;
-    this.musicNodes = null;
   },
 
-  fadeOutMusic(dur: number): void {
-    if (!this._musicPlaying || !this.musicNodes) return;
-    const g = this.musicNodes.gain;
-    g.gain.setValueAtTime(g.gain.value, this.ctx!.currentTime);
-    g.gain.linearRampToValueAtTime(0, this.ctx!.currentTime + dur);
-    const nodes = this.musicNodes;
+  fadeBgMusic(dur: number): void {
+    if (!this._currentBg) return;
+    const bg = this._currentBg;
+    this._currentBg = null;
     this._musicPlaying = false;
-    this.musicNodes = null;
-    setTimeout(() => {
-      try { nodes.osc1.stop(); } catch (_) {}
-      try { nodes.osc2.stop(); } catch (_) {}
-      try { nodes.osc3.stop(); } catch (_) {}
-      try { nodes.lfo.stop(); } catch (_) {}
-    }, dur * 1000 + 50);
+    if (this.muted) {
+      bg.stop();
+      return;
+    }
+    bg.fade(this.musicVolume, 0, dur * 1000);
+    bg.once('fade', () => bg.stop());
   },
 
   stopAll(): void {
     this.stopEngine();
     this.stopDrift();
-    this.stopMusic();
+    this.stopBgMusic();
   },
 
   setMuted(val: boolean): void {
     this.muted = val;
     if (this.masterGain) this.masterGain.gain.value = val ? 0 : 1;
+    this._currentBg?.mute(val);
     this._savePrefs();
   },
 
@@ -330,15 +328,18 @@ const audioManager = {
       }
     } else if (type === 'music') {
       this.musicVolume = val;
-      if (this._musicPlaying && this.musicNodes) {
-        this.musicNodes.gain.gain.value = this.muted ? 0 : this.musicVolume * 0.3;
-      }
+      this._currentBg?.volume(val);
     }
     this._savePrefs();
   },
 
   _resumeCtx(): void {
-    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(err => logError('audio', '_resumeCtx rejected', err));
+    }
+    if (Howler.ctx && Howler.ctx.state === 'suspended') {
+      Howler.ctx.resume().catch(() => {});
+    }
   },
 };
 

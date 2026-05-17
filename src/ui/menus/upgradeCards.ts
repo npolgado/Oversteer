@@ -4,11 +4,12 @@
 // See docs/fixes/gsap_ui_fixes.md (Addendum) for the underlying mechanism.
 
 import { gsap } from 'gsap';
-import { Graphics, Text, TextStyle, Container } from 'pixi.js';
+import { Graphics, Text, Sprite, Assets, Container } from 'pixi.js';
 import type { UpgradeDef } from '@gameplay/upgrades/upgradeRegistry';
 import { UPGRADE_REGISTRY } from '@gameplay/upgrades/upgradeRegistry';
 import type { InputState } from '@input/inputManager';
 import { CFG, S } from '@core/config';
+import { makeUIStyle } from '@ui/textStyles';
 
 const CARD_W = S(220);
 const CARD_H = S(300);
@@ -65,8 +66,7 @@ export class UpgradeCardsUI {
     this._layer.addChild(dim);
 
     // Title
-    const titleStyle = new TextStyle({ fill: CFG.C_ACCENT, fontSize: S(28), fontFamily: 'Courier New, monospace', fontWeight: 'bold' });
-    const title = new Text({ text: 'CHOOSE UPGRADE', style: titleStyle });
+    const title = new Text({ text: 'CHOOSE UPGRADE', style: makeUIStyle({ size: S(28), color: CFG.C_ACCENT, bold: true }) });
     title.anchor.set(0.5, 0);
     title.position.set(CFG.W / 2, S(40));
     this._layer.addChild(title);
@@ -88,35 +88,31 @@ export class UpgradeCardsUI {
       container.addChild(bg);
 
       // Number hint
-      const numStyle = new TextStyle({ fill: '#888888', fontSize: S(12), fontFamily: 'Courier New, monospace' });
-      const numHint = new Text({ text: `[${i + 1}]`, style: numStyle });
+      const numHint = new Text({ text: `[${i + 1}]`, style: makeUIStyle({ size: S(12), color: '#888888' }) });
       numHint.position.set(S(8), S(8));
       container.addChild(numHint);
 
-      // Icon
-      const iconStyle = new TextStyle({ fill: '#ffffff', fontSize: S(36), fontFamily: 'Courier New, monospace', fontWeight: 'bold' });
-      const iconTxt = new Text({ text: card.icon, style: iconStyle });
-      iconTxt.anchor.set(0.5, 0);
-      iconTxt.position.set(CARD_W / 2, S(30));
-      container.addChild(iconTxt);
+      // Icon — sprite if available, else letter placeholder
+      if (card.iconSprite) {
+        const spr = new Sprite(Assets.get(card.iconSprite));
+        spr.anchor.set(0.5, 0);
+        spr.position.set(CARD_W / 2, S(30));
+        container.addChild(spr);
+      } else {
+        const iconTxt = new Text({ text: card.icon, style: makeUIStyle({ size: S(36), color: '#ffffff', bold: true }) });
+        iconTxt.anchor.set(0.5, 0);
+        iconTxt.position.set(CARD_W / 2, S(30));
+        container.addChild(iconTxt);
+      }
 
       // Name
-      const nameStyle = new TextStyle({ fill: CFG.C_TEXT, fontSize: S(16), fontFamily: 'Courier New, monospace', fontWeight: 'bold' });
-      const nameTxt = new Text({ text: card.name, style: nameStyle });
+      const nameTxt = new Text({ text: card.name, style: makeUIStyle({ size: S(16), color: CFG.C_TEXT, bold: true }) });
       nameTxt.anchor.set(0.5, 0);
       nameTxt.position.set(CARD_W / 2, S(90));
       container.addChild(nameTxt);
 
       // Desc (word-wrap)
-      const descStyle = new TextStyle({
-        fill: '#aaaaaa',
-        fontSize: S(13),
-        fontFamily: 'Courier New, monospace',
-        wordWrap: true,
-        wordWrapWidth: CARD_W - S(20),
-        align: 'center',
-      });
-      const descTxt = new Text({ text: card.desc, style: descStyle });
+      const descTxt = new Text({ text: card.desc, style: makeUIStyle({ size: S(13), color: '#aaaaaa', wordWrap: true, wordWrapWidth: CARD_W - S(20), align: 'center' }) });
       descTxt.anchor.set(0.5, 0);
       descTxt.position.set(CARD_W / 2, S(120));
       container.addChild(descTxt);
@@ -129,8 +125,7 @@ export class UpgradeCardsUI {
 
     // Reroll button
     const rerollColor = rerollsLeft > 0 ? '#dddddd' : '#666666';
-    const rerollStyle = new TextStyle({ fill: rerollColor, fontSize: S(15), fontFamily: 'Courier New, monospace' });
-    this._rerollText = new Text({ text: `Press [R] to reroll (${rerollsLeft} left)`, style: rerollStyle });
+    this._rerollText = new Text({ text: `Press [R] to reroll (${rerollsLeft} left)`, style: makeUIStyle({ size: S(15), color: rerollColor }) });
     this._rerollText.anchor.set(0.5);
     this._rerollText.position.set(CFG.W / 2, CFG.H - S(35));
     this._layer.addChild(this._rerollText);
@@ -158,7 +153,7 @@ export class UpgradeCardsUI {
       const labelY = cardY + CARD_H + S(24);
       const label = new Text({
         text: 'OWNED UPGRADES',
-        style: new TextStyle({ fill: '#555566', fontSize: S(11), fontFamily: 'Courier New, monospace', letterSpacing: 1 }),
+        style: makeUIStyle({ size: S(11), color: '#555566', letterSpacing: 1 }),
       });
       label.anchor.set(0.5, 0);
       label.position.set(CFG.W / 2, labelY);
@@ -166,14 +161,7 @@ export class UpgradeCardsUI {
 
       const itemsTxt = new Text({
         text: itemStr,
-        style: new TextStyle({
-          fill: '#99aabb',
-          fontSize: S(13),
-          fontFamily: 'Courier New, monospace',
-          wordWrap: true,
-          wordWrapWidth: CFG.W - S(120),
-          align: 'center',
-        }),
+        style: makeUIStyle({ size: S(13), color: '#99aabb', wordWrap: true, wordWrapWidth: CFG.W - S(120), align: 'center' }),
       });
       itemsTxt.anchor.set(0.5, 0);
       itemsTxt.position.set(CFG.W / 2, labelY + S(18));

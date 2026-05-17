@@ -5,6 +5,7 @@
 import gsap from 'gsap';
 import { PixiPlugin } from 'gsap/PixiPlugin';
 import * as PIXI from 'pixi.js';
+import { log } from '@debug/logger';
 
 // Disable GSAP lag smoothing — the game has its own dt clamping.
 gsap.ticker.lagSmoothing(0);
@@ -21,28 +22,49 @@ export function uiTween(
   target: object,
   vars: gsap.TweenVars,
 ): Promise<void> {
+  const label = vars._label as string | undefined;
+  const desc = label ?? JSON.stringify(
+    Object.fromEntries(
+      Object.entries(vars).filter(([k]) => !k.startsWith('on') && k !== '_label')
+    )
+  );
+
   if (import.meta.env.MODE === 'test') {
-    const { duration: _d, delay: _dl, ease: _e, onComplete, yoyo: _y, repeat: _r, ...props } = vars;
+    const { duration: _d, delay: _dl, ease: _e, onComplete, yoyo: _y, repeat: _r, _label: _lb, ...props } = vars;
     gsap.set(target, props);
     onComplete?.();
     return Promise.resolve();
   }
+
+  log('tween', `START ${desc}`);
   return new Promise(resolve => {
-    gsap.to(target, { ...vars, onComplete: () => { vars.onComplete?.(); resolve(); } });
+    gsap.to(target, {
+      ...vars,
+      onComplete: () => {
+        log('tween', `DONE  ${desc}`);
+        vars.onComplete?.();
+        resolve();
+      },
+    });
   });
 }
 
 /** Pause all in-flight UI tweens (call on game pause). */
 export function pauseUITweens(): void {
+  log('tween', 'pauseUITweens');
   gsap.globalTimeline.pause();
 }
 
 /** Resume all UI tweens (call on game resume). */
 export function resumeUITweens(): void {
+  log('tween', 'resumeUITweens');
   gsap.globalTimeline.resume();
 }
 
 /** Kill all in-flight tweens on a given target (call before destroying a Container). */
 export function killUITweens(target: object): void {
+  if (typeof gsap.isTweening === 'function' && gsap.isTweening(target)) {
+    log('tween', 'killUITweens (was active)');
+  }
   gsap.killTweensOf(target);
 }
