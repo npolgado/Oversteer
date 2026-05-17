@@ -12,3 +12,4 @@ dist-local/
 .aider*
 .worktrees/
 .claude/
+logs/

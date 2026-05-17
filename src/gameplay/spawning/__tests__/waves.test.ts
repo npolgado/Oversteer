@@ -199,10 +199,9 @@ describe('startWave — hazardZones', () => {
 
 // Test 2 — horde event emitted by updateWave
 describe('updateWave — horde event', () => {
-  it('emits horde event on wave 2+ after hordeTrigger fraction of combat elapses', () => {
+  it('emits horde event on wave 1 after hordeTrigger fraction of combat elapses', () => {
     const s = makeWaveState();
-    startWave(s); // wave 1
-    startWave(s); // wave 2 — horde eligible
+    startWave(s); // wave 1 — horde eligible
     // Force hordeTrigger to 0 so horde fires immediately
     s.hordeTrigger = 0;
     s.hordeTriggered = false;

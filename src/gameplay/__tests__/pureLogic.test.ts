@@ -786,3 +786,69 @@ describe('updateNearMissStreak — zero-crossing', () => {
     expect(player.consecutiveNearMisses).toBe(3);
   });
 });
+
+// ── B5 Scoring stress / boundary tests ───────────────────────────
+
+describe('computeCollisionDamage — boundary inputs', () => {
+  it('returns finite value at extreme wave index (no overflow)', () => {
+    // wave 1 000 000 — scale would be astronomical without the DMG_SCALE_MAX cap
+    const result = computeCollisionDamage(15, 1_000_000);
+    expect(Number.isFinite(result)).toBe(true);
+    expect(result).toBe(Math.round(15 * CFG.DMG_SCALE_MAX)); // must equal capped value
+  });
+
+  it('cap boundary: wave just below and just above threshold produce correct values', () => {
+    // threshold wave = 5 + (DMG_SCALE_MAX - 1) / DMG_SCALE_PER_WAVE
+    // With DMG_SCALE_MAX=3, DMG_SCALE_PER_WAVE=0.12: threshold = 5 + 16.67 ≈ wave 22
+    const belowCap = computeCollisionDamage(15, 21); // scale = 1 + 0.12*16 = 2.92x < cap
+    const aboveCap = computeCollisionDamage(15, 23); // scale would be 3.16x → clamped to 3.0x
+    expect(belowCap).toBeLessThan(Math.round(15 * CFG.DMG_SCALE_MAX));
+    expect(aboveCap).toBe(Math.round(15 * CFG.DMG_SCALE_MAX));
+  });
+
+  it('wave ≤ 5 always returns base damage regardless of wave', () => {
+    for (const wave of [0, 1, 3, 5]) {
+      expect(computeCollisionDamage(20, wave)).toBe(20);
+    }
+  });
+});
+
+describe('computeEncircleOutcome — all-max inputs produce finite result', () => {
+  it('max combo + max scoreMult + max bonus yields finite score', () => {
+    // All four modifiers active: scoreMult = 1.5*1.3*1.4*1.6 ≈ 4.368
+    const allModMult = computeModifierScoreMult({
+      hardMode: true, speedRush: true, fragile: true, doubleEnemies: true,
+    });
+    const killCount = 5; // encircle ×5
+    const result = computeEncircleOutcome(killCount, 0, allModMult, 2.0);
+    expect(Number.isFinite(result.scoreDelta)).toBe(true);
+    expect(result.scoreDelta).toBeGreaterThan(0);
+  });
+
+  it('combo clamp prevents comboLevel exceeding MAX_COMBO regardless of kill count', () => {
+    // Starting at max combo (8) with a large encircle — must not exceed 8
+    const result = computeEncircleOutcome(100, 8, 1, 1);
+    expect(result.comboLevel).toBeLessThanOrEqual(8);
+  });
+});
+
+describe('computeModifierScoreMult — boundary', () => {
+  it('result is always finite and ≥ 1', () => {
+    const combos = [
+      { hardMode: false, speedRush: false, fragile: false, doubleEnemies: false },
+      { hardMode: true,  speedRush: false, fragile: false, doubleEnemies: false },
+      { hardMode: true,  speedRush: true,  fragile: true,  doubleEnemies: true  },
+    ];
+    for (const m of combos) {
+      const v = computeModifierScoreMult(m);
+      expect(Number.isFinite(v)).toBe(true);
+      expect(v).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('all-on result matches expected product (regression guard)', () => {
+    const v = computeModifierScoreMult({ hardMode: true, speedRush: true, fragile: true, doubleEnemies: true });
+    const expected = 1.5 * 1.3 * 1.4 * 1.6;
+    expect(Math.abs(v - expected)).toBeLessThan(0.001);
+  });
+});
