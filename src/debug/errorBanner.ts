@@ -6,6 +6,7 @@
 const MAX_RING = 50;
 const MAX_VISIBLE = 5;
 const BANNER_ID = 'oversteer-error-banner';
+const AUTO_DISMISS_MS = 7000;
 
 export interface BannerEntry {
   id: number;
@@ -24,6 +25,7 @@ let _el: HTMLDivElement | null = null;
 let _visible = false;
 let _entries: BannerEntry[] = [];
 let _nextId = 0;
+const _timers = new Map<number, ReturnType<typeof setTimeout>>();
 
 export function initErrorBanner(): void {
   if (_el) return;
@@ -63,9 +65,28 @@ export function pushError(tag: string, msg: string): void {
   if (_entries.length > MAX_RING) _entries.shift();
   _show();
   _render();
+
+  const timer = setTimeout(() => {
+    _dismissEntry(entry.id);
+  }, AUTO_DISMISS_MS);
+  _timers.set(entry.id, timer);
+}
+
+function _dismissEntry(id: number): void {
+  const timer = _timers.get(id);
+  if (timer !== undefined) { clearTimeout(timer); _timers.delete(id); }
+  const entry = _entries.find(x => x.id === id);
+  if (entry) entry.dismissed = true;
+  if (_entries.filter(x => !x.dismissed).length === 0) {
+    _hide();
+  } else {
+    _render();
+  }
 }
 
 export function clearErrors(): void {
+  for (const t of _timers.values()) clearTimeout(t);
+  _timers.clear();
   for (const e of _entries) e.dismissed = true;
   _hide();
 }
@@ -128,13 +149,7 @@ function _render(): void {
   _el.querySelectorAll('[data-dismiss]').forEach(btn => {
     btn.addEventListener('click', (ev) => {
       const id = Number((ev.currentTarget as HTMLElement).getAttribute('data-dismiss'));
-      const entry = _entries.find(x => x.id === id);
-      if (entry) entry.dismissed = true;
-      if (_entries.filter(x => !x.dismissed).length === 0) {
-        _hide();
-      } else {
-        _render();
-      }
+      _dismissEntry(id);
     });
   });
 
@@ -150,6 +165,8 @@ function _esc(s: string): string {
 
 // Resets all module state — for use in tests only.
 export function _resetBannerForTest(): void {
+  for (const t of _timers.values()) clearTimeout(t);
+  _timers.clear();
   _entries = [];
   _nextId = 0;
   _visible = false;
