@@ -21,7 +21,7 @@ export default defineConfig({
     exclude: [...configDefaults.exclude, 'test/**/*.test.js'],
     setupFiles: [],
     clearMocks: true,
-    isolate: false,
+    isolate: true,
     watch: false,
     coverage: {
       reporter: ['json'],
