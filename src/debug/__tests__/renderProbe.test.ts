@@ -26,6 +26,7 @@ function reportFromSamples(samples: Array<{ r: number; g: number; b: number }>):
     canvasH: 100,
     samples: samples.map((s, i) => ({ x: i, y: i, a: 255, ...s })),
     clearColorHex: '#07080b',
+    uniqueColors: new Set(samples.map(s => `${s.r},${s.g},${s.b}`)).size,
   };
 }
 
@@ -82,6 +83,7 @@ describe('formatRenderProbe', () => {
         { x: 800, y: 450, r: 0x07, g: 0x08, b: 0x0b, a: 255 },
       ],
       clearColorHex: '#07080b',
+      uniqueColors: 1,
     };
     const line = formatRenderProbe(r);
     expect(line).toContain('BLANK');
@@ -91,7 +93,7 @@ describe('formatRenderProbe', () => {
   it('renders NO CANVAS when probe failed at the guard', () => {
     const r: RenderProbeReport = {
       ok: false, reason: 'no-canvas',
-      canvasW: 0, canvasH: 0, samples: [], clearColorHex: '#07080b',
+      canvasW: 0, canvasH: 0, samples: [], clearColorHex: '#07080b', uniqueColors: 0,
     };
     expect(formatRenderProbe(r)).toBe('render: NO CANVAS');
   });
@@ -99,7 +101,7 @@ describe('formatRenderProbe', () => {
   it('renders ZERO SIZE with dimensions', () => {
     const r: RenderProbeReport = {
       ok: false, reason: 'zero-size',
-      canvasW: 0, canvasH: 0, samples: [], clearColorHex: '#07080b',
+      canvasW: 0, canvasH: 0, samples: [], clearColorHex: '#07080b', uniqueColors: 0,
     };
     expect(formatRenderProbe(r)).toContain('ZERO SIZE');
   });
@@ -107,7 +109,7 @@ describe('formatRenderProbe', () => {
   it('renders READ FAILED with dimensions', () => {
     const r: RenderProbeReport = {
       ok: false, reason: 'read-failed',
-      canvasW: 1600, canvasH: 900, samples: [], clearColorHex: '#07080b',
+      canvasW: 1600, canvasH: 900, samples: [], clearColorHex: '#07080b', uniqueColors: 0,
     };
     expect(formatRenderProbe(r)).toContain('READ FAILED');
     expect(formatRenderProbe(r)).toContain('1600x900');
