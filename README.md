@@ -85,22 +85,27 @@ chmod +x .githooks/pre-push scripts/install-hooks
 ```
 src/                     PixiJS + TypeScript port
   core/                  Config, RNG, utils, event bus, save manager
-  render/                PixiJS app, camera, particles, screen FX
-  audio/                 Procedural audio (Howler + Web Audio synthesis)
+  render/                PixiJS app, camera, particles, screen FX, speed lines, pickups, tweens
+  audio/                 Procedural audio (Web Audio API synthesis + .mp3 music tracks)
   input/                 Keyboard, touch stubs
+  debug/                 Dev-only overlay: logger, errorBanner, watchdog, renderProbe, layerInspect
+  bench/                 Benchmark utilities
   scenes/                sceneManager, boot, menu, mapSelect, gameplay, gameOver
   gameplay/
     physics.ts           Delta-time physics (shared player + enemy)
     pureLogic.ts         Pure scoring / spawn / encirclement logic
     scoring.ts           Passive score tick, combo decay
     combat/              Collision, damage, nearMiss, chainLightning, trailBurn
+    death/               Death sequence and animation
     enemies/             7 enemy types — state, update, renderer, death FX
     player/              State, update (input→physics), renderer
     trail/               Point accumulation, loop detection, renderer
     world/               Procedural props (chunked, seeded RNG)
     upgrades/            26-perk registry + apply/reroll system
+    upgradeBreak/        Upgrade-selection phase logic
     spawning/            Wave manager — combat/break phases, burst, horde
   ui/
+    textStyles.ts        Shared text style presets
     hud/                 Score, HP, combo, wave, EventLog panels
     menus/               Upgrade card selection UI
   content/               Map definitions + modifier data
@@ -108,7 +113,7 @@ src/                     PixiJS + TypeScript port
 arena-drifter/           Original vanilla JS game — source of truth for mechanics
   assets/                PNG sprites (cars, props, backgrounds)
 test/                    Legacy test suite (node:test)
-src/**/__tests__/        Vitest unit tests (14 files, 300 tests)
+src/**/__tests__/        Vitest unit tests (30 files, ~600 tests)
 ```
 
 See [patch_notes.md](docs/patch_notes.md) for version history.

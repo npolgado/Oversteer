@@ -13,7 +13,7 @@ Top-down arena drift game: 3000×3000 world, waves, trail encirclement kills, ne
 
 **Repo:** `arena-drifter/` — `index.html` + 9 JS modules. Shared logic in `logic.js` (CFG, `U`/`S`, pure functions — e.g. `getEnemyPool`, `shouldSpawnElite`, `computeFlankTarget`, `computeBlockerTarget`, `applyBombZoneDamage`, `computeModifierScoreMult`). Tests: legacy **`test/*.test.js`** (allowlisted in `npm run test:old`) + Vitest `src/**/*.test.ts` (`npm test`). Pre-push runs both.
 
-**Docs:** `docs/roadmaps/`, `patch_notes.md`. Old experiments: `HISTORY.md`.
+**Docs:** `docs/archive/version_1_roadmap/`, `patch_notes.md`. Old experiments: `HISTORY.md`.
 
 ## Arena-drifter module load order (`index.html`)
 

@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-05-18 - dev_1.3.5 - Phase 3.5 Visual-Audio Upgrade
+
+- **Music overhaul**: Audio manager replaced procedural ambient pad with four .mp3 tracks (hype, neon, slipstream, tron); tracks are selected and shuffled at runtime
+- **Camera shift on horde**: Camera drifts toward the horde center during horde-phase waves for better battlefield awareness (`src/render/camera.ts`)
+- **Text clarity system**: Shared text-style presets in `src/ui/textStyles.ts` normalize font weight, stroke, and resolution across all HUD and menu text
+- **Debug overlay suite** (dev builds): `src/debug/` — dismissible error banners, render probe, DOM overlay probe, layer inspector, watchdog, structured logger
+- **Scene manager hardening**: Boot, menu, map-select, gameplay, and game-over scenes refactored; sceneManager gains explicit lifecycle guards
+- **Wave manager dedup fix**: Duplicate wave-start calls eliminated in `waveManager.ts`
+- **Input manager test suite**: 151 tests added for `inputManager.ts`
+- **Build system**: `vitest.config.mjs` extracted for isolated Vitest config; CI aligned to Node 24; test isolation restored after environment bleed regression
+- dev: 30 Vitest test files
+
+---
+
+## 2026-05-16 - dev_1.3.0 - Phase 3 Full Port Wrap-Up
+
+- **Enemy system completion**: `enemyState.ts` fully expanded (+400 lines) — all 7 enemy types have complete state machines with patrol, chase, attack, and death states
+- **Enemy update hardening**: `enemyUpdate.ts` expanded with correct per-type behavior branches and wall-bounce handling
+- **Wave manager**: `waveManager.ts` significantly expanded — horde phases, burst queuing, break transitions all solidified
+- **Pickup system bug fixes**: Multiple pickups can now be collected simultaneously; `pickupRenderer.ts` added as dedicated renderer
+- **Bomb zone pure logic**: `applyBombZoneDamage` extracted to `pureLogic.ts` for testability; bomb kill integration tested end-to-end in `gameLoopBombKill.test.ts`
+- **Background assets**: `background_03.png` added; background_01/02 optimized
+- **Test suite**: expanded to 466 tests across 25 test files; coverage added for physics, pureLogic, scoring, combat, enemies, player, waves, trail, pickups, and game loop
+
+---
+
 ## 2026-05-08 - dev_1.2.0 - Game Feel + Visual Polish
 
 - **Trail thickness from speed**: Drift trail now stores per-point speed at emission time; segment width scales with `speedFrac` (matches `arena-drifter/world.js:500-501`) instead of position in trail
