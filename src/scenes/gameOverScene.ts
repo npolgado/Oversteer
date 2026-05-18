@@ -1,12 +1,13 @@
 // gameOverScene.ts — Game over screen with final score, stats, restart/menu.
 
-import { Graphics, Text, TextStyle } from 'pixi.js';
+import { Graphics, Text } from 'pixi.js';
 import type { Scene, GameContext } from './sceneManager';
 import { CFG, S } from '@core/config';
 import type { RunStats } from '@gameplay/pureLogic';
 import { sceneManager } from './sceneManager';
 import { MenuScene } from './menuScene';
 import { GameplayScene } from './gameplayScene';
+import { makeUIStyle } from '@ui/textStyles';
 
 export interface GameOverData {
   score: number;
@@ -40,8 +41,7 @@ export class GameOverScene implements Scene {
     let y = S(80);
 
     // Title
-    const titleStyle = new TextStyle({ fill: '#FF3B6B', fontSize: S(48), fontFamily: 'Courier New, monospace', fontWeight: 'bold' });
-    const title = new Text({ text: 'GAME OVER', style: titleStyle });
+    const title = new Text({ text: 'GAME OVER', style: makeUIStyle({ size: S(48), color: '#FF3B6B', bold: true }) });
     title.anchor.set(0.5, 0);
     title.position.set(CFG.W / 2, y);
     overlayLayer.addChild(title);
@@ -49,8 +49,7 @@ export class GameOverScene implements Scene {
 
     // New best banner
     if (d.newBest) {
-      const bestStyle = new TextStyle({ fill: CFG.C_ACCENT, fontSize: S(22), fontFamily: 'Courier New, monospace', fontWeight: 'bold' });
-      const best = new Text({ text: '★ NEW BEST! ★', style: bestStyle });
+      const best = new Text({ text: '★ NEW BEST! ★', style: makeUIStyle({ size: S(22), color: CFG.C_ACCENT, bold: true }) });
       best.anchor.set(0.5, 0);
       best.position.set(CFG.W / 2, y);
       overlayLayer.addChild(best);
@@ -58,24 +57,21 @@ export class GameOverScene implements Scene {
     }
 
     // Score
-    const scoreStyle = new TextStyle({ fill: CFG.C_TEXT, fontSize: S(32), fontFamily: 'Courier New, monospace', fontWeight: 'bold' });
-    const scoreTxt = new Text({ text: `SCORE: ${Math.floor(d.score)}`, style: scoreStyle });
+    const scoreTxt = new Text({ text: `SCORE: ${Math.floor(d.score)}`, style: makeUIStyle({ size: S(32), color: CFG.C_TEXT, bold: true }) });
     scoreTxt.anchor.set(0.5, 0);
     scoreTxt.position.set(CFG.W / 2, y);
     overlayLayer.addChild(scoreTxt);
     y += S(44);
 
     // High score
-    const hsStyle = new TextStyle({ fill: '#888888', fontSize: S(16), fontFamily: 'Courier New, monospace' });
-    const hsTxt = new Text({ text: `BEST: ${Math.floor(d.highScore)}`, style: hsStyle });
+    const hsTxt = new Text({ text: `BEST: ${Math.floor(d.highScore)}`, style: makeUIStyle({ size: S(16), color: '#888888' }) });
     hsTxt.anchor.set(0.5, 0);
     hsTxt.position.set(CFG.W / 2, y);
     overlayLayer.addChild(hsTxt);
     y += S(40);
 
     // Wave reached
-    const waveStyle = new TextStyle({ fill: '#aaaaaa', fontSize: S(18), fontFamily: 'Courier New, monospace' });
-    const waveTxt = new Text({ text: `WAVE REACHED: ${d.waveReached}`, style: waveStyle });
+    const waveTxt = new Text({ text: `WAVE REACHED: ${d.waveReached}`, style: makeUIStyle({ size: S(18), color: '#aaaaaa' }) });
     waveTxt.anchor.set(0.5, 0);
     waveTxt.position.set(CFG.W / 2, y);
     overlayLayer.addChild(waveTxt);
@@ -83,8 +79,7 @@ export class GameOverScene implements Scene {
 
     // Modifier mult
     if (d.modifierMult > 1) {
-      const multStyle = new TextStyle({ fill: CFG.C_ACCENT, fontSize: S(15), fontFamily: 'Courier New, monospace' });
-      const multTxt = new Text({ text: `Score multiplier: ${d.modifierMult.toFixed(2)}×`, style: multStyle });
+      const multTxt = new Text({ text: `Score multiplier: ${d.modifierMult.toFixed(2)}×`, style: makeUIStyle({ size: S(15), color: CFG.C_ACCENT }) });
       multTxt.anchor.set(0.5, 0);
       multTxt.position.set(CFG.W / 2, y);
       overlayLayer.addChild(multTxt);
@@ -92,7 +87,7 @@ export class GameOverScene implements Scene {
     }
 
     // Run stats
-    const statStyle = new TextStyle({ fill: '#666666', fontSize: S(14), fontFamily: 'Courier New, monospace' });
+    const statStyle = makeUIStyle({ size: S(14), color: '#666666' });
     const stats = [
       `Peak combo: ${d.runStats.peakCombo}`,
       `Near misses: ${d.runStats.nearMissTotal}`,
@@ -108,8 +103,7 @@ export class GameOverScene implements Scene {
     }
 
     // Input hints
-    const hintStyle = new TextStyle({ fill: '#555555', fontSize: S(15), fontFamily: 'Courier New, monospace' });
-    const hintTxt = new Text({ text: 'R / ENTER — Restart  •  M / ESC — Menu', style: hintStyle });
+    const hintTxt = new Text({ text: 'R / ENTER — Restart  •  M / ESC — Menu', style: makeUIStyle({ size: S(15), color: '#555555' }) });
     hintTxt.anchor.set(0.5);
     hintTxt.position.set(CFG.W / 2, CFG.H * 0.93);
     overlayLayer.addChild(hintTxt);

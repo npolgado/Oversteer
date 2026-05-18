@@ -1,6 +1,7 @@
 // PerfOverlay.ts — In-game FPS/frame-time overlay. Toggle via F3 or pause menu.
-import { Graphics, Text, TextStyle, Container } from 'pixi.js';
+import { Graphics, Text, Container } from 'pixi.js';
 import { CFG, S } from '@core/config';
+import { makeUIStyle } from '@ui/textStyles';
 
 export class PerfOverlay {
   private _buf = new Float32Array(60);
@@ -25,12 +26,7 @@ export class PerfOverlay {
 
     this._label = new Text({
       text: '',
-      style: new TextStyle({
-        fontFamily: 'Courier New, monospace',
-        fontSize: S(11),
-        fill: '#00ff88',
-        dropShadow: { color: '#000', blur: 2, distance: 1 },
-      }),
+      style: makeUIStyle({ size: S(11), color: '#00ff88' }),
     });
     this._label.anchor.set(1, 0);
     this._label.position.set(CFG.W - S(8), S(4));

@@ -70,7 +70,7 @@ const STICK_DEAD_ZONE = 15;
 // InputManager class
 // ---------------------------------------------------------------------------
 
-class InputManager {
+export class InputManager {
   // Raw key map: code → held
   private _keys: Record<string, boolean> = {};
 

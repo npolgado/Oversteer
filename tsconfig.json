@@ -19,7 +19,8 @@
       "@ui/*": ["./src/ui/*"],
       "@audio/*": ["./src/audio/*"],
       "@input/*": ["./src/input/*"],
-      "@content/*": ["./src/content/*"]
+      "@content/*": ["./src/content/*"],
+      "@debug/*": ["./src/debug/*"]
     },
     "baseUrl": "."
   },

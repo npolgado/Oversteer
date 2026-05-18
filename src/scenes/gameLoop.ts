@@ -2,6 +2,7 @@
 // gameplayScene.ts is now a thin Pixi adapter that creates and delegates to this class.
 
 import { Sprite, Assets, Graphics, Text, TextStyle } from 'pixi.js';
+import { makeUIStyle } from '@ui/textStyles';
 import type { GameContext } from './sceneManager';
 import { CFG, S, applyMap, type EnemyType } from '@core/config';
 import { makePlayerState, getPlayerSpeed, getPlayerRadius, type PlayerState } from '@gameplay/player/playerState';
@@ -159,6 +160,7 @@ export class GameLoop {
     } = _ctx.pixiApp;
 
     _ctx.camera.attachContainer(worldContainer);
+    _ctx.camera.setHeadingMode(false);
 
     // Apply map + difficulty modifier CFG overrides before initializing game state
     applyMap(_opts.mapId ?? saveManager.getSelectedMap());
@@ -292,7 +294,7 @@ export class GameLoop {
     const onPlayerDied = () => {
       _ctx.audioManager.stopEngine();
       _ctx.audioManager.stopDrift();
-      _ctx.audioManager.fadeOutMusic(0.5);
+      _ctx.audioManager.fadeBgMusic(0.5);
     };
 
     eventBus.on('nearMiss',       onNearMissFx);
@@ -323,7 +325,7 @@ export class GameLoop {
       eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
       this._hudManager.showWaveBanner(this._waveState.waveIndex);
       _ctx.audioManager.startEngine();
-      _ctx.audioManager.startMusic();
+      _ctx.audioManager.startBgMusic();
     }
 
     _ctx.camera.reset(this._playerState.x, this._playerState.y);
@@ -449,7 +451,15 @@ export class GameLoop {
       };
       this._hudManager.update(hudData);
       this._eventLog.update(dt);
-      this._ctx.camera.update(dilatedDt, this._playerState.x, this._playerState.y, 0, 0, 0);
+      this._ctx.camera.update(
+        dilatedDt,
+        this._playerState.x,
+        this._playerState.y,
+        0,
+        0,
+        0,
+        this._playerState.heading,
+      );
       this._screenFx.applyToContainer(this._ctx.pixiApp.worldContainer);
       this._speedLines.update(
         getPlayerSpeed(this._playerState),
@@ -612,6 +622,7 @@ export class GameLoop {
         for (const e of this._enemies) e.alive = false;
         this._enemies.length = 0;
         changed = true;
+        this._ctx.camera.setHeadingMode(false);
         this._ctx.audioManager.stopEngine();
         this._ctx.audioManager.stopDrift();
         eventBus.emit('waveEnded', { wave: this._waveState.waveIndex });
@@ -626,9 +637,10 @@ export class GameLoop {
           this._enemies.push(makeEnemyState(req.type, x, y, this._waveState.speedBonus));
           changed = true;
         }
-        this._eventLog.add('HORDE! x' + ev.count, 0xFF4444);
-        this._hudManager.showMilestoneBanner('HORDE! x' + ev.count, '#FF4444');
+        this._eventLog.add('HORDE' + '!'.repeat(ev.count), 0xFF4444);
+        this._hudManager.showMilestoneBanner('HORDE' + '!'.repeat(ev.count), '#FF4444');
         this._screenFx.shake(5, 0.3);
+        this._ctx.camera.setHeadingMode(true);
       } else if (ev.type === 'break_end') {
         startWave(this._waveState);
         eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
@@ -1017,6 +1029,7 @@ export class GameLoop {
       this._playerState.vx,
       this._playerState.vy,
       getPlayerSpeed(this._playerState),
+      this._playerState.heading,
     );
     this._screenFx.applyToContainer(this._ctx.pixiApp.worldContainer);
     this._speedLines.update(
@@ -1047,13 +1060,7 @@ export class GameLoop {
     if (!this._pauseText) {
       this._pauseText = new Text({
         text: 'PAUSED',
-        style: new TextStyle({
-          fontFamily: 'Courier New, monospace',
-          fontSize: S(40),
-          fontWeight: 'bold',
-          fill: '#EAEFF7',
-          dropShadow: { color: '#000', blur: 2, distance: 1 },
-        }),
+        style: makeUIStyle({ size: S(40), color: '#EAEFF7', bold: true }),
       });
       this._pauseText.anchor.set(0.5, 0.5);
       this._pauseText.position.set(CFG.W / 2, CFG.H / 2 - S(60));
@@ -1062,7 +1069,7 @@ export class GameLoop {
     if (!this._pauseHint) {
       this._pauseHint = new Text({
         text: '',
-        style: new TextStyle({ fontFamily: 'Courier New, monospace', fontSize: S(14), fill: '#888888' }),
+        style: makeUIStyle({ size: S(14), color: '#888888' }),
       });
       this._pauseHint.anchor.set(0.5, 0.5);
       this._pauseHint.position.set(CFG.W / 2, CFG.H / 2 - S(20));
@@ -1136,11 +1143,7 @@ export class GameLoop {
     if (!this._pausePerfText) {
       this._pausePerfText = new Text({
         text: '',
-        style: new TextStyle({
-          fontFamily: 'Courier New, monospace',
-          fontSize: S(11),
-          fill: '#888888',
-        }),
+        style: makeUIStyle({ size: S(11), color: '#888888' }),
       });
       this._pausePerfText.anchor.set(0.5, 0);
       this._ctx.pixiApp.hudLayer.addChild(this._pausePerfText);
@@ -1165,28 +1168,28 @@ export class GameLoop {
     if (!this._cdBg.parent) layer.addChild(this._cdBg);
 
     if (!this._cdIcon) {
-      this._cdIcon = new Text({ text: '', style: new TextStyle({ fontFamily: 'Courier New, monospace', fontSize: S(48), fontWeight: 'bold', fill: CFG.C_ACCENT, dropShadow: { color: '#000', blur: 2, distance: 1 } }) });
+      this._cdIcon = new Text({ text: '', style: makeUIStyle({ size: S(48), color: CFG.C_ACCENT, bold: true }) });
       this._cdIcon.anchor.set(0.5, 0.5);
       this._cdIcon.position.set(CFG.W / 2, CFG.H / 2 - S(60));
     }
     if (!this._cdIcon.parent) layer.addChild(this._cdIcon);
 
     if (!this._cdName) {
-      this._cdName = new Text({ text: '', style: new TextStyle({ fontFamily: 'Courier New, monospace', fontSize: S(22), fontWeight: 'bold', fill: CFG.C_TEXT, dropShadow: { color: '#000', blur: 2, distance: 1 } }) });
+      this._cdName = new Text({ text: '', style: makeUIStyle({ size: S(22), color: CFG.C_TEXT, bold: true }) });
       this._cdName.anchor.set(0.5, 0.5);
       this._cdName.position.set(CFG.W / 2, CFG.H / 2 - S(15));
     }
     if (!this._cdName.parent) layer.addChild(this._cdName);
 
     if (!this._cdNum) {
-      this._cdNum = new Text({ text: '', style: new TextStyle({ fontFamily: 'Courier New, monospace', fontSize: S(48), fontWeight: 'bold', fill: CFG.C_ACCENT, dropShadow: { color: '#000', blur: 2, distance: 1 } }) });
+      this._cdNum = new Text({ text: '', style: makeUIStyle({ size: S(48), color: CFG.C_ACCENT, bold: true }) });
       this._cdNum.anchor.set(0.5, 0.5);
       this._cdNum.position.set(CFG.W / 2, CFG.H / 2 + S(40));
     }
     if (!this._cdNum.parent) layer.addChild(this._cdNum);
 
     if (!this._cdWave) {
-      this._cdWave = new Text({ text: '', style: new TextStyle({ fontFamily: 'Courier New, monospace', fontSize: S(16), fill: '#888888', dropShadow: { color: '#000', blur: 2, distance: 1 } }) });
+      this._cdWave = new Text({ text: '', style: makeUIStyle({ size: S(16), color: '#888888' }) });
       this._cdWave.anchor.set(0.5, 0.5);
       this._cdWave.position.set(CFG.W / 2, CFG.H / 2 + S(80));
     }
@@ -1305,6 +1308,7 @@ export class GameLoop {
   }
 
   destroy(): void {
+    if (this._paused) resumeUITweens();
     inputManager.overrideState = null;
     this._cdBg?.destroy();
     this._cdIcon?.destroy();

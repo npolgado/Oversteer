@@ -8,6 +8,7 @@ export interface UpgradeDef {
   name: string;
   desc: string;
   icon: string;
+  iconSprite?: string;
   stackable: boolean;
   apply(player: PlayerState): void;
 }

@@ -1,10 +1,11 @@
 // hudManager.ts — PixiJS HUD: score, HP bar, wave timer, enemy count, drift combo, speed.
 // Matches layout of arena-drifter/game.js renderHUD().
 
-import { Graphics, Text, TextStyle, Container } from 'pixi.js';
+import { Graphics, Text, Container } from 'pixi.js';
 import { CFG, S } from '@core/config';
 import type { WavePhase } from '@gameplay/spawning/waveManager';
 import { uiTween, killUITweens } from '@render/tween';
+import { makeUIStyle } from '@ui/textStyles';
 
 export interface HudData {
   score: number;
@@ -25,16 +26,6 @@ export interface HudData {
   enemies: Array<{ x: number; y: number; alive: boolean }>;
   cameraX: number;
   cameraY: number;
-}
-
-function makeStyle(size: number, color: string, bold = false): TextStyle {
-  return new TextStyle({
-    fontFamily: 'Courier New, monospace',
-    fontSize: size,
-    fontWeight: bold ? 'bold' : 'normal',
-    fill: color,
-    dropShadow: { color: '#000', blur: 2, distance: 1 },
-  });
 }
 
 export class HudManager {
@@ -93,31 +84,31 @@ export class HudManager {
 
     // --- Score panel ---
     this._scoreBg = new Graphics();
-    this._scoreLabel = new Text({ text: 'SCORE', style: makeStyle(12, '#BBBBBB', true) });
+    this._scoreLabel = new Text({ text: 'SCORE', style: makeUIStyle({ size: S(12), color: '#BBBBBB', bold: true }) });
     this._scoreLabel.position.set(S(20), S(14));
-    this._scoreValue = new Text({ text: '0', style: makeStyle(22, '#EAEFF7', true) });
+    this._scoreValue = new Text({ text: '0', style: makeUIStyle({ size: S(22), color: '#EAEFF7', bold: true }) });
     this._scoreValue.position.set(S(20), S(30));
-    this._newBestText = new Text({ text: 'NEW BEST!', style: makeStyle(10, '#FFB000', true) });
+    this._newBestText = new Text({ text: 'NEW BEST!', style: makeUIStyle({ size: S(10), color: '#FFB000', bold: true }) });
     this._newBestText.position.set(S(20), S(54));
     this._newBestText.alpha = 0;
 
     // --- HP bar ---
     this._hpBg = new Graphics();
     this._hpBar = new Graphics();
-    this._hpLabel = new Text({ text: 'HP', style: makeStyle(10, '#BBBBBB') });
-    this._hpText = new Text({ text: '100/100', style: makeStyle(9, '#EAEFF7') });
+    this._hpLabel = new Text({ text: 'HP', style: makeUIStyle({ size: S(10), color: '#BBBBBB' }) });
+    this._hpText = new Text({ text: '100/100', style: makeUIStyle({ size: S(12), color: '#EAEFF7' }) });
 
     // --- Wave timer ---
     this._waveBg = new Graphics();
     this._waveBar = new Graphics();
-    this._waveLabel = new Text({ text: 'WAVE 1', style: makeStyle(11, '#AAAAAA') });
+    this._waveLabel = new Text({ text: 'WAVE 1', style: makeUIStyle({ size: S(14), color: '#AAAAAA' }) });
     this._waveLabel.anchor.set(0.5, 0);
     this._waveBg.alpha = 0;
     this._waveBar.alpha = 0;
     this._waveLabel.alpha = 0;
 
     // --- Enemy count ---
-    this._enemyText = new Text({ text: 'ENEMIES: 0', style: makeStyle(11, '#AAAAAA') });
+    this._enemyText = new Text({ text: 'ENEMIES: 0', style: makeUIStyle({ size: S(14), color: '#AAAAAA' }) });
     this._enemyText.anchor.set(1, 0);
     this._enemyText.position.set(CFG.W - S(20), S(14));
     this._enemyText.alpha = 0;
@@ -125,7 +116,7 @@ export class HudManager {
     // --- Drift combo ---
     this._comboBg = new Graphics();
     this._comboBar = new Graphics();
-    this._comboLabel = new Text({ text: 'DRIFT x0', style: makeStyle(13, '#35F2D0', true) });
+    this._comboLabel = new Text({ text: 'DRIFT x0', style: makeUIStyle({ size: S(13), color: '#35F2D0', bold: true }) });
     this._comboBg.alpha = 0;
     this._comboBar.alpha = 0;
     this._comboLabel.alpha = 0;
@@ -133,22 +124,22 @@ export class HudManager {
     // --- Speed indicator ---
     this._speedBg = new Graphics();
     this._speedBar = new Graphics();
-    this._speedLabel = new Text({ text: 'SPD', style: makeStyle(9, '#999999') });
-    this._speedLabel.anchor.set(1, 0.5);
-    this._controlsHint = new Text({ text: 'WASD + SPACE', style: makeStyle(10, '#888888') });
+    this._speedLabel = new Text({ text: 'SPD', style: makeUIStyle({ size: S(12), color: '#ffffff' }) });
+    this._speedLabel.anchor.set(0.5, 0.5);
+    this._controlsHint = new Text({ text: 'WASD + SPACE', style: makeUIStyle({ size: S(10), color: '#888888' }) });
     this._controlsHint.anchor.set(1, 0);
     this._controlsHint.position.set(CFG.W - S(20), CFG.H - S(20));
 
     // --- Wave announce banner ---
     this._waveBanner = new Graphics();
-    this._waveBannerText = new Text({ text: 'WAVE 1', style: makeStyle(26, '#35F2D0', true) });
+    this._waveBannerText = new Text({ text: 'WAVE 1', style: makeUIStyle({ size: S(26), color: '#35F2D0', bold: true }) });
     this._waveBannerText.anchor.set(0.5, 0.5);
     this._waveBanner.alpha = 0;
     this._waveBannerText.alpha = 0;
 
     // --- Combo milestone banner (attached at construction with alpha=0 — safe Pixi v8 alpha tween pattern) ---
     this._milestoneBanner = new Graphics();
-    this._milestoneBannerText = new Text({ text: '', style: makeStyle(32, '#35F2D0', true) });
+    this._milestoneBannerText = new Text({ text: '', style: makeUIStyle({ size: S(32), color: '#35F2D0', bold: true }) });
     this._milestoneBannerText.anchor.set(0.5, 0.5);
     this._milestoneBanner.alpha = 0;
     this._milestoneBannerText.alpha = 0;
@@ -212,8 +203,8 @@ export class HudManager {
     this._milestoneBannerText.y = CFG.H * 0.6;
 
     this._milestoneBanner.clear();
-    const bw = S(200);
     const bh = S(44);
+    const bw = Math.max(S(200), this._milestoneBannerText.width + S(32));
     this._milestoneBanner.roundRect(CFG.W / 2 - bw / 2, CFG.H * 0.6 - bh / 2, bw, bh, S(6))
       .fill({ color: 0x000000, alpha: 0.5 });
 
@@ -342,28 +333,29 @@ export class HudManager {
     }
 
     // --- Speed indicator (bottom-right) ---
-    const sbw = S(60);
-    const sbh = S(6);
-    const sbx = CFG.W - S(20) - sbw;
-    const sby = CFG.H - S(34);
+    const sbw = S(80);
+    const sbh = S(10);
+    const sbx = CFG.W - S(24) - sbw;
+    const sby = CFG.H - S(38);
     const speedFrac = data.maxSpeed > 0 ? Math.min(1, data.speed / data.maxSpeed) : 0;
     const atDrift = data.speed >= CFG.DRIFT_THRESHOLD;
     const driftFrac = data.maxSpeed > 0 ? Math.min(1, CFG.DRIFT_THRESHOLD / data.maxSpeed) : 0;
 
     this._speedBg.clear();
-    this._speedBg.roundRect(sbx - S(30), sby - S(6), sbw + S(38), sbh + S(12), S(4))
+    this._speedBg.roundRect(sbx - S(4), sby - S(4), sbw + S(8), sbh + S(8), S(4))
       .fill({ color: 0x1a2233 })
-      .stroke({ color: 0xffffff, alpha: 0.1, width: 1 });
-    this._speedBg.rect(sbx, sby, sbw, sbh).fill({ color: 0x1a2233 });
+      .stroke({ color: 0x35f2d0, alpha: 0.3, width: 1 });
+    this._speedBg.rect(sbx, sby, sbw, sbh).fill({ color: 0x0d1020 });
 
     this._speedBar.clear();
     this._speedBar.rect(sbx, sby, Math.max(1, sbw * speedFrac), sbh)
-      .fill({ color: atDrift ? 0x35f2d0 : 0x999999 });
-    // Drift threshold marker
-    this._speedBar.rect(sbx + sbw * driftFrac - 1, sby - 1, 2, sbh + 2)
-      .fill({ color: 0xaaaaaa });
+      .fill({ color: atDrift ? 0x35f2d0 : 0x446688 });
+    // Drift threshold tick — accent color for easy reference
+    this._speedBar.rect(sbx + sbw * driftFrac - 1, sby - 2, 2, sbh + 4)
+      .fill({ color: 0x35f2d0 });
 
-    this._speedLabel.position.set(sbx - S(6), sby + sbh / 2);
+    // 'SPD' label centered inside the bar
+    this._speedLabel.position.set(sbx + sbw / 2, sby + sbh / 2);
 
     // --- Off-screen enemy indicators (game.js:1528-1562) ---
     const sides = { left: false, right: false, top: false, bottom: false };

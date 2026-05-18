@@ -154,8 +154,8 @@ export function updateWave(
       return events;
     }
 
-    // Horde event logic (wave 2+, fires once per wave at 75% of combat time)
-    if (!state.hordeTriggered && state.waveIndex >= 2 &&
+    // Horde event logic (fires once per wave after trigger fraction of combat time)
+    if (!state.hordeTriggered &&
         shouldTriggerHorde(state.waveTimer, state.currentCombatDuration, state.hordeTrigger)) {
       state.hordeTriggered = true;
       state.hordeSpawnTimer = CFG.HORDE_DELAY;

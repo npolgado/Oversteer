@@ -1,8 +1,9 @@
 // eventLog.ts — On-screen event log: max 7 entries, fade after 2.2s, gone at 3.5s.
 // Matches behavior of arena-drifter/fx.js EventLog (age-based alpha, no GSAP tweens on entries).
 
-import { Graphics, Text, TextStyle, Container } from 'pixi.js';
+import { Graphics, Text, Container } from 'pixi.js';
 import { S } from '@core/config';
+import { makeUIStyle } from '@ui/textStyles';
 
 const MAX_ENTRIES = 7;
 const ENTRY_LIFETIME = 3.5;
@@ -43,11 +44,7 @@ export class EventLog {
       oldest.pixiText.destroy();
     }
 
-    const style = new TextStyle({
-      fontFamily: 'Courier New, monospace',
-      fontSize: S(11),
-      fill: `#${color.toString(16).padStart(6, '0')}`,
-    });
+    const style = makeUIStyle({ size: S(14), color: `#${color.toString(16).padStart(6, '0')}` });
     const pixiText = new Text({ text, style });
     this._layer.addChild(pixiText);
 
