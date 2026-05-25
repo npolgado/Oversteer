@@ -233,7 +233,8 @@ export class HudManager {
     if (data.newBest && !this._newBestShown) {
       this._newBestShown = true;
       this._newBestText.scale.set(0.5);
-      uiTween(this._newBestText, { alpha: 1, scaleX: 1, scaleY: 1, duration: 0.25, ease: 'back.out(2)' });
+      uiTween(this._newBestText, { alpha: 1, duration: 0.25, ease: 'back.out(2)' });
+      uiTween(this._newBestText.scale, { x: 1, y: 1, duration: 0.25, ease: 'back.out(2)' });
     } else if (!data.newBest && this._newBestShown) {
       this._newBestShown = false;
       this._newBestText.alpha = 0;

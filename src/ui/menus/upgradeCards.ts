@@ -87,8 +87,9 @@ export class UpgradeCardsUI {
       bg.rect(0, 0, CARD_W, CARD_H).stroke({ color: CFG.C_ACCENT, width: 2, alpha: 0.8 });
       container.addChild(bg);
 
-      // Number hint
-      const numHint = new Text({ text: `[${i + 1}]`, style: makeUIStyle({ size: S(12), color: '#888888' }) });
+      // Number hint (keyboard + gamepad button label)
+      const gpLabels = ['A', 'X', 'Y'];
+      const numHint = new Text({ text: `[${i + 1}] / ${gpLabels[i] ?? ''}`, style: makeUIStyle({ size: S(12), color: '#888888' }) });
       numHint.position.set(S(8), S(8));
       container.addChild(numHint);
 
@@ -125,7 +126,7 @@ export class UpgradeCardsUI {
 
     // Reroll button
     const rerollColor = rerollsLeft > 0 ? '#dddddd' : '#666666';
-    this._rerollText = new Text({ text: `Press [R] to reroll (${rerollsLeft} left)`, style: makeUIStyle({ size: S(15), color: rerollColor }) });
+    this._rerollText = new Text({ text: `[R] / RB — reroll  (${rerollsLeft} left)`, style: makeUIStyle({ size: S(15), color: rerollColor }) });
     this._rerollText.anchor.set(0.5);
     this._rerollText.position.set(CFG.W / 2, CFG.H - S(35));
     this._layer.addChild(this._rerollText);

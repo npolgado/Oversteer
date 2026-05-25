@@ -69,8 +69,10 @@ function update(
   state.zoom = lerp(state.zoom, targetZoom, t);
 
   // Heading-up mode rotates world so car forward faces up.
+  // NOTE: not in original — rotation uses a separate, slower lerp so large heading swings ease in gradually.
+  const tRot = 1 - Math.exp(-CFG.CAMERA_ROTATION_LERP_SPEED * dt);
   const targetRotation = _headingUp ? (-Math.PI / 2 - heading) : 0;
-  state.rotation = lerpAngle(state.rotation, targetRotation, t);
+  state.rotation = lerpAngle(state.rotation, targetRotation, tRot);
 
   // Apply to worldContainer
   if (_worldContainer) {

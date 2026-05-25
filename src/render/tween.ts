@@ -49,16 +49,27 @@ export function uiTween(
   });
 }
 
-/** Pause all in-flight UI tweens (call on game pause). */
+let _timelinePaused = false;
+
+/** Pause all in-flight UI tweens (call on game pause). Idempotent — safe to call redundantly. */
 export function pauseUITweens(): void {
+  if (_timelinePaused) return;
+  _timelinePaused = true;
   log('tween', 'pauseUITweens');
   gsap.globalTimeline.pause();
 }
 
-/** Resume all UI tweens (call on game resume). */
+/** Resume all UI tweens (call on game resume / scene destroy). Idempotent — safe to call redundantly. */
 export function resumeUITweens(): void {
+  if (!_timelinePaused) return;
+  _timelinePaused = false;
   log('tween', 'resumeUITweens');
   gsap.globalTimeline.resume();
+}
+
+/** Exposed for tests only — resets the pause-tracking flag to initial state. */
+export function _resetTweenStateForTest(): void {
+  _timelinePaused = false;
 }
 
 /** Kill all in-flight tweens on a given target (call before destroying a Container). */

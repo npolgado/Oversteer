@@ -3,6 +3,7 @@
 
 import { getPlayerSpeed, type PlayerState } from '@gameplay/player/playerState';
 import { pointInPoly } from '@gameplay/pureLogic';
+import { CFG } from '@core/config';
 import {
   getTrailPoint,
   pushTrailPoint,
@@ -20,6 +21,7 @@ export interface EnemyState {
   y: number;
   alive: boolean;
   armored: boolean;
+  type?: string;
 }
 
 export interface TrailLoopResult {
@@ -120,8 +122,7 @@ function _detectLoop(
       } else {
         e.alive = false;
         killedEnemies.push(e);
-        // TODO (Phase 3): elites count as 3 kills for scoring (original world.js:367)
-        encircleCount++;
+        encircleCount += e.type === 'elite' ? CFG.ELITE_ENCIRCLE_KILLS : 1;
       }
     }
 

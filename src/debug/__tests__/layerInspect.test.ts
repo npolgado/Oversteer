@@ -56,6 +56,29 @@ describe('describeChild — surfaces NaN dimensions visibly', () => {
   });
 });
 
+describe('describeChild — Text node does not report TEX=NULL (Fix 5 regression)', () => {
+  it('Text node with no .texture property does not produce TEX=NULL!', () => {
+    // Pixi v8 Text extends Container, not Sprite — .texture is undefined.
+    // layerInspect must skip the texture check for nodes that have a .text property.
+    const t = makeText('GAME OVER', 800, 100, 328, 66);
+    // Explicitly confirm no .texture on the fixture (mirrors real Pixi Text behaviour)
+    expect((t as any).texture).toBeUndefined();
+    const line = describeChild(t as never, 0);
+    expect(line).not.toContain('TEX=NULL!');
+  });
+
+  it('non-Text node with undefined .texture still reports TEX=NULL!', () => {
+    const sprite = {
+      alpha: 1, visible: true, width: 64, height: 64,
+      position: { x: 0, y: 0 },
+      texture: undefined,               // Sprite with missing texture — real problem
+      constructor: { name: 'Sprite' },
+    };
+    const line = describeChild(sprite as never, 0);
+    expect(line).toContain('TEX=NULL!');
+  });
+});
+
 describe('describeChild — text preview', () => {
   it('quotes text content and includes type', () => {
     const t = makeText('BEST: 12345', 800, 432, 170, 26);

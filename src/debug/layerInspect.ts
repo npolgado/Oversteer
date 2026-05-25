@@ -54,9 +54,13 @@ export function describeChild(c: AnyPixi, index: number): string {
   const vis = c.visible === false ? 'F' : 'T';
   const label = c.label ? ` label="${c.label}"` : '';
   const text = _previewText(c);
-  const tex = (c.texture === null || c.texture === undefined)
-    ? ' TEX=NULL!'
-    : (c.texture.label ? ` tex=${c.texture.label}` : '');
+  // Text nodes in Pixi v8 don't expose `.texture` (they extend Container, not Sprite).
+  // Skip the check to avoid false-positive TEX=NULL! reports on every Text.
+  const tex = (typeof c.text === 'string')
+    ? ''
+    : (c.texture === null || c.texture === undefined)
+      ? ' TEX=NULL!'
+      : (c.texture.label ? ` tex=${c.texture.label}` : '');
 
   let offScreen = '';
   try {

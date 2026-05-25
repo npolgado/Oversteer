@@ -4,6 +4,7 @@
 import { Sprite, Assets, Graphics, Text, TextStyle } from 'pixi.js';
 import { makeUIStyle } from '@ui/textStyles';
 import type { GameContext } from './sceneManager';
+import { MobileControls } from '@ui/mobileControls';
 import { CFG, S, applyMap, type EnemyType } from '@core/config';
 import { makePlayerState, getPlayerSpeed, getPlayerRadius, type PlayerState } from '@gameplay/player/playerState';
 import { updatePlayer } from '@gameplay/player/playerUpdate';
@@ -67,6 +68,7 @@ import { ScreenFX } from '@render/screenFx';
 import { SpeedLines } from '@render/speedLines';
 import { ParticleSystem } from '@render/particles';
 import { uiTween, pauseUITweens, resumeUITweens } from '@render/tween';
+import { registerPausePredicate, unregisterPausePredicate } from '@debug/debugOverlay';
 import { DIFFICULTY_MODIFIERS, computeModifierScoreMult } from '@content/maps';
 import { sceneManager } from './sceneManager';
 import { GameOverScene, type GameOverData } from './gameOverScene';
@@ -78,10 +80,12 @@ const EMPTY_INPUT: InputState = {
   up: false, down: false, left: false, right: false,
   drift: false, pause: false, enter: false, reroll: false,
   select1: false, select2: false, select3: false,
-  menuLeft: false, menuRight: false,
+  escape: false,
+  menuLeft: false, menuRight: false, menuUp: false, menuDown: false, menuLaunch: false,
   menuMod1: false, menuMod2: false, menuMod3: false, menuMod4: false,
+  toggleSandbox: false,
   mute: false, sfxDown: false, sfxUp: false, musicDown: false, musicUp: false,
-  escape: false, perfToggle: false,
+  perfToggle: false,
 };
 
 export class GameLoop {
@@ -112,6 +116,7 @@ export class GameLoop {
   private _perf: PerfOverlay;
   private _lastFrameWallMs = 0;
   private _pausePerfText: import('pixi.js').Text | null = null;
+  private _mobileControls: MobileControls | null = null;
 
   // Benchmark mode
   private _bench: {
@@ -221,6 +226,10 @@ export class GameLoop {
     this._speedLines = new SpeedLines(_ctx.pixiApp.screenFxContainer);
     this._particles = new ParticleSystem(_ctx.pixiApp.particlesLayer, _ctx.pixiApp.sparkTexture, _ctx.camera.isVisible);
 
+    // --- Mobile Controls ---
+    this._mobileControls = new MobileControls(_ctx.pixiApp.hudLayer);
+    registerPausePredicate(() => this._paused);
+
     // --- Sub-managers ---
     this._death = new DeathSequence(
       this._screenFx,
@@ -320,12 +329,14 @@ export class GameLoop {
     ];
 
     // Start first wave after listeners are bound so initial "WAVE N" log is not missed.
+    if (!_opts.benchmark) {
+      _ctx.audioManager.startBgMusic();
+    }
     if (!_opts.sandbox && !_opts.benchmark) {
       startWave(this._waveState);
       eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
       this._hudManager.showWaveBanner(this._waveState.waveIndex);
       _ctx.audioManager.startEngine();
-      _ctx.audioManager.startBgMusic();
     }
 
     _ctx.camera.reset(this._playerState.x, this._playerState.y);
@@ -399,7 +410,7 @@ export class GameLoop {
       if (input.sfxDown)   this._ctx.audioManager.setVolume('sfx',   this._ctx.audioManager.sfxVolume   - 0.1);
       if (input.sfxUp)     this._ctx.audioManager.setVolume('sfx',   this._ctx.audioManager.sfxVolume   + 0.1);
       if (input.musicDown) {
-        this._preMuteMusicVol = Math.max(0, this._preMuteMusicVol - 0.1);
+        this._preMuteMusicVol = Math.max(0.1, this._preMuteMusicVol - 0.1);
         this._ctx.audioManager.setVolume('music', this._preMuteMusicVol * 0.3);
       }
       if (input.musicUp) {
@@ -1044,6 +1055,7 @@ export class GameLoop {
       this._playerState.hp <= 0,
     );
     this._particles.update(dilatedDt);
+    this._mobileControls?.update(inputManager, dilatedDt);
     this._drawArenaGlow();
   }
 
@@ -1308,7 +1320,8 @@ export class GameLoop {
   }
 
   destroy(): void {
-    if (this._paused) resumeUITweens();
+    resumeUITweens(); // always restore global timeline on scene exit (safe — idempotent)
+    unregisterPausePredicate();
     inputManager.overrideState = null;
     this._cdBg?.destroy();
     this._cdIcon?.destroy();
@@ -1317,6 +1330,8 @@ export class GameLoop {
     this._cdWave?.destroy();
     this._perf.destroy();
     this._pausePerfText?.destroy();
+    this._mobileControls?.destroy();
+    this._mobileControls = null;
     this._ctx.audioManager.stopAll();
     this._playerRenderer.destroy();
     this._trailRenderer.destroy();

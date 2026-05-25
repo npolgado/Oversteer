@@ -103,7 +103,7 @@ export class GameOverScene implements Scene {
     }
 
     // Input hints
-    const hintTxt = new Text({ text: 'R / ENTER — Restart  •  M / ESC — Menu', style: makeUIStyle({ size: S(15), color: '#555555' }) });
+    const hintTxt = new Text({ text: 'R / Enter / Start — Restart  •  M / Esc / B — Menu', style: makeUIStyle({ size: S(15), color: '#555555' }) });
     hintTxt.anchor.set(0.5);
     hintTxt.position.set(CFG.W / 2, CFG.H * 0.93);
     overlayLayer.addChild(hintTxt);
@@ -118,7 +118,7 @@ export class GameOverScene implements Scene {
     const input = context.getInput();
     const d = this._data;
 
-    if (input.reroll || input.enter) {
+    if (input.reroll || input.enter || input.menuLaunch) {
       sceneManager.switchTo(new GameplayScene({
         mapId: d.lastMapId,
         modifierIds: d.lastModifierIds,

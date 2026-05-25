@@ -27,6 +27,20 @@ let _rafId = 0;
 let _dumpIntervalId = 0;
 let _blankReadCount = 0;
 let _tlPausedConsecutive = 0;
+let _pausePredicate: (() => boolean) | null = null;
+
+/**
+ * Register a predicate that returns true when the game is intentionally paused.
+ * The stuck-GSAP watchdog skips its counter while this returns true so a player
+ * pausing for >9s doesn't trigger a false-positive error.
+ */
+export function registerPausePredicate(pred: () => boolean): void {
+  _pausePredicate = pred;
+}
+
+export function unregisterPausePredicate(): void {
+  _pausePredicate = null;
+}
 
 // DOM probe cache — re-scan at most once per second to keep RAF cheap.
 let _lastProbeTime = 0;
@@ -68,8 +82,10 @@ function _dumpState(): void {
 
     // GSAP stuck-paused alarm: if globalTimeline stays paused for 3+ consecutive dumps
     // outside BootScene or scene-none, it's a bug (game paused the timeline and never resumed).
+    // Skip the counter when the game is intentionally paused (registered predicate returns true).
     const _PAUSE_EXEMPT = new Set(['(none)', 'BootScene']);
-    if (tlPaused && !_PAUSE_EXEMPT.has(currentSceneName)) {
+    const gameIntentionallyPaused = _pausePredicate?.() ?? false;
+    if (tlPaused && !_PAUSE_EXEMPT.has(currentSceneName) && !gameIntentionallyPaused) {
       _tlPausedConsecutive++;
       if (_tlPausedConsecutive === 3) {
         import('./logger').then(m => m.logError('state',
@@ -105,7 +121,11 @@ function _dumpState(): void {
       // Two consecutive single-color reads while a real scene is active = blank screen.
       // uniqueColors===1 catches both the clear color (#07080b) and pure black (#000000),
       // which the previous all-clear check missed entirely.
-      if (r.uniqueColors === 1 && currentSceneName !== '(none)' && currentSceneName !== 'BootScene') {
+      // If all samples are fully transparent (a===0), the WebGL canvas was read between
+      // frames with preserveDrawingBuffer=false — scratch-canvas pixels are stale zeros.
+      // That's not a real blank screen; skip the error to avoid false positives.
+      const allTransparent = r.samples.length > 0 && r.samples.every(p => p.a === 0);
+      if (r.uniqueColors === 1 && !allTransparent && currentSceneName !== '(none)' && currentSceneName !== 'BootScene') {
         _blankReadCount++;
         if (_blankReadCount === 2) {
           // logError is dynamic-imported here to avoid a circular dep on this file.
