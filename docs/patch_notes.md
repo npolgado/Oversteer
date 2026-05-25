@@ -2,6 +2,16 @@
 
 ---
 
+## 2026-05-23 - dev_1.3.9 - Phase 3.9 Input + Cleanup
+
+- **Mobile touch overlay**: Pixi-based joystick base, knob, and drift button appear on first touch; hidden on desktop. Joystick renders at touch origin with deadzone ring; drift button bottom-right with pressed-state highlight. Implemented in src/ui/mobileControls.ts, integrated into GameLoop.
+- **Gamepad support (baseline)**: Left stick steers (0.15 deadzone), RT drift, A confirm, B reroll, Start pause, D-pad menu navigation. No rebind UI (deferred to Phase 6). Full axis/button mapping in InputManager._pollGamepad().
+- **Elite encirclement scoring**: Encircling an elite enemy now counts as 3 kills toward score and stats (matches arena-drifter/world.js original behavior). Previously counted as 1.
+- **InputManager public API**: New getters hasTouched, stickOrigin, stickPos, driftActive expose touch state without internal field access.
+- dev: added mobileControls.test.ts and gamepad test suite; total test file count grows to ~33.
+
+---
+
 ## 2026-05-18 - dev_1.3.5 - Phase 3.5 Visual-Audio Upgrade
 
 - **Music overhaul**: Audio manager replaced procedural ambient pad with four .mp3 tracks (hype, neon, slipstream, tron); tracks are selected and shuffled at runtime

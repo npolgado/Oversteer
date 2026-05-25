@@ -42,6 +42,11 @@ export function unregisterPausePredicate(): void {
   _pausePredicate = null;
 }
 
+/** Exposed for tests only — returns the currently registered pause predicate. */
+export function _getPausePredicateForTest(): (() => boolean) | null {
+  return _pausePredicate;
+}
+
 // DOM probe cache — re-scan at most once per second to keep RAF cheap.
 let _lastProbeTime = 0;
 let _lastProbeLines: string[] = [];
