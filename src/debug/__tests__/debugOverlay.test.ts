@@ -3,6 +3,7 @@ import {
   registerPausePredicate,
   unregisterPausePredicate,
   _getPausePredicateForTest,
+  _shouldIncrementStuckPauseCounter,
 } from '../debugOverlay';
 
 // Mock all heavy deps so the module loads without WebGL / DOM / gsap
@@ -63,5 +64,36 @@ describe('registerPausePredicate / unregisterPausePredicate', () => {
     unregisterPausePredicate();
     expect(() => unregisterPausePredicate()).not.toThrow();
     expect(_getPausePredicateForTest()).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// _shouldIncrementStuckPauseCounter — all four quadrants of the truth table
+// ---------------------------------------------------------------------------
+
+describe('_shouldIncrementStuckPauseCounter', () => {
+  it('returns false when timeline is NOT paused (no alarm regardless of scene or predicate)', () => {
+    expect(_shouldIncrementStuckPauseCounter(false, 'GameLoop', null)).toBe(false);
+    expect(_shouldIncrementStuckPauseCounter(false, 'GameLoop', () => false)).toBe(false);
+    expect(_shouldIncrementStuckPauseCounter(false, 'GameLoop', () => true)).toBe(false);
+  });
+
+  it('returns false for exempt scenes even when paused', () => {
+    expect(_shouldIncrementStuckPauseCounter(true, '(none)', null)).toBe(false);
+    expect(_shouldIncrementStuckPauseCounter(true, 'BootScene', null)).toBe(false);
+  });
+
+  it('returns true when paused in a real scene with no predicate', () => {
+    expect(_shouldIncrementStuckPauseCounter(true, 'GameLoop', null)).toBe(true);
+    expect(_shouldIncrementStuckPauseCounter(true, 'MenuScene', null)).toBe(true);
+  });
+
+  it('returns false when paused but predicate returns true (intentional pause)', () => {
+    // This is the key guarantee: player pausing >9 s never triggers the stuck-GSAP alarm.
+    expect(_shouldIncrementStuckPauseCounter(true, 'GameLoop', () => true)).toBe(false);
+  });
+
+  it('returns true when paused and predicate returns false (not intentional)', () => {
+    expect(_shouldIncrementStuckPauseCounter(true, 'GameLoop', () => false)).toBe(true);
   });
 });

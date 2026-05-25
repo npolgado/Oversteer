@@ -117,12 +117,14 @@ export class InputManager {
     tapAge: 0,
   };
 
+  // NOTE: not in original — hasTouched + virtual stick getters are a TS-port addition (mobile UI).
   // Tracks if the device has been touched at least once
   private _hasTouched: boolean = false;
 
   // Canvas reference — set during init()
   private _canvas: HTMLCanvasElement | null = null;
 
+  // NOTE: not in original — gamepad state is a TS-port addition; arena-drifter has no Gamepad API.
   // Gamepad state (continuous fields only)
   private _gpState: Partial<InputState> = {};
 
@@ -151,7 +153,7 @@ export class InputManager {
     document.addEventListener('keydown', this._onKeyDown);
     document.addEventListener('keyup', this._onKeyUp);
 
-    // Gamepad connect/disconnect listeners
+    // NOTE: not in original — gamepad event listeners.
     window.addEventListener('gamepadconnected', () => { this._gpPrev = []; this._gpState = {}; });
     window.addEventListener('gamepaddisconnected', () => { this._gpPrev = []; this._gpState = {}; });
 
@@ -264,7 +266,7 @@ export class InputManager {
   }
 
   // ---------------------------------------------------------------------------
-  // Public getters
+  // Public getters — NOTE: not in original (virtual stick + touch state exposed for MobileControls)
   // ---------------------------------------------------------------------------
 
   /** Returns true if the device has been touched at least once. */
@@ -288,7 +290,7 @@ export class InputManager {
   }
 
   // ---------------------------------------------------------------------------
-  // Gamepad private helper
+  // Gamepad private helper — NOTE: not in original (full gamepad support is a TS-port addition)
   // ---------------------------------------------------------------------------
 
   /**
@@ -441,7 +443,7 @@ export class InputManager {
     let menuLaunch = eNow && !this._menuLaunchPressed;
     this._menuLaunchPressed = eNow;
 
-    // --- Edge-triggered: sandbox toggle (KeyS, keyboard only — not shared with down/brake) ---
+    // --- Edge-triggered: sandbox toggle (KeyS, keyboard only; KeyS also fires down=brake — each scene reads only what it needs) ---
     const sbNow = !!k['KeyS'];
     let toggleSandbox = sbNow && !this._sandboxTogglePressed;
     this._sandboxTogglePressed = sbNow;
@@ -511,7 +513,7 @@ export class InputManager {
     const perfToggle = f3Now && !this._f3Pressed;
     this._f3Pressed = f3Now;
 
-    // Poll gamepad and OR into current values
+    // NOTE: not in original — merge gamepad state into keyboard state.
     this._pollGamepad();
 
     up    = up    || !!this._gpState.up;

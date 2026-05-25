@@ -470,3 +470,62 @@ describe('keyboard Enter → menuLaunch only, not enter', () => {
     expect(s2.menuLaunch).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// New keyboard arrow keys + KeyS (Phase 3 additions)
+// ---------------------------------------------------------------------------
+
+describe('keyboard arrow keys and KeyS', () => {
+  let im: InputManager;
+
+  beforeEach(() => {
+    vi.stubGlobal('navigator', { ...window.navigator, getGamepads: () => [] });
+    im = new InputManager();
+    im.init(undefined as unknown as HTMLCanvasElement);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    // Release all keys
+    for (const code of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'KeyS']) {
+      document.dispatchEvent(new KeyboardEvent('keyup', { code }));
+    }
+  });
+
+  it('ArrowLeft sets menuLeft=true (in addition to KeyA)', () => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowLeft' }));
+    expect(im.poll().menuLeft).toBe(true);
+  });
+
+  it('ArrowRight sets menuRight=true (in addition to KeyD)', () => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowRight' }));
+    expect(im.poll().menuRight).toBe(true);
+  });
+
+  it('ArrowUp sets menuUp=true, edge-triggered (no re-fire while held)', () => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp' }));
+    expect(im.poll().menuUp).toBe(true);  // fires once
+    expect(im.poll().menuUp).toBe(false); // held — does not re-fire
+  });
+
+  it('ArrowDown sets menuDown=true, edge-triggered', () => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowDown' }));
+    expect(im.poll().menuDown).toBe(true);
+    expect(im.poll().menuDown).toBe(false);
+  });
+
+  it('KeyS sets toggleSandbox=true, edge-triggered', () => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyS' }));
+    expect(im.poll().toggleSandbox).toBe(true);
+    expect(im.poll().toggleSandbox).toBe(false);
+  });
+
+  it('KeyS sets BOTH toggleSandbox AND down — scenes read only what they need', () => {
+    // KeyS shares the `down` (brake) binding. mapSelectScene uses toggleSandbox;
+    // gameLoop uses down. Each scene ignores the field it doesn't care about.
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyS' }));
+    const s = im.poll();
+    expect(s.toggleSandbox).toBe(true);
+    expect(s.down).toBe(true); // brake is also set — by design
+  });
+});

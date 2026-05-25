@@ -2,6 +2,7 @@ import { Graphics, Container } from 'pixi.js';
 import { CFG, S } from '@core/config';
 import { InputManager } from '@input/inputManager';
 
+// NOTE: not in original — virtual joystick + drift button overlay is a TS-port addition for mobile play.
 export class MobileControls {
   private _g: Graphics;
 

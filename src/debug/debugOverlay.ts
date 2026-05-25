@@ -47,6 +47,22 @@ export function _getPausePredicateForTest(): (() => boolean) | null {
   return _pausePredicate;
 }
 
+/**
+ * Pure helper for the stuck-GSAP alarm: returns true when _tlPausedConsecutive
+ * should be incremented this dump cycle.
+ * Extracted for unit testing — the _dumpState() caller is not easily exercised in isolation.
+ */
+export function _shouldIncrementStuckPauseCounter(
+  tlPaused: boolean,
+  sceneName: string,
+  predicate: (() => boolean) | null,
+): boolean {
+  if (!tlPaused) return false;
+  const _PAUSE_EXEMPT = new Set(['(none)', 'BootScene']);
+  if (_PAUSE_EXEMPT.has(sceneName)) return false;
+  return !(predicate?.() ?? false);
+}
+
 // DOM probe cache — re-scan at most once per second to keep RAF cheap.
 let _lastProbeTime = 0;
 let _lastProbeLines: string[] = [];
@@ -88,9 +104,7 @@ function _dumpState(): void {
     // GSAP stuck-paused alarm: if globalTimeline stays paused for 3+ consecutive dumps
     // outside BootScene or scene-none, it's a bug (game paused the timeline and never resumed).
     // Skip the counter when the game is intentionally paused (registered predicate returns true).
-    const _PAUSE_EXEMPT = new Set(['(none)', 'BootScene']);
-    const gameIntentionallyPaused = _pausePredicate?.() ?? false;
-    if (tlPaused && !_PAUSE_EXEMPT.has(currentSceneName) && !gameIntentionallyPaused) {
+    if (_shouldIncrementStuckPauseCounter(tlPaused, currentSceneName, _pausePredicate)) {
       _tlPausedConsecutive++;
       if (_tlPausedConsecutive === 3) {
         import('./logger').then(m => m.logError('state',

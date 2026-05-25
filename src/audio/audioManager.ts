@@ -273,6 +273,7 @@ const audioManager = {
   },
 
   // --- Background music (file-based, shuffle play-all) ---
+  // NOTE: not in original — original arena-drifter JS used random pick-on-start with loop:true.
 
   _buildShuffle(): void {
     const n = this._bgTracks.length;
@@ -309,6 +310,9 @@ const audioManager = {
     if (this._currentBg) {
       this._currentBg.stop();
       this._currentBg = null;
+      // Advance so the restarted music plays a fresh track, not the interrupted one.
+      this._shuffleIdx++;
+      if (this._shuffleIdx >= this._shuffleOrder.length) this._buildShuffle();
     }
     this._stopping = false;
     // Howler manages its own AudioContext; explicitly resume it if suspended
@@ -329,6 +333,9 @@ const audioManager = {
     this._currentBg.stop();
     this._currentBg = null;
     this._musicPlaying = false;
+    // Advance so the next startBgMusic plays a fresh track instead of replaying this one.
+    this._shuffleIdx++;
+    if (this._shuffleIdx >= this._shuffleOrder.length) this._buildShuffle();
   },
 
   fadeBgMusic(dur: number): void {
@@ -336,6 +343,9 @@ const audioManager = {
     const bg = this._currentBg;
     this._currentBg = null;
     this._musicPlaying = false;
+    // Advance so the next startBgMusic plays a fresh track, not the faded-out one.
+    this._shuffleIdx++;
+    if (this._shuffleIdx >= this._shuffleOrder.length) this._buildShuffle();
     if (this.muted) {
       bg.stop();
       return;
