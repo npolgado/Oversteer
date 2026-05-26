@@ -15,6 +15,7 @@ import { TrailRenderer } from '@gameplay/trail/trailRenderer';
 import {
   makePropsState,
   generateProps,
+  regenerateProps,
   checkPlayerCollision as checkPlayerPropCollision,
   handlePropCollisions,
   checkEnemyPropCollision,
@@ -23,6 +24,8 @@ import {
   type PropsState,
 } from '@gameplay/world/propsSystem';
 import { PropsRenderer } from '@gameplay/world/propsRenderer';
+import { BiomeManager } from '@gameplay/world/biomeManager';
+import { isBiomeTransition, biomeForWave } from '@gameplay/world/runProgression';
 import { makeEnemyState, type EnemyState } from '@gameplay/enemies/enemyState';
 import { updateEnemy } from '@gameplay/enemies/enemyUpdate';
 import { EnemyRenderer } from '@gameplay/enemies/enemyRenderer';
@@ -152,6 +155,7 @@ export class GameLoop {
   // Sub-managers
   private _death: DeathSequence;
   private _upgradeBreak: UpgradeBreakPhase;
+  private _biomeManager: BiomeManager;
 
   constructor(private _opts: GameplayOptions, private _ctx: GameContext) {
     const {
@@ -243,6 +247,7 @@ export class GameLoop {
       (waveIndex) => { this._hudManager.showWaveBanner(waveIndex); },
       new ShopPanelUI(_ctx.pixiApp.overlayLayer),
     );
+    this._biomeManager = new BiomeManager('wasteland');
 
     // --- Event subscriptions ---
     const onNearMiss    = () => this._eventLog.add('NEAR MISS +25', 0xffff00);
@@ -677,6 +682,20 @@ export class GameLoop {
         this._ctx.audioManager.play('boss_sting');
         eventBus.emit('eventLog', { text: 'BOSS WAVE!', color: '#FF4040' });
       } else if (ev.type === 'break_end') {
+        const nextWave = this._waveState.waveIndex + 1;
+        if (isBiomeTransition(nextWave)) {
+          const newBiomeId = biomeForWave(nextWave);
+          this._biomeManager.setBiome(newBiomeId);
+          const biome = this._biomeManager.active;
+          // Fade music and start fresh with the new pack
+          this._ctx.audioManager.fadeBgMusic(1.5);
+          this._ctx.audioManager.loadMusicPack(biome.musicPackId);
+          // Regenerate props from the new biome's pool
+          regenerateProps(this._propsState, biome.propPool);
+          this._hudManager.showMilestoneBanner(biome.name.toUpperCase(), '#35F2D0');
+          this._screenFx.flash(0x35F2D0, 0.3, 0.8);
+          changed = true;
+        }
         startWave(this._waveState);
         eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
         this._hudManager.showWaveBanner(this._waveState.waveIndex);

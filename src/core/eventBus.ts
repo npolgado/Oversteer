@@ -38,6 +38,9 @@ export type GameEvents = {
 
   /** Trail loop closed and killed enemies */
   encirclement: { count: number; x: number; y: number };
+
+  /** Active biome changed (fired by BiomeManager.setBiome) */
+  biomeChanged: { id: string };
 };
 
 // Handler map: event key → set of typed callbacks

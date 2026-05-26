@@ -352,6 +352,16 @@ const audioManager = {
     if (this._shuffleIdx >= this._shuffleOrder.length) this._buildShuffle();
   },
 
+  /**
+   * Swap the active music pack.
+   * Currently all biomes share the default pack; future packs can be loaded by
+   * populating _bgTracks with biome-specific Howls here.
+   */
+  loadMusicPack(_packId: string): void {
+    // NOTE: stub — all packs use the default track list until per-biome audio ships
+    log('audio', `loadMusicPack(${_packId}) — using default pack`);
+  },
+
   fadeBgMusic(dur: number): void {
     if (!this._currentBg) return;
     const bg = this._currentBg;
