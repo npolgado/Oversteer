@@ -661,6 +661,21 @@ export class GameLoop {
         this._hudManager.showMilestoneBanner('HORDE' + '!'.repeat(ev.count), '#FF4444');
         this._screenFx.shake(5, 0.3);
         this._ctx.camera.setHeadingMode(true);
+      } else if (ev.type === 'boss_spawn') {
+        // Spawn boss at arena center
+        const boss = makeEnemyState('boss', CFG.WORLD_W / 2, CFG.WORLD_H / 2, 0);
+        boss.bossPattern = ev.pattern;
+        boss.bossPhase = ev.pattern === 'core' ? 'invuln' : 'telegraph';
+        this._enemies.push(boss);
+        changed = true;
+        this._screenFx.flash(0xFF4040, 0.5, 0.6);
+        this._screenFx.shake(8, 0.5);
+        this._hudManager.showMilestoneBanner(
+          `WAVE ${this._waveState.waveIndex} — BOSS`,
+          '#FF4040',
+        );
+        this._ctx.audioManager.play('boss_sting');
+        eventBus.emit('eventLog', { text: 'BOSS WAVE!', color: '#FF4040' });
       } else if (ev.type === 'break_end') {
         startWave(this._waveState);
         eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
@@ -668,6 +683,17 @@ export class GameLoop {
       }
     }
     return changed;
+  }
+
+  /** Spawn a ring of minions around a source position (used by Core boss). */
+  private _spawnMinionRing(sourceX: number, sourceY: number, count: number): void {
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count;
+      const dist = 120;
+      const x = clamp(sourceX + Math.cos(angle) * dist, 10, CFG.WORLD_W - 10);
+      const y = clamp(sourceY + Math.sin(angle) * dist, 10, CFG.WORLD_H - 10);
+      this._enemies.push(makeEnemyState('chaser', x, y, this._waveState.speedBonus));
+    }
   }
 
   private _tickScraps(dilatedDt: number): void {
@@ -865,6 +891,12 @@ export class GameLoop {
           radius: CFG.BOMB_ZONE_RADIUS,
           phase: 0,
         });
+      }
+      // Core boss: spawn minion ring when flag is set
+      if (enemy._bossSpawnMinion) {
+        enemy._bossSpawnMinion = false;
+        this._spawnMinionRing(enemy.x, enemy.y, 6);
+        changed = true;
       }
       checkEnemyPropCollision(this._propsState, enemy);
       if (result.despawned) {

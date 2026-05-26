@@ -7,6 +7,8 @@ import {
   updateWave,
   computeSpeedBonus,
   tickBoostZoneSpawn,
+  isBossWave,
+  getBossPattern,
   type WaveEvent,
 } from '../waveManager';
 import { HazardZone } from '../waveManager';
@@ -327,3 +329,84 @@ describe('updateBoostZones — collection and expiry', () => {
   });
 });
 
+
+// ── Boss wave system ─────────────────────────────────────────────────────────
+
+describe('isBossWave', () => {
+  it('returns false for wave 0', () => {
+    expect(isBossWave(0)).toBe(false);
+  });
+
+  it('returns true for multiples of 5 (5, 10, 15)', () => {
+    expect(isBossWave(5)).toBe(true);
+    expect(isBossWave(10)).toBe(true);
+    expect(isBossWave(15)).toBe(true);
+    expect(isBossWave(20)).toBe(true);
+  });
+
+  it('returns false for non-multiples', () => {
+    expect(isBossWave(1)).toBe(false);
+    expect(isBossWave(4)).toBe(false);
+    expect(isBossWave(6)).toBe(false);
+    expect(isBossWave(9)).toBe(false);
+  });
+});
+
+describe('getBossPattern', () => {
+  it('wave 5 → pursuer', () => expect(getBossPattern(5)).toBe('pursuer'));
+  it('wave 10 → core', () => expect(getBossPattern(10)).toBe('core'));
+  it('wave 15 → reflector', () => expect(getBossPattern(15)).toBe('reflector'));
+  it('wave 20 → pursuer again', () => expect(getBossPattern(20)).toBe('pursuer'));
+  it('wave 25 → core again', () => expect(getBossPattern(25)).toBe('core'));
+});
+
+describe('boss wave combat phase', () => {
+  function makeBossWave(waveN: number) {
+    const state = makeWaveState();
+    // Advance waveIndex to waveN - 1 so startWave pushes to waveN
+    state.waveIndex = waveN - 1;
+    startWave(state);
+    return state;
+  }
+
+  it('bossActive is true for wave 5', () => {
+    const state = makeBossWave(5);
+    expect(state.bossActive).toBe(true);
+    expect(state.bossPattern).toBe('pursuer');
+    expect(state.bossSpawned).toBe(false);
+  });
+
+  it('bossActive is false for wave 3', () => {
+    const state = makeBossWave(3);
+    expect(state.bossActive).toBe(false);
+  });
+
+  it('boss_spawn event fires after telegraph delay', () => {
+    const state = makeBossWave(5);
+    // Tick past telegraph timer (1.5s)
+    const events = updateWave(state, 2.0, 0, 0);
+    const spawnEv = events.find(e => e.type === 'boss_spawn');
+    expect(spawnEv).toBeDefined();
+    expect((spawnEv as { type: 'boss_spawn'; pattern: string }).pattern).toBe('pursuer');
+    expect(state.bossSpawned).toBe(true);
+  });
+
+  it('no normal spawn events fire during boss wave', () => {
+    const state = makeBossWave(5);
+    // Tick past all timers (very long tick)
+    const events = updateWave(state, 30.0, 0, 0);
+    const spawnEvs = events.filter(e => e.type === 'spawn');
+    expect(spawnEvs.length).toBe(0);
+  });
+
+  it('wave_end fires when boss is dead (enemyCount drops to 0 after spawn)', () => {
+    const state = makeBossWave(5);
+    // Tick to spawn boss
+    updateWave(state, 2.0, 0, 0);
+    expect(state.bossSpawned).toBe(true);
+    // Simulate boss death — tick again with enemyCount = 0
+    const events = updateWave(state, 0.1, 0, 0);
+    const endEv = events.find(e => e.type === 'wave_end');
+    expect(endEv).toBeDefined();
+  });
+});

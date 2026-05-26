@@ -66,5 +66,18 @@ export function getDeathParticles(event: EnemyDeathEvent): ParticleSpawnRequest[
         { x, y, type: 'spark', count: 10, color: 0xFFFFFF, vMin: -250, vMax: 250 },
         { x, y, type: 'ring',  count: 1,  color: 0xFFD700 },
       ];
+
+    case 'boss':
+      return [
+        { x, y, type: 'shard', count: 24, color: 0xFF6600, vMin: -350, vMax: 350 },
+        { x, y, type: 'spark', count: 16, color: 0xFFFFFF, vMin: -300, vMax: 300 },
+        { x, y, type: 'ring',  count: 1,  color: 0xFF6600 },
+        { x, y, type: 'smoke', count: 10, color: 0xFF4400 },
+      ];
+
+    default:
+      return [
+        { x, y, type: 'spark', count: 8, color: 0xFF4444, vMin: -200, vMax: 200 },
+      ];
   }
 }

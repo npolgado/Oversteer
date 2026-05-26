@@ -41,6 +41,11 @@ export interface WaveState {
   hordeTriggered: boolean;
   hordeSpawnTimer: number;
   hordeTrigger: number;
+  // Boss state
+  bossActive: boolean;
+  bossPattern: BossPattern | null;
+  bossSpawned: boolean;
+  bossTelegraphTimer: number;
 }
 
 export interface SpawnRequest {
@@ -50,11 +55,23 @@ export interface SpawnRequest {
   distance: number;
 }
 
+export type BossPattern = 'pursuer' | 'core' | 'reflector';
+
 export type WaveEvent =
   | { type: 'spawn'; requests: SpawnRequest[] }
   | { type: 'wave_end' }
   | { type: 'break_end' }
-  | { type: 'horde'; spawnRequests: SpawnRequest[]; count: number };
+  | { type: 'horde'; spawnRequests: SpawnRequest[]; count: number }
+  | { type: 'boss_spawn'; pattern: BossPattern };
+
+export function isBossWave(waveIndex: number): boolean {
+  return waveIndex > 0 && waveIndex % 5 === 0;
+}
+
+export function getBossPattern(waveIndex: number): BossPattern {
+  const patterns: BossPattern[] = ['pursuer', 'core', 'reflector'];
+  return patterns[Math.floor(waveIndex / 5 - 1) % patterns.length];
+}
 
 // ── Factory ────┐───────┐─────────────┐───────┐─────────
 
@@ -82,6 +99,10 @@ export function makeWaveState(): WaveState {
     hordeTriggered: false,
     hordeSpawnTimer: 0,
     hordeTrigger: 0,
+    bossActive: false,
+    bossPattern: null,
+    bossSpawned: false,
+    bossTelegraphTimer: 0,
   };
 }
 
@@ -110,6 +131,18 @@ export function startWave(state: WaveState): void {
   state.hordeTriggered = false;
   state.hordeSpawnTimer = 0;
   state.hordeTrigger = rollHordeTrigger(makeRng(Date.now() + Math.random() * 0xFFFFFF | 0));
+  // Boss wave setup
+  if (isBossWave(state.waveIndex)) {
+    state.bossActive = true;
+    state.bossPattern = getBossPattern(state.waveIndex);
+    state.bossSpawned = false;
+    state.bossTelegraphTimer = 1.5; // 1.5s telegraph before boss appears
+  } else {
+    state.bossActive = false;
+    state.bossPattern = null;
+    state.bossSpawned = false;
+    state.bossTelegraphTimer = 0;
+  }
 }
 
 // ── Speed bonus ─────────────────┐─────────
@@ -145,7 +178,26 @@ export function updateWave(
   if (state.phase === 'combat') {
     state.waveTimer += dt;
 
-    // Wave end check
+    // Boss wave: telegraph countdown → spawn → wait for kill
+    if (state.bossActive) {
+      if (!state.bossSpawned) {
+        state.bossTelegraphTimer -= dt;
+        if (state.bossTelegraphTimer <= 0) {
+          state.bossSpawned = true;
+          events.push({ type: 'boss_spawn', pattern: state.bossPattern! });
+        }
+      } else if (enemyCount === 0) {
+        // Boss is dead — end combat phase
+        state.phase = 'break';
+        state.breakTimer = CFG.WAVE_BREAK;
+        events.push({ type: 'wave_end' });
+        return events;
+      }
+      // Suppress all normal spawning during boss waves
+      return events;
+    }
+
+    // Normal wave: end on timer
     if (state.waveTimer >= state.currentCombatDuration) {
       state.phase = 'break';
       state.breakTimer = CFG.WAVE_BREAK;
