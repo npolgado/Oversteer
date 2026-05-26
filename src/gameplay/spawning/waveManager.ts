@@ -153,10 +153,21 @@ export function computeSpeedBonus(score: number): number {
 
 // ── Spawn type selection ──────┐────────
 
-function pickEnemyType(score: number, waveIndex: number): EnemyType {
-  const pool = getEnemyPool(score);
+function pickEnemyType(
+  score: number,
+  waveIndex: number,
+  weightMult: Partial<Record<EnemyType, number>> = {},
+): EnemyType {
+  const base = getEnemyPool(score);
+  // Apply biome weight multipliers — entries > 1 appear more frequently
+  const weighted: EnemyType[] = [];
+  for (const t of base) {
+    const mult = Math.round((weightMult[t] ?? 1) * 4);
+    for (let k = 0; k < mult; k++) weighted.push(t);
+  }
+  const pool = weighted.length > 0 ? weighted : base;
   const type = pool[Math.floor(Math.random() * pool.length)];
-  // Elite override: 20% chance from wave 4+
+  // Elite override: 12% chance from wave 4+
   if (waveIndex >= 4 && Math.random() < 0.12) return 'elite';
   return type;
 }
@@ -168,6 +179,7 @@ export function updateWave(
   dt: number,
   score: number,
   enemyCount: number,
+  enemyWeightMult: Partial<Record<EnemyType, number>> = {},
 ): WaveEvent[] {
   const events: WaveEvent[] = [];
 
@@ -221,7 +233,7 @@ export function updateWave(
         const requests: SpawnRequest[] = [];
         for (let i = 0; i < count; i++) {
           const angle = (Math.PI * 2 * i) / count;
-          requests.push({ type: pickEnemyType(score, state.waveIndex), count: 1, angle, distance: CFG.HORDE_SPAWN_DIST });
+          requests.push({ type: pickEnemyType(score, state.waveIndex, enemyWeightMult), count: 1, angle, distance: CFG.HORDE_SPAWN_DIST });
         }
         events.push({ type: 'horde', spawnRequests: requests, count });
       }
@@ -230,7 +242,7 @@ export function updateWave(
     // Regular spawn timer
     state.spawnTimer -= dt;
     if (state.spawnTimer <= 0) {
-      const type = pickEnemyType(score, state.waveIndex);
+      const type = pickEnemyType(score, state.waveIndex, enemyWeightMult);
       const angle = Math.random() * Math.PI * 2;
       events.push({
         type: 'spawn',
@@ -243,7 +255,7 @@ export function updateWave(
     if (state.burstQueue > 0) {
       state.burstDelay -= dt;
       if (state.burstDelay <= 0) {
-        const type = pickEnemyType(score, state.waveIndex);
+        const type = pickEnemyType(score, state.waveIndex, enemyWeightMult);
         const angle = Math.random() * Math.PI * 2;
         events.push({
           type: 'spawn',
