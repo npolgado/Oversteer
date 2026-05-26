@@ -29,7 +29,7 @@ vi.mock('gsap', () => ({
   },
 }));
 
-import { uiTween, pauseUITweens, resumeUITweens, killUITweens } from '@render/tween';
+import { uiTween, pauseUITweens, resumeUITweens, killUITweens, _resetTweenStateForTest } from '@render/tween';
 
 // ── uiTween ───────────────────────────────────────────────────────────────────
 
@@ -72,21 +72,45 @@ describe('uiTween — test mode (instant apply)', () => {
 
 // ── pauseUITweens / resumeUITweens ────────────────────────────────────────────
 
-describe('pauseUITweens', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
+describe('pauseUITweens / resumeUITweens', () => {
+  beforeEach(() => { vi.clearAllMocks(); _resetTweenStateForTest(); });
 
   it('pauses the global timeline', () => {
     pauseUITweens();
     expect(mocks.pause).toHaveBeenCalledOnce();
   });
-});
 
-describe('resumeUITweens', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
-
-  it('resumes the global timeline', () => {
+  it('resumes the global timeline after a pause', () => {
+    pauseUITweens();
     resumeUITweens();
     expect(mocks.resume).toHaveBeenCalledOnce();
+  });
+
+  it('double-pause is idempotent — only calls gsap.pause once', () => {
+    pauseUITweens();
+    pauseUITweens();
+    expect(mocks.pause).toHaveBeenCalledOnce();
+  });
+
+  it('double-resume is idempotent — only calls gsap.resume once', () => {
+    pauseUITweens();
+    resumeUITweens();
+    resumeUITweens();
+    expect(mocks.resume).toHaveBeenCalledOnce();
+  });
+
+  it('resume when not paused is a no-op', () => {
+    resumeUITweens(); // called without a preceding pause
+    expect(mocks.resume).not.toHaveBeenCalled();
+  });
+
+  it('pause → resume → pause → resume produces 2 pause/resume calls each', () => {
+    pauseUITweens();
+    resumeUITweens();
+    pauseUITweens();
+    resumeUITweens();
+    expect(mocks.pause).toHaveBeenCalledTimes(2);
+    expect(mocks.resume).toHaveBeenCalledTimes(2);
   });
 });
 

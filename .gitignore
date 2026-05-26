@@ -13,3 +13,7 @@ dist-local/
 .worktrees/
 .claude/
 logs/
+pi-plan-output.plan.json
+*.plan.json
+
+orchestrator*.*

@@ -5,6 +5,8 @@ import {
   watchdogSceneSwitchStart,
   watchdogSceneSwitchComplete,
   watchdogSceneUpdated,
+  watchdogMenuEntered,
+  watchdogMenuInputReceived,
 } from '../watchdog';
 
 vi.mock('../logger', () => ({
@@ -67,11 +69,11 @@ describe('watchdog — first-paint', () => {
 });
 
 describe('watchdog — scene-switch', () => {
-  it('fires logError if switchTo does not COMPLETE within 3s', () => {
+  it('fires logError if switchTo does not COMPLETE within 5s', () => {
     const { app } = makeMockApp();
     initWatchdog(app);
     watchdogSceneSwitchStart('MenuScene');
-    vi.advanceTimersByTime(3001);
+    vi.advanceTimersByTime(5001);
     expect(_logError).toHaveBeenCalledWith('watchdog', expect.stringContaining('switchTo(MenuScene) did not COMPLETE'));
   });
 
@@ -80,7 +82,7 @@ describe('watchdog — scene-switch', () => {
     initWatchdog(app);
     watchdogSceneSwitchStart('MenuScene');
     watchdogSceneSwitchComplete('MenuScene');
-    vi.advanceTimersByTime(3001);
+    vi.advanceTimersByTime(5001);
     const calls = (_logError.mock.calls as unknown[][]).filter(
       c => typeof c[1] === 'string' && (c[1] as string).includes('switchTo(MenuScene)')
     );
@@ -92,12 +94,31 @@ describe('watchdog — scene-switch', () => {
     initWatchdog(app);
     watchdogSceneSwitchStart('BootScene');
     watchdogSceneSwitchStart('MenuScene'); // cancels previous timer
-    vi.advanceTimersByTime(3001);
+    vi.advanceTimersByTime(5001);
     expect(_logError).toHaveBeenCalledWith('watchdog', expect.stringContaining('switchTo(MenuScene)'));
     const bootCalls = (_logError.mock.calls as unknown[][]).filter(
       c => typeof c[1] === 'string' && (c[1] as string).includes('switchTo(BootScene)')
     );
     expect(bootCalls.length).toBe(0);
+  });
+});
+
+describe('watchdog — AFK menu alert uses log, not logError (Fix 6 regression)', () => {
+  it('fires log (not logError) after 30s of menu inactivity', () => {
+    watchdogMenuEntered();
+    vi.advanceTimersByTime(30_001);
+    expect(_log).toHaveBeenCalledWith('watchdog', expect.stringContaining('MenuScene active'));
+    expect(_logError).not.toHaveBeenCalledWith('watchdog', expect.stringContaining('MenuScene active'));
+  });
+
+  it('does NOT fire if watchdogMenuInputReceived is called in time', () => {
+    watchdogMenuEntered();
+    watchdogMenuInputReceived();
+    vi.advanceTimersByTime(30_001);
+    const calls = (_log.mock.calls as unknown[][]).filter(
+      c => typeof c[1] === 'string' && (c[1] as string).includes('MenuScene active')
+    );
+    expect(calls.length).toBe(0);
   });
 });
 

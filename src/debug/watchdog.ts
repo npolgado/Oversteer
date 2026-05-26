@@ -24,7 +24,7 @@ export interface WatchdogState {
 }
 
 const FIRST_PAINT_MS = 5000;
-const SWITCH_TIMEOUT_MS = 3000;
+const SWITCH_TIMEOUT_MS = 5000;
 const UPDATE_STALL_FRAMES = 120;
 const UPDATE_STALL_REARM_FRAMES = 600;
 
@@ -132,7 +132,7 @@ export function watchdogMenuEntered(): void {
   _menuInputTimer = setTimeout(() => {
     if (!_menuInputAlertFired) {
       _menuInputAlertFired = true;
-      logError('watchdog',
+      log('watchdog',
         `MenuScene active for ${INPUT_IDLE_MS / 1000}s with no keyboard/touch input — ` +
         `player may be AFK; if input is genuinely broken check browser focus, covering DOM element, or inputManager initialization`
       );

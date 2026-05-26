@@ -287,6 +287,21 @@ describe('HudManager — off-screen enemy indicators', () => {
 describe('HudManager — newBest animation', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
+  it('uiTween called on text.scale (not text with scaleX/Y) — Fix 3 regression', () => {
+    const hud = makeHud();
+    const text = (hud as any)._newBestText;
+    hud.update(makeBaseHudData({ newBest: true }));
+    const tweenCalls = vi.mocked(uiTween).mock.calls;
+    // Must have a call whose first argument is the scale object, not the text node
+    const scaleCall = tweenCalls.find(([target]) => target === text.scale);
+    expect(scaleCall).toBeDefined();
+    // Must NOT have a call on the text itself that includes scaleX or scaleY
+    const badCall = tweenCalls.find(([target, props]) =>
+      target === text && ('scaleX' in (props as object) || 'scaleY' in (props as object))
+    );
+    expect(badCall).toBeUndefined();
+  });
+
   it('_newBestShown starts false', () => {
     const hud = makeHud();
     expect((hud as any)._newBestShown).toBe(false);

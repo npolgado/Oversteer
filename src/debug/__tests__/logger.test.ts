@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { log, getEntries, clearLog } from './logger';
+import { log, getEntries, clearLog } from '../logger';
 
 beforeEach(() => clearLog());
 

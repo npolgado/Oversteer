@@ -43,7 +43,7 @@ export class MenuScene implements Scene {
     this._objects.push(hsTxt);
 
     // Controls hint
-    const hintTxt = new Text({ text: 'WASD / drive  •  SPACE / drift  •  ENTER / play  •  S / sandbox', style: makeUIStyle({ size: S(14), color: '#666666' }) });
+    const hintTxt = new Text({ text: 'WASD / drive  •  SPACE / drift  •  ENTER / play', style: makeUIStyle({ size: S(14), color: '#666666' }) });
     hintTxt.anchor.set(0.5);
     hintTxt.position.set(CFG.W / 2, CFG.H * 0.9);
     overlayLayer.addChild(hintTxt);
@@ -69,21 +69,10 @@ export class MenuScene implements Scene {
     }
 
     const input = context.getInput();
-    if (input.enter) {
+    if (input.enter || input.menuLaunch) {
       watchdogMenuInputReceived();
       context.audioManager.play('ui_click');
       this._go(context, false);
-    } else if (input.menuLeft || input.menuRight) {
-      // S key: menuLeft maps to KeyA — but for sandbox we specifically want KeyS
-      // Handled via rawKeys check; since InputState doesn't expose KeyS directly,
-      // use 'down' as a proxy (KeyS = move backward = down)
-    }
-    // KeyS check via 'down' (KeyS = brake/down in driving, but only in menu context)
-    // NOTE: 'down' is also used for driving — only valid since player isn't active here
-    if (input.down) {
-      watchdogMenuInputReceived();
-      context.audioManager.play('ui_click');
-      this._go(context, true);
     }
   }
 

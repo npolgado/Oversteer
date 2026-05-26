@@ -149,6 +149,10 @@ export interface CfgShape {
   // World
   WORLD_W: number;
   WORLD_H: number;
+  // Camera
+  CAMERA_ROTATION_LERP_SPEED: number;
+  // Scoring
+  ELITE_ENCIRCLE_KILLS: number;
   // Enemy lifespan
   ENEMY_LIFESPAN_MIN: number;
   ENEMY_LIFESPAN_MAX: number;
@@ -326,6 +330,10 @@ export const CFG: CfgShape = {
   // World
   WORLD_W: 3000,
   WORLD_H: 3000,
+  // Camera — separate from pan/zoom lerp so heading-up rotation is gentler
+  CAMERA_ROTATION_LERP_SPEED: 1.5,
+  // Scoring
+  ELITE_ENCIRCLE_KILLS: 3,
   // Enemy lifespan
   ENEMY_LIFESPAN_MIN: 10,
   ENEMY_LIFESPAN_MAX: 18,

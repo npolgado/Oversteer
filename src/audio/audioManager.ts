@@ -27,6 +27,9 @@ const audioManager = {
   _bgTracks: [] as Howl[],
   _currentBg: null as Howl | null,
   _musicPlaying: false,
+  _shuffleOrder: [] as number[],
+  _shuffleIdx: 0,
+  _stopping: false,
 
   init(): void {
     try {
@@ -37,8 +40,8 @@ const audioManager = {
       try {
         const saved = JSON.parse(localStorage.getItem('oversteer_audio_v2') ?? 'null');
         if (saved) {
-          this.sfxVolume = saved.sfx ?? 0.5;
-          this.musicVolume = saved.music ?? 0.5;
+          this.sfxVolume = Math.max(0.1, saved.sfx ?? 0.5);
+          this.musicVolume = Math.max(0.1, saved.music ?? 0.5);
           this.muted = saved.muted ?? false;
         }
       } catch (_) {
@@ -51,7 +54,7 @@ const audioManager = {
       this._bgTracks = _TRACK_NAMES.map(name =>
         new Howl({
           src: [`${base}audio/${name}.mp3`],
-          loop: true,
+          loop: false,
           volume: this.musicVolume,
           onloaderror: (_id: number, err: unknown) => logError('audio', `track "${name}" load error`, err),
           onplayerror: (_id: number, err: unknown) => {
@@ -65,8 +68,8 @@ const audioManager = {
       const soundCount = Object.keys(this.sounds).length;
       const ctxState = this.ctx?.state ?? 'null';
       const gainOk = this.masterGain != null;
-      const summary = `ctx=${ctxState}  sounds=${soundCount}/6  masterGain=${gainOk ? 'live' : 'null'}  sfxVol=${this.sfxVolume}  musicVol=${this.musicVolume}  muted=${this.muted}`;
-      if (soundCount < 6 || !gainOk) {
+      const summary = `ctx=${ctxState}  sounds=${soundCount}/7  masterGain=${gainOk ? 'live' : 'null'}  sfxVol=${this.sfxVolume}  musicVol=${this.musicVolume}  muted=${this.muted}`;
+      if (soundCount < 7 || !gainOk) {
         logError('audio', `DEGRADED — ${summary}`);
       } else {
         log('audio', `OK — ${summary}`);
@@ -171,6 +174,14 @@ const audioManager = {
         b[i] = Math.sin(2 * Math.PI * 800 * t) * 0.3 * env * env;
       }
     }, 0.05));
+
+    // scrap_pickup: soft metallic tick (high sine + noise, 0.08s)
+    this.sounds['scrap_pickup'] = new Howl(wav((b, sr, len) => {
+      for (let i = 0; i < len; i++) {
+        const t = i / sr, env = 1 - t / 0.08;
+        b[i] = (Math.sin(2 * Math.PI * 1200 * t) * 0.2 + (Math.random() * 2 - 1) * 0.05) * env * env;
+      }
+    }, 0.08));
   },
 
   play(id: string): void {
@@ -261,7 +272,36 @@ const audioManager = {
     }
   },
 
-  // --- Background music (file-based, random track selection) ---
+  // --- Background music (file-based, shuffle play-all) ---
+  // NOTE: not in original — original arena-drifter JS used random pick-on-start with loop:true.
+
+  _buildShuffle(): void {
+    const n = this._bgTracks.length;
+    const order = Array.from({ length: n }, (_, i) => i);
+    for (let i = n - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    this._shuffleOrder = order;
+    this._shuffleIdx = 0;
+  },
+
+  _playTrackAt(idx: number): void {
+    const track = this._bgTracks[idx];
+    if (!track) return;
+    track.volume(this.musicVolume);
+    track.mute(this.muted);
+    track.off('end');
+    track.once('end', () => {
+      if (this._stopping || this._currentBg !== track) return;
+      this._shuffleIdx++;
+      if (this._shuffleIdx >= this._shuffleOrder.length) this._buildShuffle();
+      this._playTrackAt(this._shuffleOrder[this._shuffleIdx]);
+    });
+    track.play();
+    this._currentBg = track;
+  },
+
   startBgMusic(): void {
     if (this._bgTracks.length === 0) {
       logError('audio', 'startBgMusic — _bgTracks empty; audioManager.init() may have failed');
@@ -270,27 +310,32 @@ const audioManager = {
     if (this._currentBg) {
       this._currentBg.stop();
       this._currentBg = null;
+      // Advance so the restarted music plays a fresh track, not the interrupted one.
+      this._shuffleIdx++;
+      if (this._shuffleIdx >= this._shuffleOrder.length) this._buildShuffle();
     }
+    this._stopping = false;
     // Howler manages its own AudioContext; explicitly resume it if suspended
     // so music starts immediately on first call rather than waiting for its
     // own event-listener auto-resume (which fires too late during scene transitions).
     if (Howler.ctx && Howler.ctx.state === 'suspended') {
       Howler.ctx.resume().catch(() => {});
     }
-    const track = this._bgTracks[Math.floor(Math.random() * this._bgTracks.length)];
-    track.volume(this.musicVolume);
-    track.mute(this.muted);
-    track.play();
-    this._currentBg = track;
+    if (this._shuffleOrder.length === 0) this._buildShuffle();
+    this._playTrackAt(this._shuffleOrder[this._shuffleIdx]);
     this._musicPlaying = true;
     log('audio', `startBgMusic  musicVol=${this.musicVolume}  muted=${this.muted}  howlerCtx=${Howler.ctx?.state ?? 'null'}`);
   },
 
   stopBgMusic(): void {
     if (!this._currentBg) return;
+    this._stopping = true;
     this._currentBg.stop();
     this._currentBg = null;
     this._musicPlaying = false;
+    // Advance so the next startBgMusic plays a fresh track instead of replaying this one.
+    this._shuffleIdx++;
+    if (this._shuffleIdx >= this._shuffleOrder.length) this._buildShuffle();
   },
 
   fadeBgMusic(dur: number): void {
@@ -298,6 +343,9 @@ const audioManager = {
     const bg = this._currentBg;
     this._currentBg = null;
     this._musicPlaying = false;
+    // Advance so the next startBgMusic plays a fresh track, not the faded-out one.
+    this._shuffleIdx++;
+    if (this._shuffleIdx >= this._shuffleOrder.length) this._buildShuffle();
     if (this.muted) {
       bg.stop();
       return;

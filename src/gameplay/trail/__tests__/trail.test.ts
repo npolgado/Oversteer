@@ -283,3 +283,95 @@ describe('loop detection — ring buffer wrap', () => {
     }
   });
 });
+
+// ── Elite encirclement scoring ──────────────────────────────────
+
+describe('elite encirclement scoring', () => {
+  it('encircles elite enemy counts as 3 kills', () => {
+    const state = makeTrailState();
+   
+    // Manually push a square trail past minimum length
+    const square = [
+      ...Array.from({ length: 12 }, (_, i) => ({ x: 100 + i * 5, y: 100 })),
+      ...Array.from({ length: 12 }, (_, i) => ({ x: 200, y: 100 + i * 5 })),
+      ...Array.from({ length: 12 }, (_, i) => ({ x: 200 - i * 5, y: 200 })),
+      ...Array.from({ length: 12 }, (_, i) => ({ x: 100, y: 200 - i * 5 })),
+    ];
+    for (const pt of square) pushTrailPoint(state, pt.x, pt.y);
+
+    // Elite enemy inside the square
+    const eliteEnemy: EnemyState = { x: 150, y: 150, alive: true, armored: false, type: 'elite' };
+    // Regular enemy outside
+    const regularEnemy: EnemyState = { x: 300, y: 300, alive: true, armored: false, type: 'regular' };
+
+    const player = makeTestPlayer(102, 102);
+    state.closeDist = 40;
+    state.checkTimer = 0.15;
+
+    const result = updateTrail(state, player, [eliteEnemy, regularEnemy], 0);
+
+    expect(result).not.toBeNull();
+    expect(result!.encircleCount).toBe(3); // Elite + 3
+    expect(eliteEnemy.alive).toBe(false);
+    expect(regularEnemy.alive).toBe(true); // Outside
+  });
+
+  it('encircles non-elite enemy counts as 1 kill', () => {
+    const state = makeTrailState();
+
+    // Manually push a square trail past minimum length
+    const square = [
+      ...Array.from({ length: 12 }, (_, i) => ({ x: 100 + i * 5, y: 100 })),
+      ...Array.from({ length: 12 }, (_, i) => ({ x: 200, y: 100 + i * 5 })),
+      ...Array.from({ length: 12 }, (_, i) => ({ x: 200 - i * 5, y: 200 })),
+      ...Array.from({ length: 12 }, (_, i) => ({ x: 100, y: 200 - i * 5 })),
+    ];
+    for (const pt of square) pushTrailPoint(state, pt.x, pt.y);
+
+    // Regular non-elite enemy inside
+    const regularEnemy: EnemyState = { x: 150, y: 150, alive: true, armored: false, type: 'regular' };
+
+    const player = makeTestPlayer(102, 102);
+    state.closeDist = 40;
+    state.checkTimer = 0.15;
+
+    const result = updateTrail(state, player, [regularEnemy], 0);
+
+    expect(result).not.toBeNull();
+    expect(result!.encircleCount).toBe(1);
+    expect(regularEnemy.alive).toBe(false);
+  });
+
+  it('mix of elite and regular enemies inside polygon', () => {
+    const state = makeTrailState();
+
+    const square = [
+      ...Array.from({ length: 12 }, (_, i) => ({ x: 100 + i * 5, y: 100 })),
+      ...Array.from({ length: 12 }, (_, i) => ({ x: 200, y: 100 + i * 5 })),
+      ...Array.from({ length: 12 }, (_, i) => ({ x: 200 - i * 5, y: 200 })),
+      ...Array.from({ length: 12 }, (_, i) => ({ x: 100, y: 200 - i * 5 })),
+    ];
+    for (const pt of square) pushTrailPoint(state, pt.x, pt.y);
+
+    // Two elite enemies, one regular enemy inside
+    const enemies: EnemyState[] = [
+      { x: 150, y: 150, alive: true, armored: false, type: 'elite' },
+      { x: 170, y: 170, alive: true, armored: false, type: 'elite' },
+      { x: 180, y: 160, alive: true, armored: false, type: 'regular' },
+      { x: 300, y: 300, alive: true, armored: false, type: 'regular' }, // outside
+    ];
+
+    const player = makeTestPlayer(102, 102);
+    state.closeDist = 40;
+    state.checkTimer = 0.15;
+
+    const result = updateTrail(state, player, enemies, 0);
+
+    expect(result).not.toBeNull();
+    expect(result!.encircleCount).toBe(7); // 2 elite (6) + 1 regular (1)
+    expect(enemies[0].alive).toBe(false);
+    expect(enemies[1].alive).toBe(false);
+    expect(enemies[2].alive).toBe(false);
+    expect(enemies[3].alive).toBe(true);
+  });
+});

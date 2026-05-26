@@ -25,23 +25,27 @@ export interface InputState {
   right: boolean;   // STEER_RIGHT
   drift: boolean;   // DRIFT
   pause: boolean;   // PAUSE    — edge-triggered, true only on frame of press
-  enter: boolean;   // CONFIRM  — edge-triggered
+  enter: boolean;   // CONFIRM / SELECT — edge-triggered (A button on gamepad)
   reroll: boolean;  // REROLL   — edge-triggered
   select1: boolean; // Digit1/Numpad1 — edge-triggered (upgrade card 1)
   select2: boolean; // Digit2/Numpad2 — edge-triggered (upgrade card 2)
   select3: boolean; // Digit3/Numpad3 — edge-triggered (upgrade card 3)
-  menuLeft: boolean;  // KeyA — edge-triggered (menu navigation)
-  menuRight: boolean; // KeyD — edge-triggered (menu navigation)
-  menuMod1: boolean;  // Digit1 in menu context — edge-triggered
-  menuMod2: boolean;  // Digit2 in menu context — edge-triggered
-  menuMod3: boolean;  // Digit3 in menu context — edge-triggered
-  menuMod4: boolean;  // Digit4 in menu context — edge-triggered
+  menuLeft: boolean;  // KeyA / ArrowLeft / D-Pad Left — edge-triggered (cycle map left)
+  menuRight: boolean; // KeyD / ArrowRight / D-Pad Right — edge-triggered (cycle map right)
+  menuUp: boolean;    // ArrowUp / D-Pad Up — edge-triggered (focus cursor up)
+  menuDown: boolean;  // ArrowDown / D-Pad Down — edge-triggered (focus cursor down)
+  menuLaunch: boolean; // Enter / gamepad Start — edge-triggered (play / confirm)
+  menuMod1: boolean;  // Digit1 in menu context — edge-triggered (keyboard only)
+  menuMod2: boolean;  // Digit2 in menu context — edge-triggered (keyboard only)
+  menuMod3: boolean;  // Digit3 in menu context — edge-triggered (keyboard only)
+  menuMod4: boolean;  // Digit4 in menu context — edge-triggered (keyboard only)
+  toggleSandbox: boolean; // KeyS — edge-triggered, keyboard only (sandbox toggle in map select)
   mute: boolean;    // KeyM — edge-triggered (mute toggle)
   sfxDown: boolean; // BracketLeft  '[' — edge-triggered (SFX volume down)
   sfxUp: boolean;   // BracketRight ']' — edge-triggered (SFX volume up)
   musicDown: boolean; // Minus '-' — edge-triggered (music volume down)
   musicUp: boolean;   // Equal '=' — edge-triggered (music volume up)
-  escape: boolean;  // Escape — edge-triggered (separate from pause)
+  escape: boolean;  // Escape / gamepad B — edge-triggered (back/cancel)
   perfToggle: boolean; // F3 — edge-triggered
 }
 
@@ -76,7 +80,6 @@ export class InputManager {
 
   // Edge-detection previous state
   private _pausePressed = false;
-  private _enterPressed = false;
   private _rerollPressed = false;
   private _select1Pressed = false;
   private _select2Pressed = false;
@@ -87,6 +90,10 @@ export class InputManager {
   private _menuMod2Pressed = false;
   private _menuMod3Pressed = false;
   private _menuMod4Pressed = false;
+  private _menuUpPressed = false;
+  private _menuDownPressed = false;
+  private _menuLaunchPressed = false;
+  private _sandboxTogglePressed = false;
   private _mutePressed = false;
   private _sfxDownPressed = false;
   private _sfxUpPressed = false;
@@ -110,8 +117,19 @@ export class InputManager {
     tapAge: 0,
   };
 
+  // NOTE: not in original — hasTouched + virtual stick getters are a TS-port addition (mobile UI).
+  // Tracks if the device has been touched at least once
+  private _hasTouched: boolean = false;
+
   // Canvas reference — set during init()
   private _canvas: HTMLCanvasElement | null = null;
+
+  // NOTE: not in original — gamepad state is a TS-port addition; arena-drifter has no Gamepad API.
+  // Gamepad state (continuous fields only)
+  private _gpState: Partial<InputState> = {};
+
+  // Gamepad previous frame button states (for edge detection)
+  private _gpPrev: boolean[] = [];
 
   // Optional callback fired once on the first keydown or touchstart.
   // Use this to resume an AudioContext after user interaction.
@@ -134,6 +152,10 @@ export class InputManager {
 
     document.addEventListener('keydown', this._onKeyDown);
     document.addEventListener('keyup', this._onKeyUp);
+
+    // NOTE: not in original — gamepad event listeners.
+    window.addEventListener('gamepadconnected', () => { this._gpPrev = []; this._gpState = {}; });
+    window.addEventListener('gamepaddisconnected', () => { this._gpPrev = []; this._gpState = {}; });
 
     if (this._canvas) {
       this._canvas.addEventListener('touchstart', this._onTouchStart, { passive: false });
@@ -180,6 +202,7 @@ export class InputManager {
   private _onTouchStart = (e: TouchEvent): void => {
     e.preventDefault();
     this._fireFirstInteraction();
+    this._hasTouched = true;
     const t = this._touch;
 
     if (e.touches.length >= 2) {
@@ -243,13 +266,84 @@ export class InputManager {
   }
 
   // ---------------------------------------------------------------------------
-  // Gamepad stub (Phase 0 — no processing)
+  // Public getters — NOTE: not in original (virtual stick + touch state exposed for MobileControls)
   // ---------------------------------------------------------------------------
 
+  /** Returns true if the device has been touched at least once. */
+  get hasTouched(): boolean {
+    return this._hasTouched;
+  }
+
+  /** Returns the virtual stick's origin position (where it was placed). */
+  get stickOrigin(): Vec2 | null {
+    return this._touch.stickOrigin;
+  }
+
+  /** Returns the virtual stick's current position (offset from origin). */
+  get stickPos(): Vec2 | null {
+    return this._touch.stickPos;
+  }
+
+  /** Returns true when a drift button touch is active. */
+  get driftActive(): boolean {
+    return this._touch.driftId !== null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Gamepad private helper — NOTE: not in original (full gamepad support is a TS-port addition)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Returns true if button at index is pressed this frame AND was not pressed last frame.
+   */
+  private _gpEdge(gp: Gamepad, index: number): boolean {
+    const pressed = !!gp.buttons[index]?.pressed;
+    const prev = !!this._gpPrev[index];
+    return pressed && !prev;
+  }
+
+  /**
+   * Polls the first connected gamepad and populates _gpState.
+   * Rocket League-style scheme: left stick X steers, triggers throttle/brake, LB drifts.
+   */
   private _pollGamepad(): void {
-    // Stub: retrieve gamepad list to satisfy the browser permission model.
-    // Full gamepad processing is deferred to a later phase.
-    navigator.getGamepads();
+    const gps = navigator.getGamepads();
+    const gp = gps[0];
+
+    if (!gp) {
+      this._gpPrev = [];
+      this._gpState = {};
+      return;
+    }
+
+    // Left stick X → steer. Y axis is NOT used for driving (triggers handle that).
+    const ax = gp.axes[0];
+    this._gpState.left  = ax < -0.15;
+    this._gpState.right = ax > 0.15;
+    this._gpState.up    = !!gp.buttons[7]?.pressed;   // RT  — throttle (continuous)
+    this._gpState.down  = !!gp.buttons[6]?.pressed;   // LT  — brake/reverse (continuous)
+    this._gpState.drift = !!gp.buttons[4]?.pressed;   // LB  — drift (continuous)
+
+    this._gpState.pause      = this._gpEdge(gp, 9);   // Start — pause in-game
+    this._gpState.menuLaunch = this._gpEdge(gp, 9);   // Start — also play/confirm in menus
+    this._gpState.enter      = this._gpEdge(gp, 0);   // A — select/toggle in menus
+    this._gpState.select1    = this._gpEdge(gp, 0);   // A — upgrade card 1 (different scene, no conflict)
+    this._gpState.escape     = this._gpEdge(gp, 1);   // B — back/cancel
+    this._gpState.select2    = this._gpEdge(gp, 2);   // X — upgrade card 2
+    this._gpState.select3    = this._gpEdge(gp, 3);   // Y — upgrade card 3
+    this._gpState.reroll     = this._gpEdge(gp, 5);   // RB — reroll (no conflict with select3)
+    this._gpState.menuLeft   = this._gpEdge(gp, 14);  // D-Pad Left  — cycle map
+    this._gpState.menuRight  = this._gpEdge(gp, 15);  // D-Pad Right — cycle map
+    this._gpState.menuUp     = this._gpEdge(gp, 12);  // D-Pad Up    — focus cursor up
+    this._gpState.menuDown   = this._gpEdge(gp, 13);  // D-Pad Down  — focus cursor down
+
+    // Any gamepad activity counts as user gesture for AudioContext unlock
+    if (gp.buttons.some(b => b.pressed) || Math.abs(ax) > 0.15 || Math.abs(gp.axes[1]) > 0.15) {
+      this._fireFirstInteraction();
+    }
+
+    // Update previous button states
+    this._gpPrev = Array.from(gp.buttons).map(b => b.pressed);
   }
 
   // ---------------------------------------------------------------------------
@@ -306,53 +400,69 @@ export class InputManager {
     const pause = pNow && !this._pausePressed;
     this._pausePressed = pNow;
 
-    // --- Edge-triggered: enter / confirm ---
-    const eNow = !!k['Enter'];
-    const enter = eNow && !this._enterPressed;
-    this._enterPressed = eNow;
+    // --- Edge-triggered: enter / confirm (gamepad A only — keyboard Enter fires menuLaunch instead) ---
+    let enter = false;
 
     // --- Edge-triggered: reroll ---
     const rNow = !!k['KeyR'];
-    const reroll = rNow && !this._rerollPressed;
+    let reroll = rNow && !this._rerollPressed;
     this._rerollPressed = rNow;
 
     // --- Edge-triggered: upgrade card selection (Digit/Numpad 1-3) ---
     const s1Now = !!(k['Digit1'] || k['Numpad1']);
-    const select1 = s1Now && !this._select1Pressed;
+    let select1 = s1Now && !this._select1Pressed;
     this._select1Pressed = s1Now;
 
     const s2Now = !!(k['Digit2'] || k['Numpad2']);
-    const select2 = s2Now && !this._select2Pressed;
+    let select2 = s2Now && !this._select2Pressed;
     this._select2Pressed = s2Now;
 
     const s3Now = !!(k['Digit3'] || k['Numpad3']);
-    const select3 = s3Now && !this._select3Pressed;
+    let select3 = s3Now && !this._select3Pressed;
     this._select3Pressed = s3Now;
 
     // --- Edge-triggered: menu navigation ---
-    const mlNow = !!k['KeyA'];
-    const menuLeft = mlNow && !this._menuLeftPressed;
+    const mlNow = !!(k['KeyA'] || k['ArrowLeft']);
+    let menuLeft = mlNow && !this._menuLeftPressed;
     this._menuLeftPressed = mlNow;
 
-    const mrNow = !!k['KeyD'];
-    const menuRight = mrNow && !this._menuRightPressed;
+    const mrNow = !!(k['KeyD'] || k['ArrowRight']);
+    let menuRight = mrNow && !this._menuRightPressed;
     this._menuRightPressed = mrNow;
+
+    const muNow = !!k['ArrowUp'];
+    let menuUp = muNow && !this._menuUpPressed;
+    this._menuUpPressed = muNow;
+
+    const mdNow = !!k['ArrowDown'];
+    let menuDown = mdNow && !this._menuDownPressed;
+    this._menuDownPressed = mdNow;
+
+    // keyboard Enter → menuLaunch only (enter is reserved for gamepad A)
+    const eNow = !!k['Enter'];
+    let menuLaunch = eNow && !this._menuLaunchPressed;
+    this._menuLaunchPressed = eNow;
+
+    // --- Edge-triggered: sandbox toggle (KeyS, keyboard only; KeyS also fires down=brake — each scene reads only what it needs) ---
+    const sbNow = !!k['KeyS'];
+    let toggleSandbox = sbNow && !this._sandboxTogglePressed;
+    this._sandboxTogglePressed = sbNow;
 
     // --- Edge-triggered: menu modifier toggles (Digit 1-4, separate from select1-3) ---
     const mm1Now = !!k['Digit1'];
-    const menuMod1 = mm1Now && !this._menuMod1Pressed;
+    let menuMod1 = mm1Now && !this._menuMod1Pressed;
     this._menuMod1Pressed = mm1Now;
 
     const mm2Now = !!k['Digit2'];
-    const menuMod2 = mm2Now && !this._menuMod2Pressed;
+    let menuMod2 = mm2Now && !this._menuMod2Pressed;
     this._menuMod2Pressed = mm2Now;
 
     const mm3Now = !!k['Digit3'];
-    const menuMod3 = mm3Now && !this._menuMod3Pressed;
+    let menuMod3 = mm3Now && !this._menuMod3Pressed;
     this._menuMod3Pressed = mm3Now;
 
     const mm4Now = !!k['Digit4'];
-    const menuMod4 = mm4Now && !this._menuMod4Pressed;
+    let menuMod4 = mm4Now && !this._menuMod4Pressed;
     this._menuMod4Pressed = mm4Now;
 
     // --- Edge-triggered: mute ---
@@ -377,9 +487,9 @@ export class InputManager {
     const musicUp = musicUpNow && !this._musicUpPressed;
     this._musicUpPressed = musicUpNow;
 
-    // --- Edge-triggered: escape (separate from pause for menu back-navigation) ---
+    // --- Edge-triggered: escape (Escape key / gamepad B — back-navigation) ---
     const escNow = !!k['Escape'];
-    const escape = escNow && !this._escapePressed;
+    let escape = escNow && !this._escapePressed;
     this._escapePressed = escNow;
 
     // Two-finger tap → pause
@@ -403,16 +513,38 @@ export class InputManager {
     const perfToggle = f3Now && !this._f3Pressed;
     this._f3Pressed = f3Now;
 
-    // Poll gamepad stub (no-op for now)
+    // NOTE: not in original — merge gamepad state into keyboard state.
     this._pollGamepad();
+
+    up    = up    || !!this._gpState.up;
+    down  = down  || !!this._gpState.down;
+    left  = left  || !!this._gpState.left;
+    right = right || !!this._gpState.right;
+    drift = drift || !!this._gpState.drift;
+
+    pauseOut   = pauseOut   || !!this._gpState.pause;
+    enter      = enter      || !!this._gpState.enter;
+    reroll     = reroll     || !!this._gpState.reroll;
+    select1    = select1    || !!this._gpState.select1;
+    select2    = select2    || !!this._gpState.select2;
+    select3    = select3    || !!this._gpState.select3;
+    escape     = escape     || !!this._gpState.escape;
+    menuLeft   = menuLeft   || !!this._gpState.menuLeft;
+    menuRight  = menuRight  || !!this._gpState.menuRight;
+    menuUp     = menuUp     || !!this._gpState.menuUp;
+    menuDown   = menuDown   || !!this._gpState.menuDown;
+    menuLaunch = menuLaunch || !!this._gpState.menuLaunch;
+    // menuMod1-4 are keyboard-only (D-pad now drives menuUp/Down/Left/Right)
 
     return {
       up, down, left, right, drift,
       pause: pauseOut, enter, reroll,
       select1, select2, select3,
-      menuLeft, menuRight,
+      escape,
+      menuLeft, menuRight, menuUp, menuDown, menuLaunch,
       menuMod1, menuMod2, menuMod3, menuMod4,
-      mute, sfxDown, sfxUp, musicDown, musicUp, escape,
+      toggleSandbox,
+      mute, sfxDown, sfxUp, musicDown, musicUp,
       perfToggle,
     };
   }

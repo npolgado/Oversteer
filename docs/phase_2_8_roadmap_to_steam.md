@@ -89,6 +89,16 @@ Port everything from the original game that was deferred in Phase 1.
 - Feature parity with `arena-drifter/` vanilla JS version
 - Performance maintained with full enemy roster
 
+**### Phase 3.9 - Pre-Phase-4 Cleanup - dev_1.3.9**
+
+**Closed: dev_1.3.9 (2026-05-23)**
+
+Bug audit against live_test_2026-05-16: all major bugs fixed in Phase 3.5 (bomb corpse #7, peakCombo #8, boost zones #9, scrap feedback #10, pause overlay #6). Phase 3.9 adds input completeness before biome work begins.
+
+- Mobile touch overlay (mobileControls.ts)
+- Baseline gamepad/controller support
+- Elite encirclement count corrected to 3 kills
+
 ---
 
 ## Phase 4 — New Content + World System - dev_1.4.0
