@@ -104,6 +104,7 @@ export interface RunStats {
   nearMissTotal: number;
   totalDriftTime: number;
   enemiesKilled: number;
+  scrapCollected: number;
 }
 
 export type RunStatEvent =
@@ -133,12 +134,29 @@ export interface Rect {
 
 // ── Pickup / scrap ─────────────────────────────────────────────
 
-export type PickupType = 'bomb' | 'trail_boost' | 'speed_pickup' | 'scrap';
+export type PickupType =
+  | 'bomb' | 'trail_boost' | 'speed_pickup' | 'scrap'
+  | 'time_slow' | 'trail_token' | 'shield_pickup';
 
+// Canonical spawn-weight table. Weights are relative; 0 = gated off at this wave.
+// Mirror in pickupRegistry.ts draw functions when adding a new type.
 export function selectPickupType(waveIndex: number, roll: number): PickupType {
-  if (waveIndex >= 5 && roll < 0.04) return 'bomb';
-  if (roll < 0.12) return 'trail_boost';
-  if (roll < 0.20) return 'speed_pickup';
+  type W = [PickupType, number];
+  const pool: W[] = [
+    ['scrap',        10],
+    ['trail_boost',  1.5],
+    ['speed_pickup', 1.5],
+    ...(waveIndex >= 2 ? [['trail_token',    0.8] as W] : []),
+    ...(waveIndex >= 3 ? [['time_slow',      0.6] as W] : []),
+    ...(waveIndex >= 4 ? [['shield_pickup',  0.4] as W] : []),
+    ...(waveIndex >= 5 ? [['bomb',           0.5] as W] : []),
+  ];
+  const total = pool.reduce((s, [, w]) => s + w, 0);
+  let cursor = roll * total;
+  for (const [id, w] of pool) {
+    cursor -= w;
+    if (cursor <= 0) return id;
+  }
   return 'scrap';
 }
 
@@ -483,7 +501,7 @@ export function applyBombZoneDamage(dmg: number, dt: number, damageResist: numbe
 // ── Stats ──────────────────────────────────────────────────────
 
 export function makeRunStats(): RunStats {
-  return { peakCombo: 0, nearMissTotal: 0, totalDriftTime: 0, enemiesKilled: 0 };
+  return { peakCombo: 0, nearMissTotal: 0, totalDriftTime: 0, enemiesKilled: 0, scrapCollected: 0 };
 }
 
 export function updateRunStats(stats: RunStats, event: RunStatEvent): { comboLevel?: number } {

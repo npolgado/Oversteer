@@ -70,7 +70,7 @@ const MOCK_DATA = {
   highScore: 2000,
   newBest: false,
   waveReached: 5,
-  runStats: { peakCombo: 3, nearMissTotal: 1, totalDriftTime: 10, enemiesKilled: 20 },
+  runStats: { peakCombo: 3, nearMissTotal: 1, totalDriftTime: 10, enemiesKilled: 20, scrapCollected: 0 },
   modifierMult: 1,
   lastMapId: 'default',
   lastModifierIds: [],

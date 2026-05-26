@@ -46,22 +46,27 @@ import {
 
 // ── Pickup type selection ─────────────────────────────────────
 
+// Spawn weights: scrap=10, trail_boost=1.5, speed_pickup=1.5,
+//   trail_token=0.8 (wave≥2), time_slow=0.6 (wave≥3),
+//   shield_pickup=0.4 (wave≥4), bomb=0.5 (wave≥5)
+// At wave 6: total=15.3 → scrap [0, 0.654), trail_boost [0.654, 0.752),
+//   speed_pickup [0.752, 0.850), bomb [0.967, 1.0)
 describe('selectPickupType', () => {
-  it('respects roll thresholds', () => {
-    expect(selectPickupType(4, 0.03)).toBe('trail_boost');
-    expect(selectPickupType(5, 0.03)).toBe('bomb');
-    expect(selectPickupType(6, 0.10)).toBe('trail_boost');
-    expect(selectPickupType(6, 0.18)).toBe('speed_pickup');
+  it('scrap is dominant at low rolls for any wave', () => {
+    expect(selectPickupType(4, 0.3)).toBe('scrap');
+    expect(selectPickupType(6, 0.3)).toBe('scrap');
     expect(selectPickupType(6, 0.5)).toBe('scrap');
   });
 
-  it('bomb threshold boundary: roll=0.04 on wave 5 is trail_boost not bomb', () => {
-    expect(selectPickupType(5, 0.04)).toBe('trail_boost');
+  it('high roll produces bomb at wave >= 5', () => {
+    expect(selectPickupType(5, 0.99)).toBe('bomb');
+    expect(selectPickupType(6, 0.99)).toBe('bomb');
   });
 
   it('bomb does not spawn before wave 5', () => {
-    expect(selectPickupType(4, 0.01)).toBe('trail_boost');
-    expect(selectPickupType(0, 0.0)).toBe('trail_boost');
+    // At wave 4, roll=0.99 → shield_pickup (highest pool entry), not bomb
+    expect(selectPickupType(4, 0.99)).not.toBe('bomb');
+    expect(selectPickupType(0, 0.99)).not.toBe('bomb');
   });
 });
 
@@ -710,37 +715,59 @@ describe('applyHazardZoneDamage', () => {
   });
 });
 
-// ── selectPickupType ──────────────────────────────────────────────
+// ── selectPickupType (weight-based) ──────────────────────────────────────────
+// Pool order: scrap(10), trail_boost(1.5), speed_pickup(1.5),
+//   +trail_token(0.8, w≥2), +time_slow(0.6, w≥3),
+//   +shield_pickup(0.4, w≥4), +bomb(0.5, w≥5)
+// Wave-1 total=13: scrap [0,0.769), trail_boost [0.769,0.885), speed_pickup [0.885,1)
+// Wave-5 total=15.3: bomb only at roll≥14.8/15.3≈0.967
 
-describe('selectPickupType', () => {
-  it('returns scrap for most rolls', () => {
-    expect(selectPickupType(1, 0.5)).toBe('scrap');
-    expect(selectPickupType(10, 0.99)).toBe('scrap');
+describe('selectPickupType (weight-based)', () => {
+  it('returns scrap for low-to-mid rolls at any wave', () => {
+    expect(selectPickupType(1, 0.3)).toBe('scrap');
+    expect(selectPickupType(10, 0.3)).toBe('scrap');
   });
 
-  it('returns trail_boost at roll < 0.12', () => {
-    expect(selectPickupType(1, 0.11)).toBe('trail_boost');
-    expect(selectPickupType(1, 0.0)).toBe('trail_boost');
+  it('returns trail_boost in its weight range at wave 1', () => {
+    // wave-1 total=13; trail_boost range ≈ [0.769, 0.885)
+    expect(selectPickupType(1, 0.80)).toBe('trail_boost');
   });
 
-  it('returns speed_pickup at 0.12 <= roll < 0.20', () => {
-    expect(selectPickupType(1, 0.12)).toBe('speed_pickup');
-    expect(selectPickupType(1, 0.19)).toBe('speed_pickup');
+  it('returns speed_pickup in its weight range at wave 1', () => {
+    // wave-1 total=13; speed_pickup range ≈ [0.885, 1.0)
+    expect(selectPickupType(1, 0.92)).toBe('speed_pickup');
   });
 
   it('never returns bomb before wave 5', () => {
-    // At wave 4 even with roll < 0.04, should not return bomb
-    expect(selectPickupType(4, 0.01)).not.toBe('bomb');
+    expect(selectPickupType(4, 0.99)).not.toBe('bomb');
+    expect(selectPickupType(0, 0.99)).not.toBe('bomb');
   });
 
-  it('returns bomb at wave 5+ and roll < 0.04', () => {
-    expect(selectPickupType(5, 0.03)).toBe('bomb');
-    expect(selectPickupType(10, 0.0)).toBe('bomb');
+  it('returns bomb at wave 5+ with high roll', () => {
+    // wave-5 total=15.3; bomb at roll≥0.967
+    expect(selectPickupType(5, 0.99)).toBe('bomb');
+    expect(selectPickupType(10, 0.99)).toBe('bomb');
   });
 
-  it('bomb threshold has priority over trail_boost at wave 5+', () => {
-    // roll=0.03 is < 0.04 (bomb) AND < 0.12 (trail_boost) — bomb wins
-    expect(selectPickupType(5, 0.03)).toBe('bomb');
+  it('trail_token only spawns at wave >= 2', () => {
+    // wave-1: no trail_token in pool, roll=0.99 → speed_pickup (last entry)
+    expect(selectPickupType(1, 0.99)).not.toBe('trail_token');
+    // wave-2 total=13.8; trail_token range ≈ [0.942, 1.0)
+    expect(selectPickupType(2, 0.99)).toBe('trail_token');
+  });
+
+  it('time_slow only spawns at wave >= 3', () => {
+    // wave-2: no time_slow; roll=0.99 → trail_token
+    expect(selectPickupType(2, 0.99)).not.toBe('time_slow');
+    // wave-3 total=14.4; time_slow range ≈ [0.958, 1.0)
+    expect(selectPickupType(3, 0.99)).toBe('time_slow');
+  });
+
+  it('shield_pickup only spawns at wave >= 4', () => {
+    // wave-3: no shield_pickup; roll=0.99 → time_slow
+    expect(selectPickupType(3, 0.99)).not.toBe('shield_pickup');
+    // wave-4 total=14.8; shield_pickup range ≈ [0.973, 1.0)
+    expect(selectPickupType(4, 0.99)).toBe('shield_pickup');
   });
 });
 

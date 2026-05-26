@@ -141,6 +141,7 @@ function makeTestPlayer(x: number, y: number): PlayerState {
     encircleScoreBonus: 1, damageResist: 0, driftShield: false, comboHeal: false,
     trailMagnet: false, speedTrail: false, dashBurst: false, dashCooldown: 0,
     trailBurn: false, chainLightning: false, upgrades: [],
+    scrapBank: 0, scoreMultBoostTimer: 0,
   };
 }
 
