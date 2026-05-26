@@ -114,6 +114,7 @@ export class GameLoop {
   private _speedLines: SpeedLines;
   private _particles: ParticleSystem;
   private _arenaGlow: Graphics;
+  private _bgSprite: Sprite | null = null;
   private _accentColor = 0x35F2D0;
 
   // PerfOverlay
@@ -358,6 +359,8 @@ export class GameLoop {
       const bg = new Sprite(bgTexture);
       bg.width = CFG.WORLD_W;
       bg.height = CFG.WORLD_H;
+      bg.tint = this._biomeManager.active.lightingTint;
+      this._bgSprite = bg;
       backgroundLayer.addChild(bg);
     }
 
@@ -631,7 +634,10 @@ export class GameLoop {
   /** Returns true if enemies array was modified. */
   private _tickWave(dilatedDt: number): boolean {
     let changed = false;
-    const waveEvents = updateWave(this._waveState, dilatedDt, this._scoringState.score, this._enemies.length);
+    const waveEvents = updateWave(
+      this._waveState, dilatedDt, this._scoringState.score, this._enemies.length,
+      this._biomeManager.active.enemyWeightMult,
+    );
     for (const ev of waveEvents) {
       if (ev.type === 'spawn') {
         for (const req of ev.requests) {
@@ -690,8 +696,11 @@ export class GameLoop {
           // Fade music and start fresh with the new pack
           this._ctx.audioManager.fadeBgMusic(1.5);
           this._ctx.audioManager.loadMusicPack(biome.musicPackId);
-          // Regenerate props from the new biome's pool
+          // Regenerate props from the new biome's pool and refresh renderer
           regenerateProps(this._propsState, biome.propPool);
+          this._propsRenderer.setProps(this._propsState.allProps);
+          // Apply biome background tint
+          if (this._bgSprite) this._bgSprite.tint = biome.lightingTint;
           this._hudManager.showMilestoneBanner(biome.name.toUpperCase(), '#35F2D0');
           this._screenFx.flash(0x35F2D0, 0.3, 0.8);
           changed = true;
