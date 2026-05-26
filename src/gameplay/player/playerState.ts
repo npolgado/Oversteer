@@ -31,6 +31,9 @@ export interface PlayerState extends PhysicsEntity {
   dashCooldown: number; trailBurn: boolean; chainLightning: boolean;
   // Upgrade list
   upgrades: string[];
+  // Scrap economy (M2)
+  scrapBank: number;
+  scoreMultBoostTimer: number;
 }
 
 export function makePlayerState(): PlayerState {
@@ -105,6 +108,8 @@ export function makePlayerState(): PlayerState {
     trailBurn: false,
     chainLightning: false,
     upgrades: [],
+    scrapBank: 0,
+    scoreMultBoostTimer: 0,
   };
 }
 

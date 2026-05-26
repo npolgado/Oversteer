@@ -1,7 +1,7 @@
 import { Graphics, Container } from 'pixi.js';
-import { CFG } from '@core/config';
-import type { ScrapPickup, BoostZone } from '@gameplay/pureLogic';
+import type { ScrapPickup, BoostZone, PickupType } from '@gameplay/pureLogic';
 import type { HazardZone } from '@gameplay/spawning/waveManager';
+import { getPickupDef } from '@gameplay/pickups/pickupRegistry';
 
 export class PickupRenderer {
   private _g: Graphics;
@@ -29,35 +29,10 @@ export class PickupRenderer {
       this._g.circle(z.x, z.y, z.radius).fill({ color: 0xFF0000, alpha: pulse * 0.3 });
     }
 
-    // Draw pickups
+    // Draw pickups via registry (each type defines its own draw function)
     for (const s of scraps) {
-      const x = s.x; const y = s.y;
-      if (s.type === 'trail_boost') {
-        // Cyan diamond
-        this._g.moveTo(x, y - 8).lineTo(x + 6, y).lineTo(x, y + 8).lineTo(x - 6, y).closePath()
-          .fill({ color: 0x7C5CFF, alpha: 0.25 });
-      } else if (s.type === 'speed_pickup') {
-        // Yellow triangle (simplified lightning)
-        this._g.moveTo(x, y - 9).lineTo(x + 7, y + 2).lineTo(x + 2, y + 2).lineTo(x + 2, y + 9)
-          .lineTo(x - 2, y + 9).lineTo(x - 2, y + 2).lineTo(x - 7, y + 2).closePath()
-          .fill({ color: 0x35F2D0, alpha: 0.25 });
-      } else if (s.type === 'bomb') {
-        // Red circle with X
-        this._g.circle(x, y, 13).fill({ color: 0xFF3333, alpha: 0.25 });
-        this._g.circle(x, y, 7).fill({ color: 0xFF3333, alpha: 0.85 });
-        this._g.moveTo(x - 4, y - 4).lineTo(x + 4, y + 4).stroke({ color: 0xFFFFFF, width: 1.5 });
-        this._g.moveTo(x + 4, y - 4).lineTo(x - 4, y + 4).stroke({ color: 0xFFFFFF, width: 1.5 });
-      } else {
-        // scrap: gold hexagon (6 sides, radius CFG.SCRAP_RADIUS)
-        const r = CFG.SCRAP_RADIUS;
-        this._g.circle(x, y, r + 6).fill({ color: 0xFFB000, alpha: 0.25 });
-        for (let i = 0; i < 6; i++) {
-          const a = (Math.PI / 3) * i - Math.PI / 6;
-          if (i === 0) this._g.moveTo(x + r * Math.cos(a), y + r * Math.sin(a));
-          else this._g.lineTo(x + r * Math.cos(a), y + r * Math.sin(a));
-        }
-        this._g.closePath().fill({ color: 0xFFB000, alpha: 0.8 });
-      }
+      const def = getPickupDef((s.type ?? 'scrap') as PickupType);
+      if (def) def.draw(this._g, s.x, s.y);
     }
   }
 
