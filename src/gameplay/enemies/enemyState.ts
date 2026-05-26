@@ -43,6 +43,14 @@ export interface EnemyState extends PhysicsEntity {
   // Bomber AI state
   bombTimer?: number;
   _dropBomb?: boolean;
+  // Boss AI state
+  bossPattern?: 'pursuer' | 'core' | 'reflector';
+  bossPhase?: 'telegraph' | 'charge' | 'orbit' | 'spawning' | 'vulnerable' | 'invuln';
+  bossPhaseTimer?: number;
+  bossChargeTargetX?: number;
+  bossChargeTargetY?: number;
+  bossVulnerable?: boolean;
+  _bossSpawnMinion?: boolean;
 }
 
 let _nextId = 0;
@@ -391,6 +399,56 @@ export function makeEnemyState(
         strikeTimer: 0,
         bombTimer: undefined,
         _dropBomb: false,
+      };
+    case 'boss':
+      return {
+        id: _nextId++,
+        type,
+        alive: true,
+        x,
+        y,
+        vx: 0,
+        vy: 0,
+        heading: 0,
+        drifting: false,
+        driftJustStarted: false,
+        maxSpeed: CFG.BOSS_SPEED,
+        turnRate: CFG.ENEMY_TURN_RATE * 0.6,
+        driftKing: false,
+        afterburner: false,
+        nitroDrift: false,
+        lastDriftEndTime: 0,
+        driftChain: 0,
+        slipTimer: 0,
+        slipStrength: 0,
+        slowTimer: 0,
+        slowStrength: 0,
+        wallHit: false,
+        health: CFG.BOSS_HP,
+        armored: false,
+        radius: CFG.BOSS_RADIUS,
+        baseMaxSpeed: CFG.BOSS_SPEED,
+        age: 0,
+        lifespan: 9999,
+        offscreenTimer: 0,
+        fadeAlpha: 1,
+        nearMissCooldown: 0,
+        _trailBurnCooldown: 0,
+        glowExtra: 0,
+        sprite,
+        driftToggleTimer: undefined,
+        driftDuration: undefined,
+        holdingTrail: false,
+        flankSide: undefined,
+        flankSwitchTimer: undefined,
+        striking: false,
+        strikeTimer: 0,
+        bombTimer: undefined,
+        _dropBomb: false,
+        bossPhase: 'telegraph',
+        bossPhaseTimer: CFG.BOSS_TELEGRAPH_DUR,
+        bossVulnerable: true,
+        _bossSpawnMinion: false,
       };
     default:
       // Fallback for unknown type (should not occur with valid types)
