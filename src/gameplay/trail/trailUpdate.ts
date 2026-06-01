@@ -23,10 +23,14 @@ export interface EnemyState {
   armored: boolean;
   type?: string;
   health?: number;
+  radius?: number;
+  hitFlashTimer?: number;
+  bossVulnerable?: boolean;
 }
 
 export interface TrailLoopResult {
   killedEnemies: EnemyState[];
+  hitBosses: EnemyState[];   // bosses damaged this loop but not yet dead
   polygon: TrailPoint[];
   score: number;          // raw score delta (no multiplier)
   encircleCount: number;
@@ -111,21 +115,48 @@ function _detectLoop(
     if (poly.length < 10) continue;
 
     const killedEnemies: EnemyState[] = [];
+    const hitBosses: EnemyState[] = [];
     let encircleCount = 0;
 
     for (const e of enemies) {
       if (!e.alive) continue;
-      if (!pointInPoly(e.x, e.y, poly)) continue;
 
       if (e.type === 'boss') {
-        // Boss takes one hit per encirclement; dies at 0 health
+        // Radius-aware hit: test center + 4 cardinal offsets so near-misses count
+        const r = e.radius ?? 0;
+        const D = r * 0.707; // diagonal offsets at 45° so edge tangency is not missed
+        const hit = pointInPoly(e.x, e.y, poly)
+          || (r > 0 && (
+            pointInPoly(e.x + r, e.y, poly) ||
+            pointInPoly(e.x - r, e.y, poly) ||
+            pointInPoly(e.x, e.y + r, poly) ||
+            pointInPoly(e.x, e.y - r, poly) ||
+            pointInPoly(e.x + D, e.y + D, poly) ||
+            pointInPoly(e.x + D, e.y - D, poly) ||
+            pointInPoly(e.x - D, e.y + D, poly) ||
+            pointInPoly(e.x - D, e.y - D, poly)
+          ));
+        if (!hit) continue;
+        // Armored or invulnerable boss deflects trail — show flash but don't deal damage
+        if (e.armored || e.bossVulnerable === false) {
+          e.hitFlashTimer = CFG.BOSS_HIT_FLASH_S;
+          continue;
+        }
         e.health = (e.health ?? 1) - 1;
+        e.hitFlashTimer = CFG.BOSS_HIT_FLASH_S;
         if (e.health <= 0) {
           e.alive = false;
           killedEnemies.push(e);
           encircleCount += 1;
+        } else {
+          hitBosses.push(e);
         }
-      } else if (e.armored) {
+        continue;
+      }
+
+      if (!pointInPoly(e.x, e.y, poly)) continue;
+
+      if (e.armored) {
         // First hit strips armor; enemy survives
         e.armored = false;
       } else {
@@ -135,15 +166,17 @@ function _detectLoop(
       }
     }
 
-    // Only fire result if at least one enemy was killed
-    if (encircleCount === 0) break;
+    // Fire result when any enemy was killed or any boss took damage
+    if (encircleCount === 0 && hitBosses.length === 0) break;
 
     const baseScore = 100 * encircleCount + (encircleCount >= 2 ? 50 * encircleCount : 0);
 
-    state.flashPoly = poly.slice();
-    state.flashPolyTimer = 0.3;
+    if (encircleCount > 0) {
+      state.flashPoly = poly.slice();
+      state.flashPolyTimer = 0.3;
+    }
 
-    return { killedEnemies, polygon: poly, score: baseScore, encircleCount };
+    return { killedEnemies, hitBosses, polygon: poly, score: baseScore, encircleCount };
   }
 
   return null;

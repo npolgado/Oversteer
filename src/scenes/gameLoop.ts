@@ -26,7 +26,7 @@ import {
 import { PropsRenderer } from '@gameplay/world/propsRenderer';
 import { BiomeManager } from '@gameplay/world/biomeManager';
 import { isBiomeTransition, biomeForWave } from '@gameplay/world/runProgression';
-import { makeEnemyState, type EnemyState } from '@gameplay/enemies/enemyState';
+import { makeEnemyState, makeBoss, type EnemyState } from '@gameplay/enemies/enemyState';
 import { updateEnemy } from '@gameplay/enemies/enemyUpdate';
 import { EnemyRenderer } from '@gameplay/enemies/enemyRenderer';
 import { PickupRenderer } from '@render/pickupRenderer';
@@ -512,7 +512,7 @@ export class GameLoop {
   ): void {
     this._tickPlayer(dilatedDt, input);
     this._tickAudio();
-    this._tickScoring(dilatedDt);
+    this._tickScoring(rawDt, dilatedDt);
     let enemiesChanged = this._tickWave(dilatedDt);
     this._tickScraps(dilatedDt);
     this._tickProps(dilatedDt);
@@ -608,11 +608,11 @@ export class GameLoop {
     this._ctx.audioManager.setDriftIntensity(driftSlip);
   }
 
-  private _tickScoring(dilatedDt: number): void {
+  private _tickScoring(rawDt: number, dilatedDt: number): void {
     // --- Per-frame scoring: base score, drift combo, combo decay ---
-    // Tick score-surge boost timer
+    // Score-surge timer drains in real time (rawDt) so time_slow doesn't extend the buff duration
     if (this._playerState.scoreMultBoostTimer > 0) {
-      this._playerState.scoreMultBoostTimer = Math.max(0, this._playerState.scoreMultBoostTimer - dilatedDt);
+      this._playerState.scoreMultBoostTimer = Math.max(0, this._playerState.scoreMultBoostTimer - rawDt);
     }
     const effectiveScoreMult = this._playerState.scoreMultBoostTimer > 0
       ? this._playerState.scoreMult * 2
@@ -634,8 +634,10 @@ export class GameLoop {
   /** Returns true if enemies array was modified. */
   private _tickWave(dilatedDt: number): boolean {
     let changed = false;
+    const bossAlive = this._enemies.some(e => e.type === 'boss');
     const waveEvents = updateWave(
       this._waveState, dilatedDt, this._scoringState.score, this._enemies.length,
+      bossAlive,
       this._biomeManager.active.enemyWeightMult,
     );
     for (const ev of waveEvents) {
@@ -673,10 +675,14 @@ export class GameLoop {
         this._screenFx.shake(5, 0.3);
         this._ctx.camera.setHeadingMode(true);
       } else if (ev.type === 'boss_spawn') {
-        // Spawn boss at arena center
-        const boss = makeEnemyState('boss', CFG.WORLD_W / 2, CFG.WORLD_H / 2, 0);
-        boss.bossPattern = ev.pattern;
-        boss.bossPhase = ev.pattern === 'core' ? 'invuln' : 'telegraph';
+        // Spawn boss at a set distance from player (makes wave 5 immediately engaging)
+        // NOTE: not in original
+        const bossAngle = Math.random() * Math.PI * 2;
+        const bossDist = CFG.BOSS_SPAWN_DIST_MIN + Math.random() * CFG.BOSS_SPAWN_DIST_RANGE;
+        const bossPad = CFG.BOSS_RADIUS;
+        const bossX = clamp(this._playerState.x + Math.cos(bossAngle) * bossDist, bossPad, CFG.WORLD_W - bossPad);
+        const bossY = clamp(this._playerState.y + Math.sin(bossAngle) * bossDist, bossPad, CFG.WORLD_H - bossPad);
+        const boss = makeBoss(ev.pattern, bossX, bossY);
         this._enemies.push(boss);
         changed = true;
         this._screenFx.flash(0xFF4040, 0.5, 0.6);
@@ -693,9 +699,7 @@ export class GameLoop {
           const newBiomeId = biomeForWave(nextWave);
           this._biomeManager.setBiome(newBiomeId);
           const biome = this._biomeManager.active;
-          // Fade music and start fresh with the new pack
-          this._ctx.audioManager.fadeBgMusic(1.5);
-          this._ctx.audioManager.loadMusicPack(biome.musicPackId);
+          // TODO: fade and swap to biome-specific music pack when per-biome audio ships
           // Regenerate props from the new biome's pool and refresh renderer
           regenerateProps(this._propsState, biome.propPool);
           this._propsRenderer.setProps(this._propsState.allProps);
@@ -713,13 +717,15 @@ export class GameLoop {
     return changed;
   }
 
-  /** Spawn a ring of minions around a source position (used by Core boss). */
+  // NOTE: not in original — Core boss minion mechanic
   private _spawnMinionRing(sourceX: number, sourceY: number, count: number): void {
-    for (let i = 0; i < count; i++) {
+    const existing = this._enemies.filter(e => e.type === 'chaser').length;
+    const allowed = Math.max(0, CFG.BOSS_MINION_MAX - existing);
+    const toSpawn = Math.min(count, allowed);
+    for (let i = 0; i < toSpawn; i++) {
       const angle = (Math.PI * 2 * i) / count;
-      const dist = 120;
-      const x = clamp(sourceX + Math.cos(angle) * dist, 10, CFG.WORLD_W - 10);
-      const y = clamp(sourceY + Math.sin(angle) * dist, 10, CFG.WORLD_H - 10);
+      const x = clamp(sourceX + Math.cos(angle) * CFG.BOSS_MINION_RADIUS, 10, CFG.WORLD_W - 10);
+      const y = clamp(sourceY + Math.sin(angle) * CFG.BOSS_MINION_RADIUS, 10, CFG.WORLD_H - 10);
       this._enemies.push(makeEnemyState('chaser', x, y, this._waveState.speedBonus));
     }
   }
@@ -761,8 +767,8 @@ export class GameLoop {
     for (const ev of allEvents) {
       if (ev === 'scrap') {
         addScore(this._scoringState, 10); // +10 per scrap (intentional improvement over original)
-        this._playerState.scrapBank++;
-        this._scoringState.runStats.scrapCollected++;
+        this._playerState.scrapBank++; // NOTE: not in original — scrap economy currency
+        this._scoringState.runStats.scrapCollected++; // NOTE: not in original — run stats tracking
         eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: 10 });
         eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 8 });
         eventBus.emit('eventLog', { text: '+SCRAP', color: '#35f2d0' });
@@ -996,6 +1002,19 @@ export class GameLoop {
     const loopResult = updateTrail(this._trailState, this._playerState, this._enemies, dilatedDt);
 
     if (loopResult !== null) {
+      // Boss non-lethal hit feedback: flash, shake, EventLog
+      for (const hitBoss of loopResult.hitBosses) {
+        const remaining = (hitBoss as EnemyState).health ?? 0;
+        this._screenFx.shake(3, 0.15);
+        this._particles.spawn(hitBoss.x, hitBoss.y, 0xFF6600, 12, {
+          type: 'spark',
+          vxMin: -160, vxMax: 160,
+          vyMin: -160, vyMax: 160,
+          lifeMin: 0.15, lifeMax: 0.3,
+        });
+        eventBus.emit('eventLog', { text: `BOSS HIT! ${remaining} HP left`, color: '#FF6600' });
+      }
+
       const killCount = loopResult.killedEnemies.length;
       if (killCount > 0) {
         const oldCombo       = this._scoringState.comboLevel;
@@ -1032,11 +1051,13 @@ export class GameLoop {
         }
       }
 
-      eventBus.emit('encirclement', {
-        count: loopResult.encircleCount,
-        x:     loopResult.polygon[0].x,
-        y:     loopResult.polygon[0].y,
-      });
+      if (loopResult.encircleCount > 0) {
+        eventBus.emit('encirclement', {
+          count: loopResult.encircleCount,
+          x:     loopResult.polygon[0].x,
+          y:     loopResult.polygon[0].y,
+        });
+      }
 
       for (const dead of loopResult.killedEnemies) {
         const deathEvent: EnemyDeathEvent = {

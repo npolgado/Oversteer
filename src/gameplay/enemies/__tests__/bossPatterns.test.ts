@@ -131,4 +131,33 @@ describe('updateReflector', () => {
     // After two different time steps, tx/ty should differ
     expect(r1.tx !== r2.tx || r1.ty !== r2.ty).toBe(true);
   });
+
+  it('figure-eight parametric formula: tx and ty match sin/cos expression within epsilon', () => {
+    // Start timer at 0, advance by a known dt so we can compute expected values exactly.
+    // Formula: t = bossPhaseTimer * 0.4; tx = WORLD_W/2 + 450*sin(t); ty = WORLD_H/2 + 450*sin(t)*cos(t)
+    const dt = 2.5; // chosen so t=1.0 → non-trivial sin/cos values
+    const boss = makeBoss({ bossPattern: 'reflector', bossPhaseTimer: 0 });
+    const result = updateReflector(boss, makePlayer(), dt);
+
+    const timerAfter = dt; // bossPhaseTimer starts at 0, incremented by dt
+    const t = timerAfter * 0.4;
+    const r = 450;
+    const expectedTx = CFG.WORLD_W / 2 + r * Math.sin(t);
+    const expectedTy = CFG.WORLD_H / 2 + r * Math.sin(t) * Math.cos(t);
+
+    expect(result.tx).toBeCloseTo(expectedTx, 5);
+    expect(result.ty).toBeCloseTo(expectedTy, 5);
+  });
+
+  it('figure-eight stays bounded within arena (r=450 never reaches world edge)', () => {
+    // Sweep through a full figure-eight cycle (period = 2π / 0.4 ≈ 15.7s)
+    const boss = makeBoss({ bossPattern: 'reflector', bossPhaseTimer: 0 });
+    for (let step = 0; step < 200; step++) {
+      const result = updateReflector(boss, makePlayer(), 0.08);
+      expect(result.tx).toBeGreaterThanOrEqual(CFG.WORLD_W / 2 - 451);
+      expect(result.tx).toBeLessThanOrEqual(CFG.WORLD_W / 2 + 451);
+      expect(result.ty).toBeGreaterThanOrEqual(CFG.WORLD_H / 2 - 226); // sin*cos max = 0.5
+      expect(result.ty).toBeLessThanOrEqual(CFG.WORLD_H / 2 + 226);
+    }
+  });
 });

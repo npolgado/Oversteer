@@ -98,9 +98,9 @@ describe('BiomeManager', () => {
     expect(eventBus.emit).not.toHaveBeenCalled();
   });
 
-  it('setBiome with unknown id does nothing', () => {
+  it('setBiome with unknown id throws in dev', () => {
     const mgr = new BiomeManager('wasteland');
-    mgr.setBiome('nonexistent');
-    expect(mgr.active.id).toBe('wasteland');
+    expect(() => (mgr as any).setBiome('nonexistent')).toThrow(/unknown biome id/);
+    expect(mgr.active.id).toBe('wasteland'); // state is unchanged — throw precedes mutation
   });
 });

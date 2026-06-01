@@ -383,8 +383,8 @@ describe('boss wave combat phase', () => {
 
   it('boss_spawn event fires after telegraph delay', () => {
     const state = makeBossWave(5);
-    // Tick past telegraph timer (1.5s)
-    const events = updateWave(state, 2.0, 0, 0);
+    // Tick past telegraph timer (1.5s); boss is spawned into the enemy list (bossAlive=true)
+    const events = updateWave(state, 2.0, 0, 0, true);
     const spawnEv = events.find(e => e.type === 'boss_spawn');
     expect(spawnEv).toBeDefined();
     expect((spawnEv as { type: 'boss_spawn'; pattern: string }).pattern).toBe('pursuer');
@@ -393,20 +393,29 @@ describe('boss wave combat phase', () => {
 
   it('no normal spawn events fire during boss wave', () => {
     const state = makeBossWave(5);
-    // Tick past all timers (very long tick)
-    const events = updateWave(state, 30.0, 0, 0);
+    // Tick past all timers (very long tick); boss is alive so wave stays in combat
+    const events = updateWave(state, 30.0, 0, 0, true);
     const spawnEvs = events.filter(e => e.type === 'spawn');
     expect(spawnEvs.length).toBe(0);
   });
 
-  it('wave_end fires when boss is dead (enemyCount drops to 0 after spawn)', () => {
+  it('wave_end fires when boss dies even if minions remain (bossAlive=false)', () => {
     const state = makeBossWave(5);
-    // Tick to spawn boss
-    updateWave(state, 2.0, 0, 0);
+    // Tick to spawn boss (boss alive)
+    updateWave(state, 2.0, 0, 0, true);
     expect(state.bossSpawned).toBe(true);
-    // Simulate boss death — tick again with enemyCount = 0
-    const events = updateWave(state, 0.1, 0, 0);
+    // Simulate boss death — bossAlive=false, but minions keep enemyCount > 0
+    const events = updateWave(state, 0.1, 0, 6, false);
     const endEv = events.find(e => e.type === 'wave_end');
     expect(endEv).toBeDefined();
+  });
+
+  it('wave does NOT end while boss is still alive', () => {
+    const state = makeBossWave(5);
+    updateWave(state, 2.0, 0, 0, true); // spawn
+    // Boss alive — wave should stay in combat no matter what enemyCount is
+    const events = updateWave(state, 0.1, 0, 1, true);
+    expect(events.find(e => e.type === 'wave_end')).toBeUndefined();
+    expect(state.phase).toBe('combat');
   });
 });

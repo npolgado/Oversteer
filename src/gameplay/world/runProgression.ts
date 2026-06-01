@@ -1,7 +1,8 @@
 // runProgression.ts — Defines the wave→biome mapping for a run.
 // Biome transitions are wave-driven and independent of boss cadence.
 
-export type BiomeId = 'wasteland' | 'rupture' | 'jungle';
+import type { BiomeId } from '@core/config';
+export type { BiomeId };
 
 /** Returns the biome id for the given wave index (1-based). */
 export function biomeForWave(waveIndex: number): BiomeId {

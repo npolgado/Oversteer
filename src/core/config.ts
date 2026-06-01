@@ -87,7 +87,7 @@ const _RUPTURE: BiomeDescriptor = {
 const _JUNGLE: BiomeDescriptor = {
   id: 'jungle',
   name: 'Corruption Jungle',
-  backgroundSprite: 'backgrounds/background_01.png',
+  backgroundSprite: 'backgrounds/background_01.png', // TODO: jungle background asset
   lightingTint: 0x88FF88,
   fogColor: 0x224422,
   fogDensity: 0.12,
@@ -105,6 +105,7 @@ export const BIOMES: BiomeDescriptor[] = [_WASTELAND, _RUPTURE, _JUNGLE];
 export const BIOMES_BY_ID: Record<string, BiomeDescriptor> = Object.fromEntries(
   BIOMES.map(b => [b.id, b]),
 );
+export type BiomeId = 'wasteland' | 'rupture' | 'jungle';
 
 export interface MapDef {
   id: string;
@@ -222,11 +223,18 @@ export interface CfgShape {
   BOSS_RADIUS: number;
   BOSS_SPRITE_S: number;
   BOSS_TELEGRAPH_DUR: number;
+  BOSS_TELEGRAPH_ORBIT_R: number;  // orbit radius during pursuer telegraph phase
+  BOSS_HIT_FLASH_S: number;        // seconds boss flashes white after encirclement hit
   BOSS_CHARGE_DUR: number;
   BOSS_CHARGE_SPEED: number;
   BOSS_MINION_INTERVAL: number;
+  BOSS_MINION_RADIUS: number;      // spawn distance of minion ring from boss center
+  BOSS_MINION_MAX: number;         // max total minions per boss fight
   BOSS_VULNERABLE_DUR: number;
   BOSS_INVULN_DUR: number;
+  BOSS_SPAWN_DIST_MIN: number;     // min distance from player on boss spawn
+  BOSS_SPAWN_DIST_RANGE: number;   // additional random range above min
+  BOSS_WAVE_INTERVAL: number;      // every N waves is a boss wave
   // Horde
   HORDE_TRIGGER_MIN: number;
   HORDE_TRIGGER_MAX: number;
@@ -415,11 +423,18 @@ export const CFG: CfgShape = {
   BOSS_RADIUS: 20,
   BOSS_SPRITE_S: 80,
   BOSS_TELEGRAPH_DUR: 2.0,
+  BOSS_TELEGRAPH_ORBIT_R: 200,
+  BOSS_HIT_FLASH_S: 0.15,
   BOSS_CHARGE_DUR: 1.0,
   BOSS_CHARGE_SPEED: 700,
   BOSS_MINION_INTERVAL: 4.0,
+  BOSS_MINION_RADIUS: 120,
+  BOSS_MINION_MAX: 12,
   BOSS_VULNERABLE_DUR: 3.0,
   BOSS_INVULN_DUR: 5.0,
+  BOSS_SPAWN_DIST_MIN: 600,    // NOTE: not in original
+  BOSS_SPAWN_DIST_RANGE: 200,  // NOTE: not in original
+  BOSS_WAVE_INTERVAL: 5,
   // Horde
   HORDE_TRIGGER_MIN: 0.60,
   HORDE_TRIGGER_MAX: 0.85,

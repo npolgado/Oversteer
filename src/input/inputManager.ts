@@ -162,6 +162,7 @@ export class InputManager {
       this._canvas.addEventListener('touchmove', this._onTouchMove, { passive: false });
       this._canvas.addEventListener('touchend', this._onTouchEnd, { passive: false });
       this._canvas.addEventListener('touchcancel', this._onTouchEnd, { passive: false });
+      this._canvas.addEventListener('mousedown', this._onMouseDown);
     }
   }
 
@@ -183,16 +184,21 @@ export class InputManager {
   // Touch coordinate conversion
   // ---------------------------------------------------------------------------
 
+  /** Converts client coordinates to game-space (reference resolution: CFG.W × CFG.H). */
+  private _getCanvasPos(clientX: number, clientY: number, canvas: HTMLCanvasElement): Vec2 {
+    const r = canvas.getBoundingClientRect();
+    return {
+      x: ((clientX - r.left) / r.width) * CFG.W,
+      y: ((clientY - r.top) / r.height) * CFG.H,
+    };
+  }
+
   /**
    * Converts a Touch's clientX/Y to game-space coordinates
    * (reference resolution: CFG.W × CFG.H, default 1600×900).
    */
   private _getTouchPos(touch: Touch, canvas: HTMLCanvasElement): Vec2 {
-    const r = canvas.getBoundingClientRect();
-    return {
-      x: ((touch.clientX - r.left) / r.width) * CFG.W,
-      y: ((touch.clientY - r.top) / r.height) * CFG.H,
-    };
+    return this._getCanvasPos(touch.clientX, touch.clientY, canvas);
   }
 
   // ---------------------------------------------------------------------------
@@ -233,6 +239,17 @@ export class InputManager {
         t.stickPos = this._getTouchPos(touch, this._canvas!);
       }
     }
+  };
+
+  // NOTE: not in original — mouse click support for desktop shop/UI interaction.
+  private _onMouseDown = (e: MouseEvent): void => {
+    if (!this._canvas) return;
+    if (e.button !== 0) return; // left-click only; right/middle clicks must not fire UI taps
+    e.preventDefault();
+    this._fireFirstInteraction();
+    const t = this._touch;
+    t.tap = this._getCanvasPos(e.clientX, e.clientY, this._canvas);
+    t.tapAge = 0;
   };
 
   private _onTouchEnd = (e: TouchEvent): void => {

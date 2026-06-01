@@ -5,9 +5,14 @@ import type { Container } from 'pixi.js';
 import { CFG } from '@core/config';
 import type { EnemyState } from './enemyState';
 
+const BOSS_HP_BAR_W = 80;
+const BOSS_HP_BAR_H = 6;
+const BOSS_HP_BAR_OFFSET_Y = 44; // px above boss center
+
 export class EnemyRenderer {
   private _layer: Container;
   private _sprites = new Map<number, Sprite | Graphics>();
+  private _bossHpBars = new Map<number, Graphics>();
 
   constructor(layers: { enemiesLayer: Container }) {
     this._layer = layers.enemiesLayer;
@@ -21,6 +26,14 @@ export class EnemyRenderer {
       if (!currentIds.has(id)) {
         sprite.destroy();
         this._sprites.delete(id);
+      }
+    }
+
+    // Remove HP bars for despawned enemies
+    for (const [id, bar] of this._bossHpBars) {
+      if (!currentIds.has(id)) {
+        bar.destroy();
+        this._bossHpBars.delete(id);
       }
     }
 
@@ -48,6 +61,13 @@ export class EnemyRenderer {
         this._layer.addChild(g);
         this._sprites.set(enemy.id, g);
       }
+
+      // Boss HP bar
+      if (isBoss) {
+        const bar = new Graphics();
+        this._layer.addChild(bar);
+        this._bossHpBars.set(enemy.id, bar);
+      }
     }
   }
 
@@ -59,6 +79,32 @@ export class EnemyRenderer {
       sprite.y = enemy.y;
       sprite.rotation = enemy.heading + Math.PI / 2;
       sprite.alpha = enemy.fadeAlpha;
+
+      // Hit flash: tint white while hitFlashTimer is active (timer decremented in enemyUpdate)
+      if (enemy.type === 'boss') {
+        if ((enemy.hitFlashTimer ?? 0) > 0) {
+          (sprite as Sprite).tint = 0xFFFFFF;
+        } else {
+          (sprite as Sprite).tint = 0xFF6600;
+        }
+
+        // Update HP bar
+        const bar = this._bossHpBars.get(enemy.id);
+        if (bar) {
+          bar.clear();
+          const hpFrac = Math.max(0, Math.min(1, (enemy.health ?? 1) / CFG.BOSS_HP));
+          const barX = enemy.x - BOSS_HP_BAR_W / 2;
+          const barY = enemy.y - BOSS_HP_BAR_OFFSET_Y;
+          // Dark backing
+          bar.rect(barX, barY, BOSS_HP_BAR_W, BOSS_HP_BAR_H).fill({ color: 0x220000 });
+          // HP fill
+          if (hpFrac > 0) {
+            bar.rect(barX, barY, BOSS_HP_BAR_W * hpFrac, BOSS_HP_BAR_H).fill({ color: 0xFF2222 });
+          }
+          // Border
+          bar.rect(barX, barY, BOSS_HP_BAR_W, BOSS_HP_BAR_H).stroke({ color: 0xFF6600, width: 1, alpha: 0.8 });
+        }
+      }
     }
   }
 
@@ -67,5 +113,9 @@ export class EnemyRenderer {
       sprite.destroy();
     }
     this._sprites.clear();
+    for (const bar of this._bossHpBars.values()) {
+      bar.destroy();
+    }
+    this._bossHpBars.clear();
   }
 }

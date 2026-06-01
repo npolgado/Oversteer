@@ -154,6 +154,11 @@ export function updateEnemy(
   // Near-miss cooldown
   if (state.nearMissCooldown > 0) state.nearMissCooldown -= dt;
 
+  // Hit flash timer (driven by dt; decrement lives here, not in renderer)
+  if (state.hitFlashTimer && state.hitFlashTimer > 0) {
+    state.hitFlashTimer = Math.max(0, state.hitFlashTimer - dt);
+  }
+
   // Despawn conditions
   if (state.age >= state.lifespan) return { despawned: true };
   if (state.offscreenTimer > CFG.ENEMY_OFFSCREEN_DESPAWN) return { despawned: true };

@@ -13,6 +13,7 @@ import type { WaveState } from '@gameplay/spawning/waveManager';
 import type { InputState } from '@input/inputManager';
 import type { UpgradeCardsUI } from '@ui/menus/upgradeCards';
 import type { ShopPanelUI } from '@ui/menus/shopPanel';
+import { getShopItemLabel } from '@ui/menus/shopPanel';
 import type { audioManager as AudioManagerType } from '@audio/audioManager';
 
 export class UpgradeBreakPhase {
@@ -77,15 +78,34 @@ export class UpgradeBreakPhase {
     this._cardAnimTimer += dt;
     this._upgradeCards.update(dt);
 
+    this._shopPanel?.update(dt);
+
     if (!this._upgradeChosen) {
-      // Shop intercepts taps before upgrade cards — if shop consumed the tap, cards see null.
+      // NOTE: not in original — shop takes priority on 'enter' so D-pad + A buys before cards.
+      // Gamepad D-pad + A: navigate/buy from shop before card input sees 'enter'.
+      const gpBought = this._shopPanel?.handleGamepadInput(input, playerState) ?? null;
+
+      // Mouse/touch tap: shop intercepts before upgrade cards.
       const tap = inputManager.consumeTap();
-      const shopBought = this._shopPanel?.tryPurchase(tap, playerState);
+      const tapResult = this._shopPanel?.tryPurchase(tap, playerState) ?? null;
+      // 'blocked' means tap hit a disabled button — consume it so it doesn't reach cards
+      const tapBought = (tapResult !== null && tapResult !== 'blocked') ? tapResult : null;
+      const tapConsumed = tapResult !== null; // 'blocked' or a successful purchase both consume the tap
+      const shopBought = gpBought ?? tapBought;
+
       if (shopBought != null) {
         this._audio.play('ui_click');
-        eventBus.emit('eventLog', { text: `BOUGHT: ${['Field Repair', 'Brief Invincibility', 'Score Surge'][shopBought]}`, color: '#ffb000' });
+        eventBus.emit('eventLog', { text: `BOUGHT: ${getShopItemLabel(shopBought) ?? '?'}`, color: '#ffb000' });
       }
-      const cardAction = this._upgradeCards.checkInput(input, shopBought == null ? tap : null) ?? null;
+      // If shop consumed 'enter' (D-pad buy), pass null tap so cards don't also act on it.
+      // When shop consumed gamepad nav, mask all menu inputs so cards don't double-act
+      const maskedInput = gpBought != null
+        ? { ...input, enter: false, select1: false, menuDown: false, menuUp: false, menuLaunch: false }
+        : input;
+      const cardAction = this._upgradeCards.checkInput(
+        maskedInput,
+        tapConsumed ? null : tap,
+      ) ?? null;
 
       if (cardAction !== null && cardAction !== 'reroll') {
         const upgrade = this._currentOffer[cardAction as number];
