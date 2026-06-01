@@ -26,8 +26,9 @@ const noInput: InputState = {
   up: false, down: false, left: false, right: false,
   drift: false, pause: false, enter: false, reroll: false,
   select1: false, select2: false, select3: false,
-  menuLeft: false, menuRight: false,
+  menuLeft: false, menuRight: false, menuUp: false, menuDown: false, menuLaunch: false,
   menuMod1: false, menuMod2: false, menuMod3: false, menuMod4: false,
+  toggleSandbox: false,
   mute: false, sfxDown: false, sfxUp: false, musicDown: false, musicUp: false,
   escape: false, perfToggle: false,
 };

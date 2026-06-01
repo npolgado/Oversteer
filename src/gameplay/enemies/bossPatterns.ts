@@ -23,7 +23,7 @@ export function updatePursuer(
   if (state.bossPhase === 'telegraph') {
     // Circle around the player while "telegraphing"
     const spiralAngle = Math.atan2(state.y - player.y, state.x - player.x) + 0.015;
-    const orbitR = 350;
+    const orbitR = CFG.BOSS_TELEGRAPH_ORBIT_R;
     const tx = player.x + Math.cos(spiralAngle) * orbitR;
     const ty = player.y + Math.sin(spiralAngle) * orbitR;
 

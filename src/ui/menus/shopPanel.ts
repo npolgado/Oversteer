@@ -6,6 +6,7 @@ import { Container, Graphics, Text } from 'pixi.js';
 import { CFG, S } from '@core/config';
 import { makeUIStyle } from '@ui/textStyles';
 import type { PlayerState } from '@gameplay/player/playerState';
+import type { InputState } from '@input/inputManager';
 
 const PANEL_W  = S(280);
 const PANEL_H  = S(320);
@@ -51,12 +52,20 @@ interface ItemGraphics {
   bounds: { x: number; y: number; w: number; h: number };
 }
 
+/** Source-of-truth label for a shop item by index. Returns undefined for unknown index. */
+export function getShopItemLabel(index: number): string | undefined {
+  return SHOP_ITEMS[index]?.label;
+}
+
 export class ShopPanelUI {
   private _layer: Container;
   private _panel: Container | null = null;
   private _bankText: Text | null = null;
   private _items: ItemGraphics[] = [];
   private _visible = false;
+  private _focusedIndex = 0;
+  // NOTE: not in original — hint shown once per run to teach click/D-pad interaction
+  private _hintShown = false;
 
   constructor(overlayLayer: Container) {
     this._layer = overlayLayer;
@@ -65,11 +74,14 @@ export class ShopPanelUI {
   show(player: PlayerState): void {
     this._clearPanel();
     this._visible = true;
+    this._focusedIndex = 0;
     this._panel = new Container();
     this._panel.position.set(PANEL_X, PANEL_Y);
     this._layer.addChild(this._panel);
     this._rebuild(player);
   }
+
+  update(_dt: number): void { /* reserved for future animations */ }
 
   /** Rebuild the panel visuals to reflect current player state. */
   private _rebuild(player: PlayerState): void {
@@ -98,18 +110,31 @@ export class ShopPanelUI {
     this._bankText.position.set(PANEL_W / 2, S(34));
     this._panel.addChild(this._bankText);
 
-    // Divider
+    // Hint label — shown once per run to teach input method
+    if (!this._hintShown) {
+      const hint = new Text({
+        text: 'Click or D-pad + A',
+        style: makeUIStyle({ size: S(10), color: '#888899' }),
+      });
+      hint.anchor.set(0.5, 0);
+      hint.position.set(PANEL_W / 2, S(50));
+      this._panel.addChild(hint);
+    }
+
+    // Divider — fixed Y so item positions don't jump when hint disappears
+    const divY = S(64);
     const div = new Graphics();
-    div.rect(S(12), S(54), PANEL_W - S(24), 1).fill({ color: 0xFFB000, alpha: 0.3 });
+    div.rect(S(12), divY, PANEL_W - S(24), 1).fill({ color: 0xFFB000, alpha: 0.3 });
     this._panel.addChild(div);
 
     // Shop items
-    const itemsStartY = S(62);
+    const itemsStartY = divY + S(8);
     SHOP_ITEMS.forEach((def, i) => {
       const iy = itemsStartY + i * (ITEM_H + ITEM_GAP);
       const canAfford = player.scrapBank >= def.cost;
       const isUsable = !def.canApply || def.canApply(player);
       const enabled = canAfford && isUsable;
+      const isFocused = (i === this._focusedIndex);
       const itemAlpha = enabled ? 1.0 : 0.4;
 
       const itemContainer = new Container();
@@ -119,8 +144,10 @@ export class ShopPanelUI {
 
       // Item bg
       const itemBg = new Graphics();
+      const borderColor = isFocused ? 0xFFB000 : (enabled ? 0x35F2D0 : 0x334455);
+      const borderWidth = isFocused ? 2 : 1;
       itemBg.rect(0, 0, PANEL_W - S(20), ITEM_H).fill({ color: 0x0d1a28 });
-      itemBg.rect(0, 0, PANEL_W - S(20), ITEM_H).stroke({ color: enabled ? 0x35F2D0 : 0x334455, width: 1 });
+      itemBg.rect(0, 0, PANEL_W - S(20), ITEM_H).stroke({ color: borderColor, width: borderWidth });
       itemContainer.addChild(itemBg);
 
       // Label
@@ -160,10 +187,13 @@ export class ShopPanelUI {
   }
 
   /**
-   * Check if a tap hit a shop buy button. Returns the item index if purchased,
-   * or null if nothing was bought.
+   * Check if a tap hit a shop buy button.
+   * - Returns the item index (number) if the purchase succeeded.
+   * - Returns 'blocked' if the tap hit a disabled/unaffordable button (consume the tap so it
+   *   doesn't leak into upgrade cards).
+   * - Returns null if the tap missed all buttons.
    */
-  tryPurchase(tap: { x: number; y: number } | null, player: PlayerState): number | null {
+  tryPurchase(tap: { x: number; y: number } | null, player: PlayerState): number | 'blocked' | null {
     if (!this._visible || !tap) return null;
     for (let i = 0; i < this._items.length; i++) {
       const b = this._items[i].bounds;
@@ -174,11 +204,49 @@ export class ShopPanelUI {
         if (canAfford && isUsable) {
           player.scrapBank -= def.cost;
           def.apply(player);
+          this._hintShown = true;
           this._rebuild(player); // refresh to show updated bank + disabled state
           return i;
         }
+        return 'blocked'; // tapped a disabled button — consume to prevent tap leaking
       }
     }
+    return null;
+  }
+
+  // NOTE: not in original — D-pad navigation for controller support.
+  /**
+   * Handle D-pad up/down navigation and A button purchase from controller.
+   * Must be called before card input so shop takes priority on 'enter'.
+   */
+  handleGamepadInput(input: InputState, player: PlayerState): number | null {
+    if (!this._visible) return null;
+
+    let moved = false;
+    if (input.menuDown) {
+      this._focusedIndex = (this._focusedIndex + 1) % SHOP_ITEMS.length;
+      moved = true;
+    } else if (input.menuUp) {
+      this._focusedIndex = (this._focusedIndex + SHOP_ITEMS.length - 1) % SHOP_ITEMS.length;
+      moved = true;
+    }
+    if (moved) {
+      this._rebuild(player);
+    }
+
+    if (input.enter) {
+      const def = SHOP_ITEMS[this._focusedIndex];
+      const canAfford = player.scrapBank >= def.cost;
+      const isUsable = !def.canApply || def.canApply(player);
+      if (canAfford && isUsable) {
+        player.scrapBank -= def.cost;
+        def.apply(player);
+        this._hintShown = true;
+        this._rebuild(player);
+        return this._focusedIndex;
+      }
+    }
+
     return null;
   }
 

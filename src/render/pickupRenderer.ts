@@ -32,7 +32,14 @@ export class PickupRenderer {
     // Draw pickups via registry (each type defines its own draw function)
     for (const s of scraps) {
       const def = getPickupDef((s.type ?? 'scrap') as PickupType);
-      if (def) def.draw(this._g, s.x, s.y);
+      if (def) {
+        def.draw(this._g, s.x, s.y);
+      } else {
+        // Unknown pickup type — draw magenta marker so the missing registry entry is visible during playtest
+        // Mirror any new PickupType added to pureLogic.ts in pickupRegistry.ts
+        console.warn(`[PickupRenderer] Unknown pickup type: ${s.type}`);
+        this._g.circle(s.x, s.y, 8).fill({ color: 0xFF00FF, alpha: 0.8 });
+      }
     }
   }
 
