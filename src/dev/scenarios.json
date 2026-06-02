@@ -1,0 +1,156 @@
+{
+  "scenarios": [
+    {
+      "id": "boss-pursuer-w5",
+      "name": "Boss: Pursuer (Wave 5)",
+      "description": "Wave 5 boss fight, no upgrades, wasteland biome.",
+      "wave": 5,
+      "biome": "wasteland",
+      "boss": "pursuer"
+    },
+    {
+      "id": "boss-core-w10",
+      "name": "Boss: Core (Wave 10)",
+      "description": "Wave 10 boss fight, no upgrades, rupture biome.",
+      "wave": 10,
+      "biome": "rupture",
+      "boss": "core"
+    },
+    {
+      "id": "boss-reflector-w15",
+      "name": "Boss: Reflector (Wave 15)",
+      "description": "Wave 15 boss fight, no upgrades, jungle biome. Reflector is permanently armored — trail encirclement never kills it. Survive and dodge.",
+      "wave": 15,
+      "biome": "jungle",
+      "boss": "reflector"
+    },
+    {
+      "id": "boss-core-w10-loaded",
+      "name": "Boss: Core (Wave 10) — Loaded",
+      "description": "Wave 10 core boss, rupture biome, 4 offensive/defensive upgrades.",
+      "wave": 10,
+      "biome": "rupture",
+      "boss": "core",
+      "upgrades": ["turbo", "shield", "magnet", "combo_master"]
+    },
+    {
+      "id": "boss-pursuer-w5-fragile",
+      "name": "Boss: Pursuer (Wave 5) — Fragile",
+      "description": "Wave 5 boss, 1 HP. For learning the boss pattern under pressure.",
+      "wave": 5,
+      "biome": "wasteland",
+      "boss": "pursuer",
+      "hp": 1
+    },
+    {
+      "id": "biome-wasteland",
+      "name": "Biome: Neon Wasteland (Wave 3)",
+      "description": "Wave 3, wasteland biome. Verify: white tint, orange fog (density 0.04), no enemy bias, wasteland music pack.",
+      "wave": 3,
+      "biome": "wasteland"
+    },
+    {
+      "id": "biome-rupture",
+      "name": "Biome: Frozen Rupture (Wave 10)",
+      "description": "Wave 10, rupture biome. Verify: ice-blue tint 0xCCEEFF, blue fog (density 0.06), flanker bias ×1.8, rupture music pack.",
+      "wave": 10,
+      "biome": "rupture"
+    },
+    {
+      "id": "biome-jungle-fresh",
+      "name": "Biome: Corruption Jungle (Wave 15)",
+      "description": "Wave 15 jungle biome. Verify: green tint 0x88FF88, heavy green fog (density 0.12 — noticeably darker), jungle music pack.",
+      "wave": 15,
+      "biome": "jungle"
+    },
+    {
+      "id": "splitter-stress-w8",
+      "name": "Splitter Stress (Wave 8)",
+      "description": "Wave 8 rupture biome with offensive upgrades. Tests splitter + chaser spawns.",
+      "wave": 8,
+      "biome": "rupture",
+      "upgrades": ["turbo", "trail_burn", "chain_lightning", "wider_trail"]
+    },
+    {
+      "id": "splitter-unlock",
+      "name": "Splitter Unlock (Score 3500, Wave 6)",
+      "description": "Wave 6 with score pre-set to 3500 — the threshold where splitters enter the enemy pool. Verify: splitters appear in waves, split into 2 chasers on trail-encirclement kill. NOTE: bomb kill does NOT trigger split.",
+      "wave": 6,
+      "score": 3500,
+      "enemySpawnBias": { "splitter": 6 }
+    },
+    {
+      "id": "pickup-time-slow",
+      "name": "Pickup: Time Slow",
+      "description": "Wave 3, forces the next pickup drop to be a time_slow. Verify: blue clock icon spawns, collecting it slows time for 3 seconds.",
+      "wave": 3,
+      "forcePickup": "time_slow"
+    },
+    {
+      "id": "pickup-trail-token",
+      "name": "Pickup: Trail Token",
+      "description": "Wave 3, forces the next pickup drop to be a trail_token. Verify: magenta diamond icon spawns, collecting it adds +200 max trail points.",
+      "wave": 3,
+      "forcePickup": "trail_token"
+    },
+    {
+      "id": "pickup-shield",
+      "name": "Pickup: Shield",
+      "description": "Wave 4, forces the next pickup drop to be a shield_pickup. Verify: green pentagon icon spawns, collecting it grants one-time shield (absorbs next hit).",
+      "wave": 4,
+      "forcePickup": "shield_pickup"
+    },
+    {
+      "id": "shop-flush",
+      "name": "Shop: Flush (300 Scrap, Wave 3)",
+      "description": "Wave 3 with 300 scrap pre-seeded. When the wave ends, all shop items should be purchasable: Field Repair (8), Brief Invincibility (5), Score Surge (12). Verify affordability highlight and purchase deduction.",
+      "wave": 3,
+      "scrap": 300
+    },
+    {
+      "id": "shop-broke",
+      "name": "Shop: Broke (0 Scrap, Wave 3)",
+      "description": "Wave 3 with 0 scrap. All shop buttons should appear disabled (grayed out). Verify no purchase is possible.",
+      "wave": 3,
+      "scrap": 0
+    },
+    {
+      "id": "bias-rupture-loaded",
+      "name": "Upgrade Bias: Rupture (Wave 10)",
+      "description": "Wave 10 in Rupture biome with 300 scrap. At upgrade break, verify: tight_turns and drift_king appear with higher frequency than normal (×2 bias), drift_shield at ×1.5. Use reroll to confirm bias holds across offers.",
+      "wave": 10,
+      "biome": "rupture",
+      "scrap": 300
+    },
+    {
+      "id": "bias-jungle-loaded",
+      "name": "Upgrade Bias: Jungle (Wave 15)",
+      "description": "Wave 15 in Jungle biome with 300 scrap. At upgrade break, verify: max_hp and hp_regen appear more often (×2 bias), damage_resist at ×1.5.",
+      "wave": 15,
+      "biome": "jungle",
+      "scrap": 300
+    },
+    {
+      "id": "boss-reward-test",
+      "name": "Boss Reward: Simulated Kill (Wave 6)",
+      "description": "Wave 6 non-boss wave with bossDefeated flag. When wave ends, the upgrade break should show +1 reroll, gold flash, shake, and BOSS DEFEATED! banner — without needing to fight a boss.",
+      "wave": 6,
+      "bossDefeated": true
+    },
+    {
+      "id": "combo-cyan",
+      "name": "Combo: Cyan Ring (Combo 4)",
+      "description": "Wave 5 with combo pre-set to 4. Verify: encirclement ring is cyan (4–6× range). Also useful as a screenshot preset.",
+      "wave": 5,
+      "combo": 4
+    },
+    {
+      "id": "combo-magenta",
+      "name": "Combo: Magenta Ring (Combo 7)",
+      "description": "Wave 8 with combo pre-set to 7. Verify: encirclement ring is magenta (≥7× range). Encircling 3+ enemies should spawn a scaled shard burst. Also useful for MAX_COMBO=16 verification.",
+      "wave": 8,
+      "combo": 7,
+      "score": 2000
+    }
+  ]
+}
