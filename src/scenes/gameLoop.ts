@@ -280,7 +280,17 @@ export class GameLoop {
     const onEncircleFx = (data: { count: number; x: number; y: number }) => {
       _ctx.audioManager.play('encircle');
       this._screenFx.shake(6, 0.25);
-      this._particles.addRing(data.x, data.y, 0x00ffcc);
+      // Combo-colored ring: white < 4×, cyan 4-6×, magenta 7+
+      const combo = this._scoringState.comboLevel;
+      const ringColor = combo >= 7 ? 0xFF44FF : combo >= 4 ? 0x00ffcc : 0xFFFFFF;
+      this._particles.addRing(data.x, data.y, ringColor);
+      // Large encirclements (3+): extra burst scaled to kill count
+      if (data.count >= 3) {
+        this._particles.spawn(data.x, data.y, ringColor, Math.min(data.count * 6, 30), {
+          type: 'shard', vxMin: -220, vxMax: 220, vyMin: -220, vyMax: 220,
+          lifeMin: 0.2, lifeMax: 0.5,
+        });
+      }
     };
     const onEnemyKilledFx = (data: { x: number; y: number; type: string; isElite?: boolean }) => {
       const requests = getDeathParticles({

@@ -365,7 +365,7 @@ export const CFG: CfgShape = {
   NEAR_MISS_HAZARD_PTS: 15,
   DRIFT_COMBO_INTERVAL: 1.0,
   DRIFT_COMBO_BASE: 5,
-  MAX_COMBO: 8,
+  MAX_COMBO: 16,
   // Waves
   WAVE_COMBAT: 25,
   WAVE_BREAK: 8,

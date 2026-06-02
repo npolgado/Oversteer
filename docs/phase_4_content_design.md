@@ -120,3 +120,7 @@ This doc collects the design items deferred from the 2026-05-24 live-test pass. 
 - Add missing `regenCount ≤ 3` stack cap (parity with canvas reference).
 
 **Recommendation:** Do not tune these in isolation — balance after new content (boss waves, enemy curses, new pickups) is added, since all systems interact.
+
+---
+
+**Phase 4 close-out (2026-06-01)** — Implemented: biome framework (Wasteland/Rupture/Jungle), per-biome music packs + fog overlay + upgrade bias, boss wave patterns (Pursuer/Core/Reflector) + boss reward drop (+1 reroll), Splitter enemy archetype, encirclement particle burst (combo-colored), upgrade card unicode icon symbols, combo cap raised 8→16. Balance pass §7 deferred per recommendation above.

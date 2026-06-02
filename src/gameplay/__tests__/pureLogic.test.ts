@@ -331,10 +331,10 @@ describe('applyNearMiss', () => {
     expect(result.comboLevel).toBe(1);
   });
 
-  it('combo level clamps at max', () => {
-    const player = { scoreMult: 1, comboLevel: 8, consecutiveNearMisses: 0 };
+  it('combo level clamps at MAX_COMBO', () => {
+    const player = { scoreMult: 1, comboLevel: CFG.MAX_COMBO, consecutiveNearMisses: 0 };
     const result = applyNearMiss(0, player, 'enemy');
-    expect(result.comboLevel).toBe(8);
+    expect(result.comboLevel).toBe(CFG.MAX_COMBO);
   });
 });
 
@@ -441,9 +441,14 @@ describe('computeEncircleOutcome', () => {
     expect(result.scoreDelta).toBe(200);
   });
 
-  it('combo clamps at max', () => {
-    const result = computeEncircleOutcome(2, 7, 1, 1);
-    expect(result.comboLevel).toBe(8);
+  it('combo clamps at MAX_COMBO', () => {
+    const result = computeEncircleOutcome(2, CFG.MAX_COMBO - 1, 1, 1);
+    expect(result.comboLevel).toBe(CFG.MAX_COMBO);
+  });
+
+  it('combo does not exceed MAX_COMBO even with many kills', () => {
+    const result = computeEncircleOutcome(20, CFG.MAX_COMBO, 1, 1);
+    expect(result.comboLevel).toBe(CFG.MAX_COMBO);
   });
 });
 
@@ -859,9 +864,8 @@ describe('computeEncircleOutcome — all-max inputs produce finite result', () =
   });
 
   it('combo clamp prevents comboLevel exceeding MAX_COMBO regardless of kill count', () => {
-    // Starting at max combo (8) with a large encircle — must not exceed 8
-    const result = computeEncircleOutcome(100, 8, 1, 1);
-    expect(result.comboLevel).toBeLessThanOrEqual(8);
+    const result = computeEncircleOutcome(100, CFG.MAX_COMBO, 1, 1);
+    expect(result.comboLevel).toBeLessThanOrEqual(CFG.MAX_COMBO);
   });
 });
 
