@@ -20,6 +20,7 @@ export type EnemyType =
   | 'blocker'
   | 'flanker'
   | 'bomber'
+  | 'splitter'
   | 'boss';
 
 export type EnemySprites = Record<EnemyType, string[]>;
@@ -96,7 +97,7 @@ const _JUNGLE: BiomeDescriptor = {
     { image: 'props/bush_1.png',  radius: 25, weight: 6, type: 'decoration' },
     { image: 'props/mud_1.png',   radius: 62, weight: 3, type: 'slow', duration: 2.0, strength: 0.5 },
   ],
-  enemyWeightMult: { bomber: 1.6, blocker: 1.4 },
+  enemyWeightMult: { bomber: 1.6, blocker: 1.4, splitter: 1.5 },
   musicPackId: 'jungle',
   upgradeBias: { max_hp: 2, hp_regen: 2, damage_resist: 1.5 },
 };
@@ -146,6 +147,7 @@ export interface CfgShape {
   BLOCKER_SPEED: number;
   FLANKER_SPEED: number;
   BOMBER_SPEED: number;
+  SPLITTER_SPEED: number;
   ENEMY_RADIUS: number;
   ENEMY_W: number;
   ENEMY_H: number;
@@ -346,6 +348,7 @@ export const CFG: CfgShape = {
   BLOCKER_SPEED: 380,
   FLANKER_SPEED: 470,
   BOMBER_SPEED: 400,
+  SPLITTER_SPEED: 420,
   ENEMY_RADIUS: 9,
   ENEMY_W: 32,
   ENEMY_H: 16,
@@ -523,6 +526,7 @@ export const CFG: CfgShape = {
     blocker:     ['cars/truck.png', 'cars/enemy_red.png'],
     flanker:     ['cars/police.png', 'cars/enemy_orange.png'],
     bomber:      ['cars/mini_truck.png', 'cars/mini_van.png'],
+    splitter:    ['cars/enemy_orange.png', 'cars/enemy_red.png'],
     boss:        ['cars/truck.png', 'cars/mini_truck.png'],
   },
   BACKGROUND_SPRITE: 'backgrounds/background_01.png',

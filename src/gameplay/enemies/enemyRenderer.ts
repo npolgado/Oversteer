@@ -50,12 +50,16 @@ export class EnemyRenderer {
         s.width = spriteSize;
         s.height = spriteSize;
         if (enemy.type === 'interceptor') s.tint = 0xaabbff;
+        if (enemy.type === 'splitter')    s.tint = 0xFF8800;
         if (isBoss) s.tint = 0xFF6600;
         this._layer.addChild(s);
         this._sprites.set(enemy.id, s);
       } else {
         // Fallback: colored circle
-        const color = isBoss ? 0xFF6600 : (enemy.type === 'interceptor' ? 0x4444ff : 0xff4444);
+        const color = isBoss ? 0xFF6600
+          : enemy.type === 'interceptor' ? 0x4444ff
+          : enemy.type === 'splitter'    ? 0xFF8800
+          : 0xff4444;
         const g = new Graphics();
         g.circle(0, 0, enemy.radius).fill({ color });
         this._layer.addChild(g);

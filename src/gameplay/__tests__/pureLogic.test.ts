@@ -242,8 +242,14 @@ describe('getEnemyPool', () => {
     expect(pool.length).toBe(6);
   });
 
-  it('full pool at high score contains all 6 types', () => {
-    expect(getEnemyPool(5000)).toEqual(['chaser', 'interceptor', 'drifter', 'blocker', 'flanker', 'bomber']);
+  it('splitter unlocks at 3500 score', () => {
+    const pool = getEnemyPool(3500);
+    expect(pool).toContain('splitter');
+    expect(pool.length).toBe(7);
+  });
+
+  it('full pool at high score contains all 7 types', () => {
+    expect(getEnemyPool(5000)).toEqual(['chaser', 'interceptor', 'drifter', 'blocker', 'flanker', 'bomber', 'splitter']);
   });
 });
 
