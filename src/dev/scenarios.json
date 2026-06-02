@@ -1,9 +1,176 @@
 {
   "scenarios": [
     {
+      "id": "fresh-start",
+      "name": "Fresh Start (Wave 1)",
+      "description": "Wave 1, no upgrades, score 0. Absolute baseline — test core driving feel, trail formation, and first encirclement before any upgrades alter the game.",
+      "wave": 1
+    },
+    {
+      "id": "trail-loop-practice",
+      "name": "Trail: Loop Practice (Wave 2)",
+      "description": "Wave 2 with wider_trail + trail_echo. closeDist=60 and maxPoints=600 make loops easier to form. Practice encirclement fundamentals at low pressure.",
+      "wave": 2,
+      "upgrades": ["wider_trail", "trail_echo"]
+    },
+    {
+      "id": "combo-master-decay",
+      "name": "Combo: Master Decay Test (Wave 3)",
+      "description": "Combo pre-set to 12, combo_master active. Stop drifting and watch: normal decay is 2.0/sec, combo_master slows it to 1.0/sec — combo should take ~12s to drain instead of ~6s.",
+      "wave": 3,
+      "combo": 12,
+      "upgrades": ["combo_master"]
+    },
+    {
+      "id": "combo-heal-milestones",
+      "name": "Combo: Heal at Milestones (Wave 3)",
+      "description": "combo_heal upgrade active, hp=60 (below full). Drift to combo 3 → watch HP tick. Continue to 5, then 8. Each milestone triggers a heal event. combo_master slows decay so milestones are easier to hold.",
+      "wave": 3,
+      "hp": 60,
+      "upgrades": ["combo_heal", "combo_master"]
+    },
+    {
+      "id": "scoring-multiplier-stack",
+      "name": "Scoring: Full Multiplier Stack (Wave 5)",
+      "description": "score_freak (×1.5) + encircle_bonus (+50% encirclement score) + combo_master + combo=6. Encircle enemies and watch the score pop. Verify all three multipliers stack correctly.",
+      "wave": 5,
+      "combo": 6,
+      "upgrades": ["score_freak", "encircle_bonus", "combo_master"]
+    },
+    {
+      "id": "wallride-drift",
+      "name": "Wallride: Boundary Speed Boost (Wave 3)",
+      "description": "drift_king + nitro_drift + turbo. Drive near the arena boundary while drifting to trigger wallride: sparks appear along the nearest wall and player gets +10% speed. Test all 4 edges.",
+      "wave": 3,
+      "upgrades": ["drift_king", "nitro_drift", "turbo"]
+    },
+    {
+      "id": "interceptor-predict",
+      "name": "Enemy: Interceptor Lead-Targeting (Wave 3)",
+      "description": "Pure interceptor wave. Interceptors use 0.5s lookahead — they aim where you're going, not where you are. Change direction suddenly; they should miss slightly then correct.",
+      "wave": 3,
+      "score": 1000,
+      "enemySpawnBias": { "interceptor": 10 }
+    },
+    {
+      "id": "drifter-feel",
+      "name": "Enemy: Drifter Toggle Cycle (Wave 4)",
+      "description": "Pure drifter wave. Drifters toggle drift every 2–3.5s — their hitbox shifts and they briefly arc. Encircling during a drift window is harder; wait for the straight phase.",
+      "wave": 4,
+      "score": 1500,
+      "enemySpawnBias": { "drifter": 10 }
+    },
+    {
+      "id": "blocker-trail-contest",
+      "name": "Enemy: Blocker Trail Parking (Wave 5)",
+      "description": "Pure blocker wave with wider_trail. Blockers target the centroid of your trail and park there to obstruct loops. They actively reposition as the trail moves — displace them by building a new trail section.",
+      "wave": 5,
+      "score": 2000,
+      "enemySpawnBias": { "blocker": 10 },
+      "upgrades": ["wider_trail", "trail_echo"]
+    },
+    {
+      "id": "flanker-fight",
+      "name": "Enemy: Flanker Perpendicular Strike (Wave 6)",
+      "description": "Pure flanker wave. Flankers approach perpendicular to your velocity then charge when <120px. The strike direction changes as you change direction — vary speed to bait early charges.",
+      "wave": 6,
+      "score": 2500,
+      "enemySpawnBias": { "flanker": 10 }
+    },
+    {
+      "id": "bomber-hazard-test",
+      "name": "Enemy: Bomber Hazard Zone Drop (Wave 6)",
+      "description": "Pure bomber wave. Bombers orbit ~300px ahead and drop hazard zones every 4s. Verify: red hazard circles spawn and linger (CFG.BOMB_ZONE_DURATION). Near-missing a zone scores 15pts.",
+      "wave": 6,
+      "score": 3000,
+      "enemySpawnBias": { "bomber": 10 }
+    },
+    {
+      "id": "elite-stress",
+      "name": "Enemy: Elite 2-Hit Armor (Wave 5)",
+      "description": "Wave 5, score=2500. Elites cannot be biased — they appear as a 12% post-pick override from wave 4+. Play normally; ~1 in 8 enemies will be an elite (larger radius, takes 2 encirclement hits to kill). Verify the HP=2 visual distinction.",
+      "wave": 5,
+      "score": 2500
+    },
+    {
+      "id": "near-miss-streak",
+      "name": "Defense: Near-Miss Streak ×3 (Wave 3)",
+      "description": "ghost_frame upgrade, interceptor pressure. Graze 3 enemies consecutively within the 2s streak window to trigger invulnerability. 3rd near-miss grants 0.3s ghost frame — you can pass through enemies briefly.",
+      "wave": 3,
+      "score": 1000,
+      "upgrades": ["ghost_frame"],
+      "enemySpawnBias": { "interceptor": 8 }
+    },
+    {
+      "id": "defense-full-stack",
+      "name": "Defense: Full Tank Build (Wave 8)",
+      "description": "Shield + ghost_frame + thick_plating + drift_shield + damage_resist stacked, hp=30. Take deliberate hits: shield absorbs first collision, damage_resist reduces all subsequent, drift_shield cuts damage further while drifting.",
+      "wave": 8,
+      "hp": 30,
+      "upgrades": ["shield", "ghost_frame", "thick_plating", "drift_shield", "damage_resist"]
+    },
+    {
+      "id": "dash-burst-test",
+      "name": "Defense: Dash Burst Invuln (Wave 5)",
+      "description": "dash_burst + turbo, interceptor pressure. Tap brake at high speed to trigger the invuln dash. Verify: brief invuln window activates (can tank a hit), 3s cooldown before next use.",
+      "wave": 5,
+      "score": 1000,
+      "upgrades": ["dash_burst", "turbo"],
+      "enemySpawnBias": { "interceptor": 6 }
+    },
+    {
+      "id": "trail-burn-test",
+      "name": "Trail Burn: Damage on Contact (Wave 4)",
+      "description": "trail_burn + wider_trail + trail_echo, chaser bias. Enemies touching the trail take 1 damage/sec. Verify: chasers parked on the trail slowly die without encirclement. Chain kills count toward combo.",
+      "wave": 4,
+      "upgrades": ["trail_burn", "wider_trail", "trail_echo"],
+      "enemySpawnBias": { "chaser": 6 }
+    },
+    {
+      "id": "chain-lightning-test",
+      "name": "Chain Lightning: Kill Chain (Wave 4)",
+      "description": "chain_lightning + wider_trail, chaser/interceptor mix. Encircle a packed group — kill chains 1 damage to the nearest enemy within 200px. Pack enemies tight to see multi-kill chains. Verify chain FX and combo.",
+      "wave": 4,
+      "upgrades": ["chain_lightning", "wider_trail", "trail_echo"],
+      "enemySpawnBias": { "chaser": 4, "interceptor": 3 }
+    },
+    {
+      "id": "horde-incoming",
+      "name": "Horde: Incoming Event (Wave 4)",
+      "description": "Wave 4, score=600 (cadence mult 0.9× active). Horde fires at 60–85% through combat: survive the first ~60% of the wave then watch for HORDE INCOMING! banner + screen shake + mass-spawn. Camera should shift toward the horde center.",
+      "wave": 4,
+      "score": 600
+    },
+    {
+      "id": "speed-demon-tradeoff",
+      "name": "Speed Demon: Player vs Enemy Speed (Wave 6)",
+      "description": "speed_demon + drift_king. Player gets +20% max speed but enemies get +10% speed (speedBonus +40). The game feels faster overall — verify enemies are noticeably harder to outrun than at wave 6 without this upgrade.",
+      "wave": 6,
+      "score": 1500,
+      "upgrades": ["speed_demon", "drift_king"]
+    },
+    {
+      "id": "scrap-magnet-test",
+      "name": "Scrap: Magnet + Trail Magnet (Wave 4)",
+      "description": "magnet (150px auto-collect) + trail_magnet (trail pulls scraps at 80px), 100 scrap pre-seeded to confirm counter increments. Drive near pickup drops without touching them — verify auto-collection at range.",
+      "wave": 4,
+      "score": 500,
+      "scrap": 100,
+      "upgrades": ["magnet", "trail_magnet"]
+    },
+    {
+      "id": "endgame-chaos",
+      "name": "Endgame: Max Speed Bonus (Wave 15)",
+      "description": "Wave 15, score=7000 (max speed bonus 120 active), combo=8, jungle biome. Full enemy variety, heavy fog, peak spawn cadence. Tests all systems firing simultaneously at maximum difficulty.",
+      "wave": 15,
+      "biome": "jungle",
+      "score": 7000,
+      "combo": 8
+    },
+    {
       "id": "boss-pursuer-w5",
       "name": "Boss: Pursuer (Wave 5)",
-      "description": "Wave 5 boss fight, no upgrades, wasteland biome.",
+      "description": "Wave 5 boss fight, no upgrades, wasteland biome. Telegraph → orbit at r≈200 → charge at 700 speed. Takes 8 encirclement chip hits to kill.",
       "wave": 5,
       "biome": "wasteland",
       "boss": "pursuer"
@@ -11,7 +178,7 @@
     {
       "id": "boss-core-w10",
       "name": "Boss: Core (Wave 10)",
-      "description": "Wave 10 boss fight, no upgrades, rupture biome.",
+      "description": "Wave 10 boss fight, no upgrades, rupture biome. Cycles: armored 5s (trail damage blocked) → vulnerable 3s (trail chips HP). Minion ring spawns during armored phase (cap 12).",
       "wave": 10,
       "biome": "rupture",
       "boss": "core"
@@ -19,7 +186,7 @@
     {
       "id": "boss-reflector-w15",
       "name": "Boss: Reflector (Wave 15)",
-      "description": "Wave 15 boss fight, no upgrades, jungle biome. Reflector is permanently armored — trail encirclement never kills it. Survive and dodge.",
+      "description": "Wave 15 boss fight, no upgrades, jungle biome. Permanently armored — trail encirclement NEVER damages it. Figure-eight movement. Wave ends via timer, not kill.",
       "wave": 15,
       "biome": "jungle",
       "boss": "reflector"
@@ -36,7 +203,7 @@
     {
       "id": "boss-pursuer-w5-fragile",
       "name": "Boss: Pursuer (Wave 5) — Fragile",
-      "description": "Wave 5 boss, 1 HP. For learning the boss pattern under pressure.",
+      "description": "Wave 5 boss, 1 HP. For learning the pursuer charge pattern under pressure.",
       "wave": 5,
       "biome": "wasteland",
       "boss": "pursuer",
@@ -59,25 +226,9 @@
     {
       "id": "biome-jungle-fresh",
       "name": "Biome: Corruption Jungle (Wave 15)",
-      "description": "Wave 15 jungle biome. Verify: green tint 0x88FF88, heavy green fog (density 0.12 — noticeably darker), jungle music pack.",
+      "description": "Wave 15 jungle biome. Verify: green tint 0x88FF88, heavy green fog (density 0.12), jungle music pack.",
       "wave": 15,
       "biome": "jungle"
-    },
-    {
-      "id": "splitter-stress-w8",
-      "name": "Splitter Stress (Wave 8)",
-      "description": "Wave 8 rupture biome with offensive upgrades. Tests splitter + chaser spawns.",
-      "wave": 8,
-      "biome": "rupture",
-      "upgrades": ["turbo", "trail_burn", "chain_lightning", "wider_trail"]
-    },
-    {
-      "id": "splitter-unlock",
-      "name": "Splitter Unlock (Score 3500, Wave 6)",
-      "description": "Wave 6 with score pre-set to 3500 — the threshold where splitters enter the enemy pool. Verify: splitters appear in waves, split into 2 chasers on trail-encirclement kill. NOTE: bomb kill does NOT trigger split.",
-      "wave": 6,
-      "score": 3500,
-      "enemySpawnBias": { "splitter": 6 }
     },
     {
       "id": "pickup-time-slow",
@@ -95,29 +246,45 @@
     },
     {
       "id": "pickup-shield",
-      "name": "Pickup: Shield",
-      "description": "Wave 4, forces the next pickup drop to be a shield_pickup. Verify: green pentagon icon spawns, collecting it grants one-time shield (absorbs next hit).",
+      "name": "Pickup: Shield Pickup",
+      "description": "Wave 4, forces the next pickup drop to be a shield_pickup. Verify: green pentagon icon spawns, collecting it grants one-time shield.",
       "wave": 4,
       "forcePickup": "shield_pickup"
     },
     {
       "id": "shop-flush",
       "name": "Shop: Flush (300 Scrap, Wave 3)",
-      "description": "Wave 3 with 300 scrap pre-seeded. When the wave ends, all shop items should be purchasable: Field Repair (8), Brief Invincibility (5), Score Surge (12). Verify affordability highlight and purchase deduction.",
+      "description": "Wave 3 with 300 scrap pre-seeded. All shop items purchasable: Field Repair (8), Brief Invincibility (5), Score Surge (12). Verify affordability highlight and scrap deduction.",
       "wave": 3,
       "scrap": 300
     },
     {
       "id": "shop-broke",
       "name": "Shop: Broke (0 Scrap, Wave 3)",
-      "description": "Wave 3 with 0 scrap. All shop buttons should appear disabled (grayed out). Verify no purchase is possible.",
+      "description": "Wave 3 with 0 scrap. All shop buttons should appear disabled. Verify no purchase is possible.",
       "wave": 3,
       "scrap": 0
     },
     {
+      "id": "splitter-unlock",
+      "name": "Splitter Unlock (Score 3500, Wave 6)",
+      "description": "Wave 6 with score pre-set to 3500 — the threshold where splitters enter the enemy pool. Verify: splitters appear, split into 2 chasers on trail-encirclement kill. NOTE: bomb kill does NOT trigger split.",
+      "wave": 6,
+      "score": 3500,
+      "enemySpawnBias": { "splitter": 6 }
+    },
+    {
+      "id": "splitter-stress-w8",
+      "name": "Splitter Stress (Wave 8)",
+      "description": "Wave 8 rupture biome with offensive upgrades. Tests splitter + chaser spawns under combat load.",
+      "wave": 8,
+      "biome": "rupture",
+      "upgrades": ["turbo", "trail_burn", "chain_lightning", "wider_trail"]
+    },
+    {
       "id": "bias-rupture-loaded",
       "name": "Upgrade Bias: Rupture (Wave 10)",
-      "description": "Wave 10 in Rupture biome with 300 scrap. At upgrade break, verify: tight_turns and drift_king appear with higher frequency than normal (×2 bias), drift_shield at ×1.5. Use reroll to confirm bias holds across offers.",
+      "description": "Wave 10, rupture biome, 300 scrap. At upgrade break verify: tight_turns and drift_king appear more often (×2 bias), drift_shield at ×1.5. Reroll to confirm bias holds.",
       "wave": 10,
       "biome": "rupture",
       "scrap": 300
@@ -125,7 +292,7 @@
     {
       "id": "bias-jungle-loaded",
       "name": "Upgrade Bias: Jungle (Wave 15)",
-      "description": "Wave 15 in Jungle biome with 300 scrap. At upgrade break, verify: max_hp and hp_regen appear more often (×2 bias), damage_resist at ×1.5.",
+      "description": "Wave 15, jungle biome, 300 scrap. At upgrade break verify: max_hp and hp_regen appear more often (×2 bias), damage_resist at ×1.5.",
       "wave": 15,
       "biome": "jungle",
       "scrap": 300
@@ -133,21 +300,21 @@
     {
       "id": "boss-reward-test",
       "name": "Boss Reward: Simulated Kill (Wave 6)",
-      "description": "Wave 6 non-boss wave with bossDefeated flag. When wave ends, the upgrade break should show +1 reroll, gold flash, shake, and BOSS DEFEATED! banner — without needing to fight a boss.",
+      "description": "Wave 6 non-boss wave with bossDefeated flag. When wave ends: gold flash + shake + BOSS DEFEATED! banner. Upgrade break should show +1 reroll.",
       "wave": 6,
       "bossDefeated": true
     },
     {
       "id": "combo-cyan",
       "name": "Combo: Cyan Ring (Combo 4)",
-      "description": "Wave 5 with combo pre-set to 4. Verify: encirclement ring is cyan (4–6× range). Also useful as a screenshot preset.",
+      "description": "Wave 5, combo=4. Verify: encirclement ring is cyan (4–6× range).",
       "wave": 5,
       "combo": 4
     },
     {
       "id": "combo-magenta",
-      "name": "Combo: Magenta Ring (Combo 7)",
-      "description": "Wave 8 with combo pre-set to 7. Verify: encirclement ring is magenta (≥7× range). Encircling 3+ enemies should spawn a scaled shard burst. Also useful for MAX_COMBO=16 verification.",
+      "name": "Combo: Magenta Ring + Shard Burst (Combo 7)",
+      "description": "Wave 8, combo=7, score=2000. Verify: magenta ring, shard burst on 3+ enemy encirclement (cap 30 particles). Also tests MAX_COMBO=16 range.",
       "wave": 8,
       "combo": 7,
       "score": 2000

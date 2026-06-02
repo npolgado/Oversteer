@@ -196,7 +196,36 @@ describe('SITUATIONS_BY_ID preset catalog', () => {
     }
   });
 
-  it('contains all new Phase 4 extended presets', () => {
+  it('contains all Phase 1–3 presets', () => {
+    const expected = [
+      'fresh-start',
+      'trail-loop-practice',
+      'combo-master-decay',
+      'combo-heal-milestones',
+      'scoring-multiplier-stack',
+      'wallride-drift',
+      'interceptor-predict',
+      'drifter-feel',
+      'blocker-trail-contest',
+      'flanker-fight',
+      'bomber-hazard-test',
+      'elite-stress',
+      'near-miss-streak',
+      'defense-full-stack',
+      'dash-burst-test',
+      'trail-burn-test',
+      'chain-lightning-test',
+      'horde-incoming',
+      'speed-demon-tradeoff',
+      'scrap-magnet-test',
+      'endgame-chaos',
+    ];
+    for (const id of expected) {
+      expect(SITUATIONS_BY_ID.has(id), `missing preset: ${id}`).toBe(true);
+    }
+  });
+
+  it('contains all Phase 4 presets', () => {
     const expected = [
       'pickup-time-slow',
       'pickup-trail-token',
