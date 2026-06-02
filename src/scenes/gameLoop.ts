@@ -369,16 +369,73 @@ export class GameLoop {
     }
     if (!_opts.sandbox && !_opts.benchmark) {
       startWave(this._waveState);
-      // DEV-only: override boss pattern after startWave() (which sets its own round-robin default)
-      if (import.meta.env.DEV && _resolvedSituation?.boss != null) {
-        this._waveState.bossActive = true;
-        this._waveState.bossPattern = _resolvedSituation.boss;
-        this._waveState.bossSpawned = false;
-        this._waveState.bossTelegraphTimer = 1.5;
+      // DEV-only post-startWave situation overrides
+      if (import.meta.env.DEV && _resolvedSituation) {
+        const spec = _resolvedSituation;
+        // Boss pattern override (must run after startWave which sets round-robin default)
+        if (spec.boss != null) {
+          this._waveState.bossActive = true;
+          this._waveState.bossPattern = spec.boss;
+          this._waveState.bossSpawned = false;
+          this._waveState.bossTelegraphTimer = 1.5;
+        }
+        // Advance wave timer to simulate partial-wave completion
+        if (spec.waveProgress != null) {
+          this._waveState.waveTimer = this._waveState.currentCombatDuration * clamp(spec.waveProgress, 0, 1);
+        }
+        // Prevent enemy spawns for isolated tests
+        if (spec.disableSpawns) {
+          this._waveState.spawnTimer = Number.POSITIVE_INFINITY;
+        }
+        // Scatter physical scrap tokens around player (distinct from scrap currency set in applySituation)
+        if (spec.scrapTokens != null) {
+          const count = typeof spec.scrapTokens === 'number' ? spec.scrapTokens : spec.scrapTokens.count;
+          const radius = typeof spec.scrapTokens === 'number' ? 250 : (spec.scrapTokens.radius ?? 250);
+          for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const r = 50 + Math.random() * Math.max(0, radius - 50);
+            this._waveState.scraps.push({
+              x: clamp(this._playerState.x + Math.cos(angle) * r, 50, CFG.WORLD_W - 50),
+              y: clamp(this._playerState.y + Math.sin(angle) * r, 50, CFG.WORLD_H - 50),
+              life: 30,
+              type: 'scrap',
+            });
+          }
+        }
+        // Place a forced pickup directly next to player (instant, not gated by scrap spawn timer)
+        if (spec.pickupAtPlayer != null) {
+          const type = typeof spec.pickupAtPlayer === 'string' ? spec.pickupAtPlayer : spec.pickupAtPlayer.type;
+          const offset = typeof spec.pickupAtPlayer === 'string' ? { x: 60, y: 0 } : (spec.pickupAtPlayer.offset ?? { x: 60, y: 0 });
+          this._waveState.scraps.push({
+            x: clamp(this._playerState.x + offset.x, 50, CFG.WORLD_W - 50),
+            y: clamp(this._playerState.y + offset.y, 50, CFG.WORLD_H - 50),
+            life: 30,
+            type,
+          });
+        }
+        // Scenario banner: boss-defeated uses gold; all others use teal with name
+        if (spec.openUpgradeBreak && spec.bossDefeated) {
+          this._screenFx.flash(0xFFCC00, 0.6, 0.9);
+          this._screenFx.shake(6, 0.4);
+          this._hudManager.showMilestoneBanner('BOSS DEFEATED!', '#FFCC00');
+          eventBus.emit('eventLog', { text: 'BOSS DEFEATED! +REROLL', color: '#ffcc00' });
+        } else {
+          this._hudManager.showMilestoneBanner(spec.hint ?? spec.name ?? spec.id ?? 'SCENARIO', '#35F2D0');
+        }
+        this._hudManager.setScenarioGoal(spec.goal ?? null);
       }
-      eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
-      this._hudManager.showWaveBanner(this._waveState.waveIndex);
-      _ctx.audioManager.startEngine();
+      // Open upgrade break directly (skips combat — for shop / upgrade-bias scenarios)
+      if (import.meta.env.DEV && _resolvedSituation?.openUpgradeBreak) {
+        this._upgradeBreak.enter(
+          this._playerState, this._waveState,
+          !!_resolvedSituation.bossDefeated,
+          _resolvedSituation.rerollBonus ?? 0,
+        );
+      } else {
+        eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
+        this._hudManager.showWaveBanner(this._waveState.waveIndex);
+        _ctx.audioManager.startEngine();
+      }
     }
 
     _ctx.camera.reset(this._playerState.x, this._playerState.y);

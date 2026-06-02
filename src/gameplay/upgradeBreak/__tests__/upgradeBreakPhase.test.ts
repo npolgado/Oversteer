@@ -241,6 +241,65 @@ describe('UpgradeBreakPhase empty offer auto-countdown', () => {
   });
 });
 
+// ── extraRerolls ──────────────────────────────────────────────────────────────
+
+describe('UpgradeBreakPhase.enter() extraRerolls', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('extraRerolls=5 adds 5 on top of base reroll count', () => {
+    const cards = makeCards();
+    const { phase } = makePhase(cards);
+    const player = makePlayerState();
+
+    phase.enter(player, makeWaveState(), false, 5);
+
+    // Verify we can reroll 5 extra times (base + 5); exhaust base + 5
+    const baseCount = CFG.REROLL_MAX; // default player has CFG.REROLL_MAX rerolls
+    const totalExpected = baseCount + 5;
+    const wave = makeWaveState();
+    const trail = makeTrailState();
+
+    let rerollsUsed = 0;
+    const showCountAtStart = cards.show.mock.calls.length;
+    for (let i = 0; i < totalExpected; i++) {
+      cards.checkInput.mockReturnValueOnce('reroll');
+      phase.update(0.016, noInput, player, trail, wave);
+      rerollsUsed++;
+    }
+    // All totalExpected rerolls should have fired new show() calls
+    expect(cards.show.mock.calls.length).toBe(showCountAtStart + totalExpected);
+
+    // One more should not fire (exhausted)
+    cards.checkInput.mockReturnValueOnce('reroll');
+    phase.update(0.016, noInput, player, trail, wave);
+    expect(cards.show.mock.calls.length).toBe(showCountAtStart + totalExpected);
+  });
+
+  it('bossReward=true and extraRerolls=5 grants base+1+5 total rerolls', () => {
+    const cards = makeCards();
+    const { phase } = makePhase(cards);
+    const player = makePlayerState();
+
+    phase.enter(player, makeWaveState(), true, 5);
+
+    const baseCount = CFG.REROLL_MAX;
+    const totalExpected = baseCount + 1 + 5;
+    const wave = makeWaveState();
+    const trail = makeTrailState();
+
+    for (let i = 0; i < totalExpected; i++) {
+      cards.checkInput.mockReturnValueOnce('reroll');
+      phase.update(0.016, noInput, player, trail, wave);
+    }
+    const showCountAfterAll = cards.show.mock.calls.length;
+
+    // One more — should not call show() again
+    cards.checkInput.mockReturnValueOnce('reroll');
+    phase.update(0.016, noInput, player, trail, wave);
+    expect(cards.show.mock.calls.length).toBe(showCountAfterAll);
+  });
+});
+
 // ── special upgrade side effects ──────────────────────────────────────────────
 
 describe('UpgradeBreakPhase special upgrade side effects', () => {

@@ -40,16 +40,17 @@ export class UpgradeBreakPhase {
 
   /**
    * Enter the break phase: freeze the player, build the upgrade offer, show cards.
-   * Called from GameLoop when a wave_end event fires.
-   * bossReward=true: grants an extra reroll as a boss kill bonus.
+   * Called from GameLoop when a wave_end event fires, or directly for situation presets.
+   * bossReward=true: grants +1 reroll as a boss kill bonus.
+   * extraRerolls: additional rerolls on top of base + bossReward (used by dev situations).
    */
-  enter(playerState: PlayerState, waveState: WaveState, bossReward = false): void {
+  enter(playerState: PlayerState, waveState: WaveState, bossReward = false, extraRerolls = 0): void {
     this.active = true;
     this._upgradeChosen = false;
     this._upgradeConfirmTimer = CFG.UPGRADE_CONFIRM_TIME;
     this._chosenUpgrade = null;
     this._cardAnimTimer = 0;
-    this._rerollsLeft = getRerollCount(playerState) + (bossReward ? 1 : 0);
+    this._rerollsLeft = getRerollCount(playerState) + (bossReward ? 1 : 0) + extraRerolls;
     this._currentOffer = buildUpgradeOffer(playerState, this._getUpgradeBias());
     // Freeze player (from game.js:911-928)
     playerState.vx = 0;

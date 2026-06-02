@@ -2,6 +2,10 @@
 // Provides applySituation() to mutate freshly-built game state for quick test entry.
 // This module is statically imported in gameLoop.ts but all call sites are guarded by
 // import.meta.env.DEV, so the situation tester cannot execute in production builds.
+//
+// Post-startWave fields (openUpgradeBreak, rerollBonus, waveProgress, scrapTokens,
+// pickupAtPlayer, disableSpawns, goal, hint) are read directly from _resolvedSituation
+// by the GameLoop after startWave() runs — not applied inside applySituation().
 
 import type { BiomeId, EnemyType } from '@core/config';
 import type { WaveState, BossPattern } from '@gameplay/spawning/waveManager';
@@ -16,6 +20,8 @@ import scenarioCatalog from './scenarios.json';
 
 export interface SituationSpec {
   id?: string;
+  /** Human-readable name, populated from catalog entries. Used as fallback banner text. */
+  name?: string;
   wave: number;
   biome?: BiomeId;
   /** Force a specific boss pattern regardless of wave index. Applied by GameLoop after startWave(). */
@@ -35,6 +41,25 @@ export interface SituationSpec {
   forcePickup?: PickupType;
   /** If true, the first wave_end event will carry bossKilled=true, granting the upgrade-break reroll. */
   bossDefeated?: boolean;
+
+  // ── Post-startWave overrides (applied by GameLoop after startWave()) ────────
+
+  /** Skip combat — enter the upgrade break / shop UI immediately on load. */
+  openUpgradeBreak?: boolean;
+  /** Extra rerolls on top of the base count (and any boss-kill bonus). Use 99 for unlimited. */
+  rerollBonus?: number;
+  /** Advance waveTimer to this fraction of combatDuration (0–1) right after startWave(). */
+  waveProgress?: number;
+  /** Scatter N physical scrap pickup tokens around the player at load (distinct from scrap currency). */
+  scrapTokens?: number | { count: number; radius?: number };
+  /** Place a forced pickup directly next to the player at load (instant, not gated by spawn timer). */
+  pickupAtPlayer?: PickupType | { type: PickupType; offset?: { x: number; y: number } };
+  /** Prevent enemy spawns for this scenario (sets spawnTimer = Infinity). */
+  disableSpawns?: boolean;
+  /** Short imperative (≤ 60 chars) shown in the persistent scenario-goal HUD. */
+  goal?: string;
+  /** Override text for the 1.5 s milestone banner at load. Defaults to name ?? id. */
+  hint?: string;
 }
 
 interface ScenarioEntry extends SituationSpec {

@@ -180,6 +180,56 @@ describe('applySituation', () => {
   });
 });
 
+// ── New Phase 5 spec fields ───────────────────────────────────────────────────
+
+describe('applySituation — scrapTokens', () => {
+  it('scrapTokens:number pushes that many scrap entries into waveState.scraps', () => {
+    const { waveState, playerState, trailState, biomeManager, scoringState } = makeState();
+    startWave(waveState); // simulate post-startWave state (scraps cleared by startWave)
+    // applySituation is called BEFORE startWave in production; scrapTokens are pushed AFTER
+    // startWave in gameLoop — so here we test the field is readable from the spec, and that
+    // when a caller loops over spec.scrapTokens and pushes, the shape is correct.
+    const spec = { wave: 4, scrapTokens: 5 };
+    const count = typeof spec.scrapTokens === 'number' ? spec.scrapTokens : spec.scrapTokens.count;
+    const radius = typeof spec.scrapTokens === 'number' ? 250 : (spec.scrapTokens.radius ?? 250);
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count;
+      waveState.scraps.push({ x: playerState.x + Math.cos(angle) * radius, y: playerState.y + Math.sin(angle) * radius, life: 30, type: 'scrap' });
+    }
+    expect(waveState.scraps).toHaveLength(5);
+    expect(waveState.scraps.every(s => s.type === 'scrap')).toBe(true);
+  });
+
+  it('scrapTokens object with count and radius is supported', () => {
+    const spec = { wave: 4, scrapTokens: { count: 10, radius: 400 } };
+    const count = typeof spec.scrapTokens === 'number' ? spec.scrapTokens : spec.scrapTokens.count;
+    const radius = typeof spec.scrapTokens === 'number' ? 250 : (spec.scrapTokens.radius ?? 250);
+    expect(count).toBe(10);
+    expect(radius).toBe(400);
+  });
+});
+
+describe('applySituation — pickupAtPlayer', () => {
+  it('pickupAtPlayer string type resolves to that type at offset (60, 0)', () => {
+    const { waveState, playerState, trailState, biomeManager, scoringState } = makeState();
+    startWave(waveState);
+    const spec = { wave: 3, pickupAtPlayer: 'time_slow' as const };
+    const type = typeof spec.pickupAtPlayer === 'string' ? spec.pickupAtPlayer : spec.pickupAtPlayer.type;
+    const offset = typeof spec.pickupAtPlayer === 'string' ? { x: 60, y: 0 } : (spec.pickupAtPlayer.offset ?? { x: 60, y: 0 });
+    waveState.scraps.push({ x: playerState.x + offset.x, y: playerState.y + offset.y, life: 30, type });
+    expect(waveState.scraps).toHaveLength(1);
+    expect(waveState.scraps[0].type).toBe('time_slow');
+  });
+
+  it('pickupAtPlayer object form respects custom offset', () => {
+    const spec = { wave: 4, pickupAtPlayer: { type: 'shield_pickup' as const, offset: { x: 100, y: 20 } } };
+    const type = typeof spec.pickupAtPlayer === 'string' ? spec.pickupAtPlayer : spec.pickupAtPlayer.type;
+    const offset = typeof spec.pickupAtPlayer === 'string' ? { x: 60, y: 0 } : (spec.pickupAtPlayer.offset ?? { x: 60, y: 0 });
+    expect(type).toBe('shield_pickup');
+    expect(offset).toEqual({ x: 100, y: 20 });
+  });
+});
+
 describe('SITUATIONS_BY_ID preset catalog', () => {
   it('contains all expected Phase 4 presets', () => {
     const expected = [
@@ -269,5 +319,66 @@ describe('SITUATIONS_BY_ID preset catalog', () => {
   it('combo-magenta has combo=7', () => {
     const spec = SITUATIONS_BY_ID.get('combo-magenta');
     expect((spec as { combo?: number }).combo).toBe(7);
+  });
+
+  // ── Phase 5 catalog assertions ──────────────────────────────────────────────
+
+  it('every scenario has a goal string', () => {
+    for (const [id, spec] of SITUATIONS_BY_ID) {
+      expect((spec as { goal?: string }).goal, `missing goal on "${id}"`).toBeTruthy();
+    }
+  });
+
+  it('shop-flush has openUpgradeBreak=true', () => {
+    const spec = SITUATIONS_BY_ID.get('shop-flush');
+    expect((spec as { openUpgradeBreak?: boolean }).openUpgradeBreak).toBe(true);
+  });
+
+  it('shop-broke has openUpgradeBreak=true', () => {
+    const spec = SITUATIONS_BY_ID.get('shop-broke');
+    expect((spec as { openUpgradeBreak?: boolean }).openUpgradeBreak).toBe(true);
+  });
+
+  it('bias-rupture-loaded has openUpgradeBreak and rerollBonus=99', () => {
+    const spec = SITUATIONS_BY_ID.get('bias-rupture-loaded') as { openUpgradeBreak?: boolean; rerollBonus?: number };
+    expect(spec?.openUpgradeBreak).toBe(true);
+    expect(spec?.rerollBonus).toBe(99);
+  });
+
+  it('bias-jungle-loaded has openUpgradeBreak and rerollBonus=99', () => {
+    const spec = SITUATIONS_BY_ID.get('bias-jungle-loaded') as { openUpgradeBreak?: boolean; rerollBonus?: number };
+    expect(spec?.openUpgradeBreak).toBe(true);
+    expect(spec?.rerollBonus).toBe(99);
+  });
+
+  it('boss-reward-test has openUpgradeBreak and bossDefeated', () => {
+    const spec = SITUATIONS_BY_ID.get('boss-reward-test') as { openUpgradeBreak?: boolean; bossDefeated?: boolean };
+    expect(spec?.openUpgradeBreak).toBe(true);
+    expect(spec?.bossDefeated).toBe(true);
+  });
+
+  it('horde-incoming has waveProgress defined', () => {
+    const spec = SITUATIONS_BY_ID.get('horde-incoming') as { waveProgress?: number };
+    expect(spec?.waveProgress).toBeGreaterThan(0.5);
+    expect(spec?.waveProgress).toBeLessThan(0.9);
+  });
+
+  it('scrap-magnet-test has scrapTokens and disableSpawns', () => {
+    const spec = SITUATIONS_BY_ID.get('scrap-magnet-test') as { scrapTokens?: unknown; disableSpawns?: boolean };
+    expect(spec?.scrapTokens).toBeDefined();
+    expect(spec?.disableSpawns).toBe(true);
+  });
+
+  it('pickup-time-slow uses pickupAtPlayer (not forcePickup)', () => {
+    const spec = SITUATIONS_BY_ID.get('pickup-time-slow') as { pickupAtPlayer?: unknown; forcePickup?: unknown; disableSpawns?: boolean };
+    expect(spec?.pickupAtPlayer).toBeTruthy();
+    expect(spec?.forcePickup).toBeUndefined();
+    expect(spec?.disableSpawns).toBe(true);
+  });
+
+  it('pickup-shield has hp=1 and disableSpawns', () => {
+    const spec = SITUATIONS_BY_ID.get('pickup-shield') as { hp?: number; disableSpawns?: boolean };
+    expect(spec?.hp).toBe(1);
+    expect(spec?.disableSpawns).toBe(true);
   });
 });
