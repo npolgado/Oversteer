@@ -12,9 +12,11 @@ import {
 /**
  * Build a random offer of up to CFG.UPGRADES_TO_OFFER upgrades.
  * Filters out non-stackable upgrades already owned, and caps extra_rerolls at 2.
+ * Optional bias map multiplies selection weight per upgrade id (>1 = more likely).
  */
 export function buildUpgradeOffer(
   player: PlayerState,
+  bias: Record<string, number> = {},
   rng: () => number = Math.random,
 ): UpgradeDef[] {
   const extraRerollCount = player.upgrades.filter(u => u === 'extra_rerolls').length;
@@ -25,7 +27,7 @@ export function buildUpgradeOffer(
     return true;
   });
 
-  return randSample(pool, CFG.UPGRADES_TO_OFFER, rng);
+  return weightedSample(pool, CFG.UPGRADES_TO_OFFER, bias, rng);
 }
 
 /**
@@ -51,14 +53,26 @@ export function getUpgradeById(id: string): UpgradeDef | undefined {
   return UPGRADE_BY_ID.get(id);
 }
 
-function randSample<T>(arr: T[], n: number, rng: () => number): T[] {
-  const copy = arr.slice();
-  const result: T[] = [];
-  const count = Math.min(n, copy.length);
+function weightedSample(
+  arr: UpgradeDef[],
+  n: number,
+  bias: Record<string, number>,
+  rng: () => number,
+): UpgradeDef[] {
+  const entries = arr.map(item => ({ item, w: Math.max(0, bias[item.id] ?? 1) }));
+  const result: UpgradeDef[] = [];
+  const count = Math.min(n, entries.length);
   for (let i = 0; i < count; i++) {
-    const idx = Math.floor(rng() * (copy.length - i));
-    result.push(copy[idx]);
-    copy[idx] = copy[copy.length - 1 - i];
+    let total = 0;
+    for (let j = 0; j < entries.length; j++) total += entries[j].w;
+    let r = rng() * total;
+    let idx = 0;
+    for (; idx < entries.length - 1; idx++) {
+      r -= entries[idx].w;
+      if (r <= 0) break;
+    }
+    result.push(entries[idx].item);
+    entries.splice(idx, 1);
   }
   return result;
 }

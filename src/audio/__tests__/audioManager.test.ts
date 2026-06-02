@@ -65,6 +65,7 @@ describe('_buildShuffle', () => {
   it('produces a permutation of [0..N-1]', async () => {
     const am = await resetAudio();
     (am as any)._bgTracks = [null, null, null, null]; // 4 tracks
+    (am as any)._activePackIds = [0, 1, 2, 3];
     (am as any)._buildShuffle();
     const order: number[] = (am as any)._shuffleOrder;
     expect(order).toHaveLength(4);
@@ -82,6 +83,7 @@ describe('_buildShuffle', () => {
   it('produces a length-1 permutation for a single track', async () => {
     const am = await resetAudio();
     (am as any)._bgTracks = [null];
+    (am as any)._activePackIds = [0];
     (am as any)._buildShuffle();
     expect((am as any)._shuffleOrder).toEqual([0]);
   });
@@ -115,6 +117,7 @@ describe('natural track-end advances shuffle index', () => {
     const t0 = makeMockHowl();
     const t1 = makeMockHowl();
     (am as any)._bgTracks = [t0, t1];
+    (am as any)._activePackIds = [0, 1];
     (am as any)._shuffleOrder = [0, 1];
     (am as any)._shuffleIdx = 1; // last slot
 

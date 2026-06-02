@@ -61,6 +61,38 @@ describe('buildUpgradeOffer', () => {
   });
 });
 
+describe('upgradeBias weighting', () => {
+  it('heavily biased upgrade appears more often than unbiased peers', () => {
+    const player = makePlayer();
+    const TRIALS = 300;
+    const counts: Record<string, number> = {};
+    for (let t = 0; t < TRIALS; t++) {
+      for (const u of buildUpgradeOffer(player, { turbo: 10 })) {
+        counts[u.id] = (counts[u.id] ?? 0) + 1;
+      }
+    }
+    // turbo (weight 10) should appear far more than an unbiased peer (weight 1)
+    const turboRate = (counts['turbo'] ?? 0) / TRIALS;
+    const magRate = (counts['magnet'] ?? 0) / TRIALS;
+    expect(turboRate).toBeGreaterThan(magRate * 1.5);
+  });
+
+  it('empty bias produces uniform-like selection (no bias key has weight)', () => {
+    const player = makePlayer();
+    const offer = buildUpgradeOffer(player, {});
+    expect(offer.length).toBe(CFG.UPGRADES_TO_OFFER);
+  });
+
+  it('bias does not bypass the non-stackable exclusion filter', () => {
+    const player = makePlayer();
+    player.upgrades = ['turbo'];
+    for (let t = 0; t < 50; t++) {
+      const offer = buildUpgradeOffer(player, { turbo: 999 });
+      expect(offer.every(u => u.id !== 'turbo')).toBe(true);
+    }
+  });
+});
+
 describe('applyUpgrade', () => {
   it('turbo increases maxSpeed by 15%', () => {
     const player = makePlayer();

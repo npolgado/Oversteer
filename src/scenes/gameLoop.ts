@@ -115,6 +115,7 @@ export class GameLoop {
   private _particles: ParticleSystem;
   private _arenaGlow: Graphics;
   private _bgSprite: Sprite | null = null;
+  private _fogOverlay: Graphics | null = null;
   private _accentColor = 0x35F2D0;
 
   // PerfOverlay
@@ -162,6 +163,7 @@ export class GameLoop {
     const {
       worldContainer,
       backgroundLayer,
+      fogLayer,
       playerLayer,
       playerBloomLayer,
       trailLayer,
@@ -247,6 +249,7 @@ export class GameLoop {
       _ctx.audioManager,
       (waveIndex) => { this._hudManager.showWaveBanner(waveIndex); },
       new ShopPanelUI(_ctx.pixiApp.overlayLayer),
+      () => this._biomeManager.active.upgradeBias,
     );
     this._biomeManager = new BiomeManager('wasteland');
 
@@ -362,6 +365,16 @@ export class GameLoop {
       bg.tint = this._biomeManager.active.lightingTint;
       this._bgSprite = bg;
       backgroundLayer.addChild(bg);
+    }
+
+    {
+      const biome = this._biomeManager.active;
+      const fog = new Graphics();
+      fog.rect(0, 0, CFG.W, CFG.H).fill(0xffffff);
+      fog.tint = biome.fogColor;
+      fog.alpha = biome.fogDensity;
+      this._fogOverlay = fog;
+      fogLayer.addChild(fog);
     }
 
     // Arena boundary glow (redrawn each frame for pulse effect)
@@ -699,12 +712,21 @@ export class GameLoop {
           const newBiomeId = biomeForWave(nextWave);
           this._biomeManager.setBiome(newBiomeId);
           const biome = this._biomeManager.active;
-          // TODO: fade and swap to biome-specific music pack when per-biome audio ships
+          this._ctx.audioManager.loadMusicPack(biome.musicPackId);
           // Regenerate props from the new biome's pool and refresh renderer
           regenerateProps(this._propsState, biome.propPool);
           this._propsRenderer.setProps(this._propsState.allProps);
-          // Apply biome background tint
-          if (this._bgSprite) this._bgSprite.tint = biome.lightingTint;
+          // Swap background texture and tint
+          if (this._bgSprite) {
+            const tex = Assets.get(biome.backgroundSprite);
+            if (tex) this._bgSprite.texture = tex;
+            this._bgSprite.tint = biome.lightingTint;
+          }
+          // Update fog overlay
+          if (this._fogOverlay) {
+            this._fogOverlay.tint = biome.fogColor;
+            this._fogOverlay.alpha = biome.fogDensity;
+          }
           this._hudManager.showMilestoneBanner(biome.name.toUpperCase(), '#35F2D0');
           this._screenFx.flash(0x35F2D0, 0.3, 0.8);
           changed = true;
