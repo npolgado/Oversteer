@@ -563,6 +563,7 @@ export function makeBoss(
   const boss = makeEnemyState('boss', x, y, 0);
   boss.bossPattern = pattern;
   boss.bossPhase = pattern === 'core' ? 'invuln' : 'telegraph';
+  boss.bossPhaseTimer = pattern === 'core' ? CFG.BOSS_INVULN_DUR : CFG.BOSS_TELEGRAPH_DUR;
   return boss;
 }
 

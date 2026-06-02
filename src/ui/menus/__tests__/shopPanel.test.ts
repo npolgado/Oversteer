@@ -226,18 +226,18 @@ describe('ShopPanelUI.handleGamepadInput', () => {
     expect(player.hp).toBe(100);
   });
 
-  it('enter on un-affordable item is a no-op', () => {
+  it('enter on un-affordable item returns blocked and does not deduct scrap', () => {
     const player = makePlayer({ scrapBank: 2 }); // Field Repair costs 8
     const shop = makeShop();
     shop.show(player);
 
     const result = shop.handleGamepadInput({ ...noInput, enter: true } as never, player);
 
-    expect(result).toBeNull();
+    expect(result).toBe('blocked');
     expect(player.scrapBank).toBe(2);
   });
 
-  it('enter on item that fails canApply is a no-op', () => {
+  it('enter on item that fails canApply returns blocked and does not deduct scrap', () => {
     const player = makePlayer({ scrapBank: 20, hp: 100, maxHp: 100 }); // already full HP
     const shop = makeShop();
     shop.show(player);
@@ -245,7 +245,17 @@ describe('ShopPanelUI.handleGamepadInput', () => {
 
     const result = shop.handleGamepadInput({ ...noInput, enter: true } as never, player);
 
-    expect(result).toBeNull();
+    expect(result).toBe('blocked');
     expect(player.scrapBank).toBe(20);
+  });
+
+  it('enter without pressing (no input.enter) returns null', () => {
+    const player = makePlayer({ scrapBank: 8 });
+    const shop = makeShop();
+    shop.show(player);
+
+    const result = shop.handleGamepadInput({ ...noInput } as never, player);
+
+    expect(result).toBeNull();
   });
 });

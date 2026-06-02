@@ -85,7 +85,10 @@ export class UpgradeBreakPhase {
     if (!this._upgradeChosen) {
       // NOTE: not in original — shop takes priority on 'enter' so D-pad + A buys before cards.
       // Gamepad D-pad + A: navigate/buy from shop before card input sees 'enter'.
-      const gpBought = this._shopPanel?.handleGamepadInput(input, playerState) ?? null;
+      // 'blocked' means enter was pressed on a disabled item — consume it so it doesn't reach cards.
+      const gpResult = this._shopPanel?.handleGamepadInput(input, playerState) ?? null;
+      const gpBought = (gpResult !== null && gpResult !== 'blocked') ? gpResult : null;
+      const gpConsumed = gpResult !== null; // true for successful purchase OR blocked press
 
       // Mouse/touch tap: shop intercepts before upgrade cards.
       const tap = inputManager.consumeTap();
@@ -99,9 +102,8 @@ export class UpgradeBreakPhase {
         this._audio.play('ui_click');
         eventBus.emit('eventLog', { text: `BOUGHT: ${getShopItemLabel(shopBought) ?? '?'}`, color: '#ffb000' });
       }
-      // If shop consumed 'enter' (D-pad buy), pass null tap so cards don't also act on it.
-      // When shop consumed gamepad nav, mask all menu inputs so cards don't double-act
-      const maskedInput = gpBought != null
+      // If shop consumed 'enter' (D-pad buy or blocked press), mask all menu inputs so cards don't double-act
+      const maskedInput = gpConsumed
         ? { ...input, enter: false, select1: false, menuDown: false, menuUp: false, menuLaunch: false }
         : input;
       const cardAction = this._upgradeCards.checkInput(

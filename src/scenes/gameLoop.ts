@@ -6,7 +6,7 @@ import { makeUIStyle } from '@ui/textStyles';
 import type { GameContext } from './sceneManager';
 import { MobileControls } from '@ui/mobileControls';
 import { CFG, S, applyMap, type EnemyType } from '@core/config';
-import { makePlayerState, getPlayerSpeed, getPlayerRadius, type PlayerState } from '@gameplay/player/playerState';
+import { makePlayerState, getPlayerSpeed, getPlayerRadius, getEffectiveScoreMult, type PlayerState } from '@gameplay/player/playerState';
 import { updatePlayer } from '@gameplay/player/playerUpdate';
 import { PlayerRenderer } from '@gameplay/player/playerRenderer';
 import { makeTrailState, getTrailPoint, type TrailState } from '@gameplay/trail/trailState';
@@ -658,9 +658,7 @@ export class GameLoop {
     if (this._playerState.scoreMultBoostTimer > 0) {
       this._playerState.scoreMultBoostTimer = Math.max(0, this._playerState.scoreMultBoostTimer - rawDt);
     }
-    const effectiveScoreMult = this._playerState.scoreMultBoostTimer > 0
-      ? this._playerState.scoreMult * 2
-      : this._playerState.scoreMult;
+    const effectiveScoreMult = getEffectiveScoreMult(this._playerState);
     // Sync combo from player into scoring state first (near-miss may have changed it last frame)
     this._scoringState.comboLevel = this._playerState.comboLevel;
     updateScoring(
@@ -791,11 +789,13 @@ export class GameLoop {
 
   // NOTE: not in original — Core boss minion mechanic
   private _spawnMinionRing(sourceX: number, sourceY: number, count: number): void {
-    const existing = this._enemies.filter(e => e.type === 'chaser').length;
-    const allowed = Math.max(0, CFG.BOSS_MINION_MAX - existing);
+    let chaserCount = 0;
+    for (const e of this._enemies) if (e.type === 'chaser') chaserCount++;
+    const allowed = Math.max(0, CFG.BOSS_MINION_MAX - chaserCount);
     const toSpawn = Math.min(count, allowed);
+    if (toSpawn === 0) return;
     for (let i = 0; i < toSpawn; i++) {
-      const angle = (Math.PI * 2 * i) / count;
+      const angle = (Math.PI * 2 * i) / toSpawn; // divide by toSpawn so partial rings stay evenly spread
       const x = clamp(sourceX + Math.cos(angle) * CFG.BOSS_MINION_RADIUS, 10, CFG.WORLD_W - 10);
       const y = clamp(sourceY + Math.sin(angle) * CFG.BOSS_MINION_RADIUS, 10, CFG.WORLD_H - 10);
       this._enemies.push(makeEnemyState('chaser', x, y, this._waveState.speedBonus));
@@ -887,7 +887,7 @@ export class GameLoop {
       }
     }
     if (kills > 0) {
-      const bonus = Math.round(kills * 50 * this._playerState.scoreMult);
+      const bonus = Math.round(kills * 50 * getEffectiveScoreMult(this._playerState));
       addScore(this._scoringState, bonus);
       eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: bonus });
       updateRunStats(this._scoringState.runStats, { type: 'bomb', killCount: kills });
@@ -1094,7 +1094,7 @@ export class GameLoop {
         const encircleResult = computeEncircleOutcome(
           killCount,
           this._scoringState.comboLevel,
-          this._playerState.scoreMult,
+          getEffectiveScoreMult(this._playerState),
           this._playerState.encircleScoreBonus,
         );
         addScore(this._scoringState, encircleResult.scoreDelta);
@@ -1115,7 +1115,7 @@ export class GameLoop {
           const { chains, scoreGained } = applyChainLightning(
             loopResult.killedEnemies as EnemyState[],
             this._enemies,
-            this._playerState.scoreMult,
+            getEffectiveScoreMult(this._playerState),
           );
           if (scoreGained > 0) addScore(this._scoringState, scoreGained);
           for (const c of chains) {
@@ -1163,7 +1163,7 @@ export class GameLoop {
     const burnResults = applyTrailBurn(this._playerState, this._enemies, this._trailState, dilatedDt);
     for (const r of burnResults) {
       if (r.enemyDied) {
-        addScore(this._scoringState, 50 * this._playerState.scoreMult);
+        addScore(this._scoringState, 50 * getEffectiveScoreMult(this._playerState));
         eventBus.emit('eventLog', { text: 'BURN!', color: '#FF6600' });
         if (r.enemyType === 'splitter') this._spawnSplitChasers(r.ex, r.ey);
       }
