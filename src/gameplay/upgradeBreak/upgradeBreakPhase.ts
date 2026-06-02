@@ -35,6 +35,7 @@ export class UpgradeBreakPhase {
     /** Called when a new wave begins (after countdown). Receives the new wave index. */
     private _onWaveStart: (waveIndex: number) => void,
     private _shopPanel: ShopPanelUI | null = null,
+    private _getUpgradeBias: () => Record<string, number> = () => ({}),
   ) {}
 
   /**
@@ -48,7 +49,7 @@ export class UpgradeBreakPhase {
     this._chosenUpgrade = null;
     this._cardAnimTimer = 0;
     this._rerollsLeft = getRerollCount(playerState);
-    this._currentOffer = buildUpgradeOffer(playerState);
+    this._currentOffer = buildUpgradeOffer(playerState, this._getUpgradeBias());
     // Freeze player (from game.js:911-928)
     playerState.vx = 0;
     playerState.vy = 0;
@@ -125,7 +126,7 @@ export class UpgradeBreakPhase {
       } else if (cardAction === 'reroll' && this._rerollsLeft > 0) {
         this._audio.play('ui_click');
         this._upgradeCards.pulseRerollBtn();
-        const newOffer = buildUpgradeOffer(playerState);
+        const newOffer = buildUpgradeOffer(playerState, this._getUpgradeBias());
         if (newOffer.length > 0) {
           this._rerollsLeft--;
           this._currentOffer = newOffer;

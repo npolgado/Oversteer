@@ -61,7 +61,7 @@ const _WASTELAND: BiomeDescriptor = {
     { image: 'props/bush_1.png',  radius: 25, weight: 5, type: 'decoration' },
   ],
   enemyWeightMult: {},
-  musicPackId: 'default',
+  musicPackId: 'wasteland',
   upgradeBias: {},
 };
 
@@ -79,7 +79,7 @@ const _RUPTURE: BiomeDescriptor = {
     { image: 'props/bush_1.png',  radius: 25, weight: 2, type: 'decoration' },
   ],
   enemyWeightMult: { flanker: 1.8 },
-  musicPackId: 'default',
+  musicPackId: 'rupture',
   upgradeBias: { tight_turns: 2, drift_king: 2, drift_shield: 1.5 },
 };
 
@@ -87,7 +87,7 @@ const _RUPTURE: BiomeDescriptor = {
 const _JUNGLE: BiomeDescriptor = {
   id: 'jungle',
   name: 'Corruption Jungle',
-  backgroundSprite: 'backgrounds/background_01.png', // TODO: jungle background asset
+  backgroundSprite: 'backgrounds/background_03.png',
   lightingTint: 0x88FF88,
   fogColor: 0x224422,
   fogDensity: 0.12,
@@ -97,7 +97,7 @@ const _JUNGLE: BiomeDescriptor = {
     { image: 'props/mud_1.png',   radius: 62, weight: 3, type: 'slow', duration: 2.0, strength: 0.5 },
   ],
   enemyWeightMult: { bomber: 1.6, blocker: 1.4 },
-  musicPackId: 'default',
+  musicPackId: 'jungle',
   upgradeBias: { max_hp: 2, hp_regen: 2, damage_resist: 1.5 },
 };
 

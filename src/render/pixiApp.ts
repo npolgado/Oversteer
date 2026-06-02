@@ -18,6 +18,9 @@ const playerLayer = new Container();
 const playerBloomLayer = new Container();
 const particlesLayer = new Container();
 
+// Screen-fixed atmospheric fog overlay — sits between world and HUD, not camera-transformed
+const fogLayer = new Container();
+
 // Screen-fixed UI containers
 const uiContainer = new Container();
 const hudLayer = new Container();
@@ -94,7 +97,7 @@ async function init(opts?: { forceWebGL?: boolean }): Promise<void> {
 
   uiContainer.addChild(hudLayer, eventLogLayer, overlayLayer);
 
-  app.stage.addChild(worldContainer, uiContainer, screenFxContainer);
+  app.stage.addChild(worldContainer, fogLayer, uiContainer, screenFxContainer);
 
   // Mount canvas
   const gameDiv = document.getElementById('game');
@@ -170,6 +173,7 @@ export const PixiApp = {
   app,
   worldContainer,
   backgroundLayer,
+  fogLayer,
   propsLayer,
   trailLayer,
   trailBloomLayer,
