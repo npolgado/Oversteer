@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { makePlayerState } from '../playerState';
+import { makePlayerState, getEffectiveScoreMult } from '../playerState';
 import { updatePlayer } from '../playerUpdate';
 import { CFG } from '@core/config';
 
@@ -324,5 +324,30 @@ describe('speedBoostTimer expiry', () => {
     s.speedBoostTimer = 0.001;
     updatePlayer(s, withInput({ dt: 1.0 }));
     expect(s.speedBoostTimer).toBeLessThanOrEqual(0);
+  });
+});
+
+// ── getEffectiveScoreMult ──────────────────────────────────────
+
+describe('getEffectiveScoreMult', () => {
+  it('returns scoreMult when boostTimer is 0', () => {
+    const s = makePlayerState();
+    s.scoreMult = 1.5;
+    s.scoreMultBoostTimer = 0;
+    expect(getEffectiveScoreMult(s)).toBe(1.5);
+  });
+
+  it('doubles scoreMult when boostTimer is active', () => {
+    const s = makePlayerState();
+    s.scoreMult = 1.5;
+    s.scoreMultBoostTimer = 10;
+    expect(getEffectiveScoreMult(s)).toBe(3.0);
+  });
+
+  it('returns base scoreMult when boostTimer is exactly 0 (boundary)', () => {
+    const s = makePlayerState();
+    s.scoreMult = 2;
+    s.scoreMultBoostTimer = 0;
+    expect(getEffectiveScoreMult(s)).toBe(2);
   });
 });

@@ -218,8 +218,10 @@ export class ShopPanelUI {
   /**
    * Handle D-pad up/down navigation and A button purchase from controller.
    * Must be called before card input so shop takes priority on 'enter'.
+   * Returns the purchased item index, 'blocked' if enter was pressed on a disabled item
+   * (so the caller can suppress the input from reaching upgrade cards), or null otherwise.
    */
-  handleGamepadInput(input: InputState, player: PlayerState): number | null {
+  handleGamepadInput(input: InputState, player: PlayerState): number | 'blocked' | null {
     if (!this._visible) return null;
 
     let moved = false;
@@ -245,6 +247,7 @@ export class ShopPanelUI {
         this._rebuild(player);
         return this._focusedIndex;
       }
+      return 'blocked'; // consume the press so it doesn't leak to upgrade cards
     }
 
     return null;
