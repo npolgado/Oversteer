@@ -79,6 +79,7 @@ import { GameOverScene, type GameOverData } from './gameOverScene';
 import { DeathSequence } from '@gameplay/death/deathSequence';
 import { UpgradeBreakPhase } from '@gameplay/upgradeBreak/upgradeBreakPhase';
 import type { GameplayOptions } from './gameplayScene';
+import { applySituation, SITUATIONS_BY_ID, consumeDevPickup, consumeDevBossKilled, type SituationSpec } from '@dev/situationTester';
 
 const EMPTY_INPUT: InputState = {
   up: false, down: false, left: false, right: false,
@@ -349,12 +350,32 @@ export class GameLoop {
       () => eventBus.off('playerDied',     onPlayerDied),
     ];
 
+    // DEV-only: apply situation spec before the first startWave()
+    let _resolvedSituation: SituationSpec | null = null;
+    if (import.meta.env.DEV && _opts.situation) {
+      _resolvedSituation = typeof _opts.situation === 'string'
+        ? (SITUATIONS_BY_ID.get(_opts.situation) ?? null)
+        : _opts.situation;
+      if (!_resolvedSituation) {
+        console.warn(`[situation] unknown preset id "${_opts.situation}"`);
+      } else {
+        applySituation(this._waveState, this._playerState, this._biomeManager, this._trailState, this._scoringState, _resolvedSituation);
+      }
+    }
+
     // Start first wave after listeners are bound so initial "WAVE N" log is not missed.
     if (!_opts.benchmark) {
       _ctx.audioManager.startBgMusic();
     }
     if (!_opts.sandbox && !_opts.benchmark) {
       startWave(this._waveState);
+      // DEV-only: override boss pattern after startWave() (which sets its own round-robin default)
+      if (import.meta.env.DEV && _resolvedSituation?.boss != null) {
+        this._waveState.bossActive = true;
+        this._waveState.bossPattern = _resolvedSituation.boss;
+        this._waveState.bossSpawned = false;
+        this._waveState.bossTelegraphTimer = 1.5;
+      }
       eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
       this._hudManager.showWaveBanner(this._waveState.waveIndex);
       _ctx.audioManager.startEngine();
@@ -661,7 +682,7 @@ export class GameLoop {
     const waveEvents = updateWave(
       this._waveState, dilatedDt, this._scoringState.score, this._enemies.length,
       bossAlive,
-      this._biomeManager.active.enemyWeightMult,
+      this._biomeManager.effectiveWeightMult,
     );
     for (const ev of waveEvents) {
       if (ev.type === 'spawn') {
@@ -682,14 +703,15 @@ export class GameLoop {
         this._ctx.audioManager.stopEngine();
         this._ctx.audioManager.stopDrift();
         eventBus.emit('waveEnded', { wave: this._waveState.waveIndex });
-        if (ev.bossKilled) {
+        const _bossKilled = (ev.bossKilled ?? false) || (import.meta.env.DEV ? consumeDevBossKilled() : false);
+        if (_bossKilled) {
           this._screenFx.flash(0xFFCC00, 0.6, 0.9);
           this._screenFx.shake(6, 0.4);
           this._hudManager.showMilestoneBanner('BOSS DEFEATED!', '#FFCC00');
           eventBus.emit('eventLog', { text: 'BOSS DEFEATED! +REROLL', color: '#ffcc00' });
         }
         // Enter upgrade break phase (from game.js:911-928)
-        this._upgradeBreak.enter(this._playerState, this._waveState, ev.bossKilled ?? false);
+        this._upgradeBreak.enter(this._playerState, this._waveState, _bossKilled);
       } else if (ev.type === 'horde') {
         for (const req of ev.spawnRequests) {
           const rawX = this._playerState.x + Math.cos(req.angle) * req.distance;
@@ -789,9 +811,10 @@ export class GameLoop {
       this._playerState.y,
     );
     if (scrapPos) {
+      const _forcedPickup = import.meta.env.DEV ? consumeDevPickup() : null;
       this._waveState.scraps.push({
         x: scrapPos.x, y: scrapPos.y, life: 15,
-        type: selectPickupType(this._waveState.waveIndex, Math.random()),
+        type: _forcedPickup ?? selectPickupType(this._waveState.waveIndex, Math.random()),
       });
     }
 

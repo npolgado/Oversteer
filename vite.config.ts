@@ -61,6 +61,7 @@ export default defineConfig({
       '@input': path.resolve(__dirname, 'src/input'),
       '@content': path.resolve(__dirname, 'src/content'),
       '@debug': path.resolve(__dirname, 'src/debug'),
+      '@dev': path.resolve(__dirname, 'src/dev'),
     },
   },
   build: {

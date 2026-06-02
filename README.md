@@ -56,6 +56,41 @@ npx serve arena-drifter
 
 Then open the URL shown in your terminal (usually `http://localhost:3000`).
 
+## Situation Tester (DEV only)
+
+Skip straight to any game state without playing through earlier waves — useful for validating boss changes, biome behavior, or upgrade interactions.
+
+**Named presets** are defined in `src/dev/scenarios.json`. Use the preset id in the URL when running the dev server:
+
+```bash
+npm run dev
+# then open:
+http://localhost:5173/?situation=boss-core-w10
+```
+
+| Preset | What it loads |
+|--------|---------------|
+| `boss-pursuer-w5` | Wave 5 Pursuer boss, wasteland biome |
+| `boss-core-w10` | Wave 10 Core boss, rupture biome |
+| `boss-reflector-w15` | Wave 15 Reflector boss, jungle biome |
+| `boss-core-w10-loaded` | Wave 10 Core boss + 4 upgrades (turbo, shield, magnet, combo master) |
+| `biome-jungle-fresh` | Wave 15, jungle biome, no upgrades |
+| `splitter-stress-w8` | Wave 8, rupture biome, offensive upgrades (trail burn, chain lightning) |
+| `boss-pursuer-w5-fragile` | Wave 5 Pursuer boss, 1 HP |
+
+**Live iteration** — reload any situation mid-session from the browser console without a page refresh:
+
+```js
+__oversteer.loadSituation('boss-pursuer-w5-fragile')
+
+// Ad-hoc one-off (no preset needed):
+__oversteer.loadSituation({ wave: 20, biome: 'jungle', boss: 'reflector', upgrades: ['turbo', 'shield'], hp: 1 })
+```
+
+To add a preset for your branch, append an entry to `src/dev/scenarios.json`. Fields: `id`, `name`, `wave` (required), plus optional `biome`, `boss` (`pursuer`/`core`/`reflector`), `upgrades` (array of upgrade ids), `hp`, `maxHp`.
+
+> The situation tester is **DEV-only** — it cannot be activated in production builds.
+
 ## Benchmarking
 
 Compares the TypeScript/PixiJS build against the vanilla `arena-drifter/` build across 6 scenarios (idle/drift × 5/15/30 enemies).
