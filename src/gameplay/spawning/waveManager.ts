@@ -59,7 +59,7 @@ export type BossPattern = 'pursuer' | 'core' | 'reflector';
 
 export type WaveEvent =
   | { type: 'spawn'; requests: SpawnRequest[] }
-  | { type: 'wave_end' }
+  | { type: 'wave_end'; bossKilled?: boolean }
   | { type: 'break_end' }
   | { type: 'horde'; spawnRequests: SpawnRequest[]; count: number }
   | { type: 'boss_spawn'; pattern: BossPattern };
@@ -222,7 +222,7 @@ export function updateWave(
         // Boss is dead — end combat phase (minions may still be alive; use bossAlive not enemyCount)
         state.phase = 'break';
         state.breakTimer = CFG.WAVE_BREAK;
-        events.push({ type: 'wave_end' });
+        events.push({ type: 'wave_end', bossKilled: true });
         return events;
       }
       // Suppress all normal spawning during boss waves

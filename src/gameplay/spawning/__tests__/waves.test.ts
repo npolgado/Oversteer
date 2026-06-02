@@ -419,3 +419,32 @@ describe('boss wave combat phase', () => {
     expect(state.phase).toBe('combat');
   });
 });
+
+// ── bossKilled flag on wave_end ────────────────────────────────────────────────
+
+describe('wave_end bossKilled flag', () => {
+  function makeBossWave(waveN: number) {
+    const state = makeWaveState();
+    state.waveIndex = waveN - 1;
+    startWave(state);
+    return state;
+  }
+
+  it('wave_end from boss kill carries bossKilled: true', () => {
+    const state = makeBossWave(5);
+    updateWave(state, 2.0, 0, 0, true); // trigger boss_spawn
+    const events = updateWave(state, 0.1, 0, 0, false); // boss dies
+    const endEv = events.find(e => e.type === 'wave_end') as { type: 'wave_end'; bossKilled?: boolean } | undefined;
+    expect(endEv).toBeDefined();
+    expect(endEv!.bossKilled).toBe(true);
+  });
+
+  it('wave_end from normal timer does not carry bossKilled', () => {
+    const state = makeWaveState();
+    startWave(state); // wave 1 — not a boss wave
+    const events = updateWave(state, state.currentCombatDuration + 1, 0, 0, false);
+    const endEv = events.find(e => e.type === 'wave_end') as { type: 'wave_end'; bossKilled?: boolean } | undefined;
+    expect(endEv).toBeDefined();
+    expect(endEv!.bossKilled).toBeFalsy();
+  });
+});

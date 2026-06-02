@@ -672,8 +672,14 @@ export class GameLoop {
         this._ctx.audioManager.stopEngine();
         this._ctx.audioManager.stopDrift();
         eventBus.emit('waveEnded', { wave: this._waveState.waveIndex });
+        if (ev.bossKilled) {
+          this._screenFx.flash(0xFFCC00, 0.6, 0.9);
+          this._screenFx.shake(6, 0.4);
+          this._hudManager.showMilestoneBanner('BOSS DEFEATED!', '#FFCC00');
+          eventBus.emit('eventLog', { text: 'BOSS DEFEATED! +REROLL', color: '#ffcc00' });
+        }
         // Enter upgrade break phase (from game.js:911-928)
-        this._upgradeBreak.enter(this._playerState, this._waveState);
+        this._upgradeBreak.enter(this._playerState, this._waveState, ev.bossKilled ?? false);
       } else if (ev.type === 'horde') {
         for (const req of ev.spawnRequests) {
           const rawX = this._playerState.x + Math.cos(req.angle) * req.distance;
@@ -737,6 +743,18 @@ export class GameLoop {
       }
     }
     return changed;
+  }
+
+  // NOTE: not in original — Splitter death spawns two chasers (not triggered by bomb kills)
+  private _spawnSplitChasers(x: number, y: number): void {
+    const baseAngle = Math.random() * Math.PI * 2;
+    for (const offset of [Math.PI / 4, -Math.PI / 4]) {
+      const a = baseAngle + offset;
+      const cx = clamp(x + Math.cos(a) * 22, 10, CFG.WORLD_W - 10);
+      const cy = clamp(y + Math.sin(a) * 22, 10, CFG.WORLD_H - 10);
+      this._enemies.push(makeEnemyState('chaser', cx, cy, this._waveState.speedBonus));
+    }
+    eventBus.emit('spawnParticles', { x, y, type: 'spark', count: 8, color: 0xFF8800 });
   }
 
   // NOTE: not in original — Core boss minion mechanic
@@ -1093,6 +1111,9 @@ export class GameLoop {
           type: (dead as EnemyState).type,
           isElite: deathEvent.isElite,
         });
+        if ((dead as EnemyState).type === 'splitter') {
+          this._spawnSplitChasers(dead.x, dead.y);
+        }
         changed = true;
       }
 
@@ -1111,6 +1132,7 @@ export class GameLoop {
       if (r.enemyDied) {
         addScore(this._scoringState, 50 * this._playerState.scoreMult);
         eventBus.emit('eventLog', { text: 'BURN!', color: '#FF6600' });
+        if (r.enemyType === 'splitter') this._spawnSplitChasers(r.ex, r.ey);
       }
       eventBus.emit('spawnParticles', { x: r.ex, y: r.ey, type: 'spark', count: 4, color: 0xFF6600 });
       if (r.enemyDied) changed = true;
