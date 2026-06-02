@@ -132,6 +132,10 @@ Expand beyond the original game with a world/biome system and new content.
 - Gameplay changes per world, not just visuals
 - Loading and switching worlds is clean
 
+**Phase 4 closed: dev_1.4.0 (2026-06-01)**
+
+Deferred to a later phase: enemy curses, upgrade synergies + mastery tier, route branching between worlds, biome hazard events (lava/lightning/timed roadblocks), and §7 drift exploit + auto-repair balance pass (intentional — design doc recommends balancing after all new content lands).
+
 ---
 
 ## Phase 5 — Three.js Integration - dev_1.5.0
