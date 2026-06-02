@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-06-01 - dev_1.4.0 - Phase 4 Content Update
+
+- **Pickup registry (M1)**: New pickup types `time_slow` (3s slowmo), `trail_token` (+200 max trail), `shield_pickup` (absorbs one hit). Weight-gated by wave index; spawn logic in `pureLogic.ts::selectPickupType`. Visual definitions in `src/gameplay/pickups/pickupRegistry.ts`.
+- **Scrap economy + shop (M2)**: Player collects scrap currency during runs. Upgrade break now shows a side shop panel: Field Repair (8 scrap, +50 HP), Brief Invincibility (5 scrap, 3s invuln), Score Surge (12 scrap, 2× score for 30s). Shop UI in `src/ui/menus/shopPanel.ts`.
+- **Boss wave system (M3)**: Every 5th wave triggers a boss encounter. 1.5–2s telegraph (flash + shake + banner). Three boss patterns: **Pursuer** (orbit → charge), **Core** (armored/vulnerable cycling, minion ring), **Reflector** (figure-eight, permanently armored). Boss takes 8 encirclement hits (chip damage). Implementation in `src/gameplay/enemies/bossPatterns.ts`.
+- **Biome framework (M4)**: World divided into Neon Wasteland (waves 1–7), Frozen Rupture (waves 8–14), Corruption Jungle (waves 15+). Each biome has background tint, fog color + density, prop pool, enemy weight biases, music pack, and upgrade biases. Config in `src/core/config.ts`.
+- **Biome enemy weighting + background tint (M5+M6)**: Rupture biases flanker ×1.8; Jungle biases bomber ×1.6, blocker ×1.4, splitter ×1.5. Background tint applied per biome. Props refresh on transition.
+- **Boss rendering + code-review fixes (M7)**: Boss HP bar rendered above sprite. White hit-flash on encirclement chip. Reflector/Core invulnerability now correctly blocks trail damage. Mouse-down registers as tap in shop. Score Surge timer drains on raw dt (unaffected by time_slow).
+- **Biome music packs + fog overlay + upgrade bias (M8)**: Each biome loads its own music shuffle subset. Fog overlay rendered per biome (Wasteland α0.04, Rupture α0.06, Jungle α0.12). Upgrade offer pool uses per-biome weight bias (Rupture: `tight_turns/drift_king` ×2; Jungle: `max_hp/hp_regen` ×2).
+- **Boss reward + reroll (M9)**: Killing a boss grants +1 reroll at the following upgrade break (gold flash + shake + "BOSS DEFEATED!" banner). Reroll count tracked in `upgradeBreakPhase.ts`.
+- **Splitter archetype (M10)**: New enemy type. Enters pool at score ≥ 3500. Speed 420, orange tint. On encirclement or trail-burn kill, splits into 2 chasers. Bomb kills do NOT trigger split. Implemented in `waveManager.ts::_spawnSplitChasers`.
+- **Visual flair + combo cap (M11+M12)**: Encirclement ring is combo-colored (white <4×, cyan 4–6×, magenta ≥7×). Encircling 3+ enemies spawns additional shard burst scaled to kill count (cap 30 particles). All 26 upgrade icons updated to unicode glyphs at 44pt. `MAX_COMBO` raised from 8 to 16.
+- **Situation tester (DEV)**: DEV-only harness for jumping into specific test states. 20 presets covering all phase 4 systems. URL param `?situation=<id>` or console `window.__oversteer.loadSituation()`. Extended spec: `scrap`, `score`, `combo`, `enemySpawnBias`, `forcePickup`, `bossDefeated` primitives. See `src/dev/`.
+- dev: 40 Vitest test files, 776 tests. Legacy suite 142 tests.
+
+---
+
 ## 2026-05-23 - dev_1.3.9 - Phase 3.9 Input + Cleanup
 
 - **Mobile touch overlay**: Pixi-based joystick base, knob, and drift button appear on first touch; hidden on desktop. Joystick renders at touch origin with deadzone ring; drift button bottom-right with pressed-state highlight. Implemented in src/ui/mobileControls.ts, integrated into GameLoop.
