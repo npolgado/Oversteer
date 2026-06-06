@@ -937,11 +937,22 @@ export class GameLoop {
     let kills = 0;
     for (const e of this._enemies) {
       if (!e.alive) continue;
-      if (isVisible(e.x, e.y, 50)) {
-        e.alive = false;
-        kills++;
-        eventBus.emit('enemyKilled', { x: e.x, y: e.y, type: e.type, isElite: e.armored });
+      if (!isVisible(e.x, e.y, 50)) continue;
+
+      if (e.type === 'boss') {
+        // Bomb respects boss armor — same rule as encirclement (trailUpdate.ts:141)
+        if (e.armored || e.bossVulnerable === false) {
+          e.hitFlashTimer = CFG.BOSS_HIT_FLASH_S;  // deflect: flash but no damage
+          continue;
+        }
+        e.health = (e.health ?? 1) - 1;
+        e.hitFlashTimer = CFG.BOSS_HIT_FLASH_S;
+        if (e.health > 0) continue;  // chip damage only — boss survives
       }
+
+      e.alive = false;
+      kills++;
+      eventBus.emit('enemyKilled', { x: e.x, y: e.y, type: e.type, isElite: e.armored });
     }
     if (kills > 0) {
       const bonus = Math.round(kills * 50 * getEffectiveScoreMult(this._playerState));
@@ -1221,6 +1232,13 @@ export class GameLoop {
     for (const r of burnResults) {
       if (r.enemyDied) {
         addScore(this._scoringState, 50 * getEffectiveScoreMult(this._playerState));
+        // Intentional improvement: burn kills increment combo by +1 (half of encircle's +2)
+        const oldCombo = this._scoringState.comboLevel;
+        const newCombo = Math.min(CFG.MAX_COMBO, oldCombo + 1);
+        this._scoringState.comboLevel = newCombo;
+        this._playerState.comboLevel  = newCombo;
+        this._playerState.hp = applyComboHeal(oldCombo, newCombo, this._playerState.comboHeal, this._playerState.hp, this._playerState.maxHp);
+        this._checkComboMilestone(oldCombo, newCombo);
         eventBus.emit('eventLog', { text: 'BURN!', color: '#FF6600' });
         if (r.enemyType === 'splitter') this._spawnSplitChasers(r.ex, r.ey);
       }

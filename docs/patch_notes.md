@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-06-05 - dev_1.4.1 - Phase 4 Bugfixes
+
+Post-playtest bugfix pass. Fixes 6 of 7 confirmed bugs from the 2026-06-01 session.
+
+- **Bomb respects boss armor (B1)**: Bomb pickup no longer one-shots the boss. Armored / permanently-invulnerable bosses (Reflector, Core during invuln phase) deflect bomb with a hit-flash. Vulnerable bosses take one chip hit from bomb, same as encirclement.
+- **Boss waves spawn regular enemies (B2)**: Boss waves no longer suppress all regular enemy spawning. Flankers, bombers, splitters etc. now spawn alongside the boss per the active biome's enemy-weight bias.
+- **Trail burn increments combo (B3)**: Killing an enemy via trail burn now gives +1 combo (half of encirclement's +2, since burn is passive). Combo-heal milestones and combo-ring colour now respond to burn kills.
+- **Core boss vulnerable tint (B4)**: Core boss now shows a gold tint (`0xFFCC44`) during its vulnerable window (attack now!) and returns to orange when armored. Hit-flash (white) still takes priority. Pursuer and Reflector are visually unchanged.
+- **Horde spawns from one direction (B5)**: Horde enemies now spawn within a configurable arc (`CFG.HORDE_ARC_RAD`, default 60°) rather than a full 360° ring. Creates a directional threat the player must evade rather than an unavoidable surround.
+- **Scrap shop stays visible on upgrade reroll (B7)**: Rerolling upgrade cards no longer clears the scrap shop panel. The shop is rebuilt on the overlay layer after each reroll.
+- dev: test count grows to 811 Vitest + 142 legacy = 953 total.
+
+---
+
 ## 2026-06-01 - dev_1.4.0 - Phase 4 Content Update
 
 - **Pickup registry (M1)**: New pickup types `time_slow` (3s slowmo), `trail_token` (+200 max trail), `shield_pickup` (absorbs one hit). Weight-gated by wave index; spawn logic in `pureLogic.ts::selectPickupType`. Visual definitions in `src/gameplay/pickups/pickupRegistry.ts`.

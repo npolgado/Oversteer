@@ -391,12 +391,15 @@ describe('boss wave combat phase', () => {
     expect(state.bossSpawned).toBe(true);
   });
 
-  it('no normal spawn events fire during boss wave', () => {
+  it('normal spawn events fire alongside the boss during a boss wave (B2 fix)', () => {
     const state = makeBossWave(5);
-    // Tick past all timers (very long tick); boss is alive so wave stays in combat
-    const events = updateWave(state, 30.0, 0, 0, true);
+    // Force spawn timer to fire immediately so we don't have to tick a full interval
+    state.spawnTimer = 0;
+    // bossSpawned=true so we are in the "waiting for boss kill" branch
+    state.bossSpawned = true;
+    const events = updateWave(state, 0.016, 0, 1, true /* bossAlive */);
     const spawnEvs = events.filter(e => e.type === 'spawn');
-    expect(spawnEvs.length).toBe(0);
+    expect(spawnEvs.length).toBeGreaterThan(0);
   });
 
   it('wave_end fires when boss dies even if minions remain (bossAlive=false)', () => {
@@ -446,5 +449,63 @@ describe('wave_end bossKilled flag', () => {
     const endEv = events.find(e => e.type === 'wave_end') as { type: 'wave_end'; bossKilled?: boolean } | undefined;
     expect(endEv).toBeDefined();
     expect(endEv!.bossKilled).toBeFalsy();
+  });
+});
+
+// ── Boss wave — regular spawning not suppressed (B2 fix) ──────────────────────
+
+describe('updateWave — boss waves allow regular spawning', () => {
+  it('emits a spawn event during a boss wave once the spawn timer elapses', () => {
+    const state = makeWaveState();
+    // Advance to a boss wave (wave 5 = first boss wave at BOSS_WAVE_INTERVAL=5)
+    for (let i = 0; i < 5; i++) startWave(state);
+    expect(state.bossActive).toBe(true);
+    // Boss is not spawned yet (telegraph timer still running); force bossSpawned=true
+    // so the "waiting for kill" branch is active and boss is alive (bossAlive=true)
+    state.bossSpawned = true;
+    // Force spawn timer to fire
+    state.spawnTimer = 0;
+    const events = updateWave(state, 0.016, 9999, 1, true /* bossAlive */);
+    expect(events.some(e => e.type === 'spawn')).toBe(true);
+  });
+});
+
+// ── Horde arc (B5 fix) — spawns within CFG.HORDE_ARC_RAD ─────────────────────
+
+describe('updateWave — horde arc direction', () => {
+  it('horde spawn angles span no more than HORDE_ARC_RAD for count >= 3', () => {
+    const s = makeWaveState();
+    startWave(s);
+    s.hordeTrigger = 0;
+    s.hordeTriggered = false;
+    const events = updateWave(s, CFG.HORDE_DELAY + 0.1, 0, 0);
+    const horde = events.find(e => e.type === 'horde') as
+      { type: 'horde'; spawnRequests: { angle: number }[]; count: number } | undefined;
+    expect(horde).toBeDefined();
+    const angles = horde!.spawnRequests.map(r => r.angle);
+    if (angles.length >= 3) {
+      // Compute angular range (all angles should fit within HORDE_ARC_RAD)
+      const min = Math.min(...angles);
+      const max = Math.max(...angles);
+      const spread = max - min;
+      expect(spread).toBeLessThanOrEqual(CFG.HORDE_ARC_RAD + 1e-9);
+    }
+  });
+
+  it('horde spawn angles do NOT span full 360° (old bug)', () => {
+    const s = makeWaveState();
+    startWave(s);
+    s.hordeTrigger = 0;
+    s.hordeTriggered = false;
+    const events = updateWave(s, CFG.HORDE_DELAY + 0.1, 0, 0);
+    const horde = events.find(e => e.type === 'horde') as
+      { type: 'horde'; spawnRequests: { angle: number }[]; count: number } | undefined;
+    expect(horde).toBeDefined();
+    const angles = horde!.spawnRequests.map(r => r.angle);
+    if (angles.length >= 3) {
+      const min = Math.min(...angles);
+      const max = Math.max(...angles);
+      expect(max - min).toBeLessThan(Math.PI); // must stay within half the circle
+    }
   });
 });

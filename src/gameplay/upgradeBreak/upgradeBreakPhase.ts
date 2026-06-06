@@ -136,6 +136,8 @@ export class UpgradeBreakPhase {
           this._currentOffer = newOffer;
           this._cardAnimTimer = 0;
           this._upgradeCards.show(this._currentOffer, this._rerollsLeft, playerState.upgrades);
+          // upgradeCards.show() clears the shared overlay layer — rebuild the shop panel on top
+          this._shopPanel?.show(playerState);
         }
       }
     }

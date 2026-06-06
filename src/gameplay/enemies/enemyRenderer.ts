@@ -87,9 +87,11 @@ export class EnemyRenderer {
       // Hit flash: tint white while hitFlashTimer is active (timer decremented in enemyUpdate)
       if (enemy.type === 'boss') {
         if ((enemy.hitFlashTimer ?? 0) > 0) {
-          (sprite as Sprite).tint = 0xFFFFFF;
+          (sprite as Sprite).tint = 0xFFFFFF;          // white flash on damage
+        } else if (enemy.bossVulnerable === true) {
+          (sprite as Sprite).tint = 0xFFCC44;          // gold = attack window (Core vulnerable phase)
         } else {
-          (sprite as Sprite).tint = 0xFF6600;
+          (sprite as Sprite).tint = 0xFF6600;          // orange = armored / default
         }
 
         // Update HP bar

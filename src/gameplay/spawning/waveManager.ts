@@ -225,8 +225,7 @@ export function updateWave(
         events.push({ type: 'wave_end', bossKilled: true });
         return events;
       }
-      // Suppress all normal spawning during boss waves
-      return events;
+      // Boss waves allow regular spawning to continue alongside the boss
     }
 
     // Normal wave: end on timer
@@ -251,8 +250,10 @@ export function updateWave(
       if (state.hordeSpawnTimer <= 0) {
         const count = computeHordeCount(state.waveIndex);
         const requests: SpawnRequest[] = [];
+        const baseAngle = Math.random() * Math.PI * 2;
         for (let i = 0; i < count; i++) {
-          const angle = (Math.PI * 2 * i) / count;
+          const t = count > 1 ? (i / (count - 1) - 0.5) : 0;
+          const angle = baseAngle + t * CFG.HORDE_ARC_RAD;
           requests.push({ type: pickEnemyType(score, state.waveIndex, enemyWeightMult), count: 1, angle, distance: CFG.HORDE_SPAWN_DIST });
         }
         events.push({ type: 'horde', spawnRequests: requests, count });

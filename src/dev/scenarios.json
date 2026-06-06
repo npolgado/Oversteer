@@ -194,39 +194,47 @@
     {
       "id": "boss-pursuer-w5",
       "name": "Boss: Pursuer (Wave 5)",
-      "description": "Wave 5 boss fight, no upgrades, wasteland biome. Telegraph → orbit at r≈200 → charge at 700 speed. Takes 8 encirclement chip hits to kill.",
+      "description": "Wave 5 boss fight, no upgrades, wasteland biome. Telegraph → orbit at r≈200 → charge at 700 speed. Takes 8 encirclement chip hits to kill. hp=999 so the full fight can be observed.",
       "goal": "Chip boss 8× with trail loops — avoid orbit-charge",
       "wave": 5,
       "biome": "wasteland",
-      "boss": "pursuer"
+      "boss": "pursuer",
+      "maxHp": 999,
+      "hp": 999
     },
     {
       "id": "boss-core-w10",
       "name": "Boss: Core (Wave 10)",
-      "description": "Wave 10 boss fight, no upgrades, rupture biome. Cycles: armored 5s (trail damage blocked) → vulnerable 3s (trail chips HP). Minion ring spawns during armored phase (cap 12).",
-      "goal": "Wait for vulnerable window (3 s) — only then encircle",
+      "description": "Wave 10 boss fight, no upgrades, rupture biome. Cycles: armored 5s (trail damage blocked) → vulnerable 3s (gold tint — encircle now). Minion ring spawns during armored phase (cap 12). hp=999 for full observation.",
+      "goal": "Wait for gold tint (vulnerable window) — only then encircle",
       "wave": 10,
       "biome": "rupture",
-      "boss": "core"
+      "boss": "core",
+      "maxHp": 999,
+      "hp": 999
     },
     {
       "id": "boss-reflector-w15",
       "name": "Boss: Reflector (Wave 15)",
-      "description": "Wave 15 boss fight, no upgrades, jungle biome. Permanently armored — trail encirclement NEVER damages it. Figure-eight movement. Wave ends via timer, not kill.",
+      "description": "Wave 15 boss fight, no upgrades, jungle biome. Permanently armored — trail encirclement NEVER damages it. Figure-eight movement. Wave ends via timer, not kill. hp=999 to survive the full wave.",
       "goal": "Survive the timer — this boss cannot be killed",
       "wave": 15,
       "biome": "jungle",
-      "boss": "reflector"
+      "boss": "reflector",
+      "maxHp": 999,
+      "hp": 999
     },
     {
       "id": "boss-core-w10-loaded",
       "name": "Boss: Core (Wave 10) — Loaded",
-      "description": "Wave 10 core boss, rupture biome, 4 offensive/defensive upgrades.",
+      "description": "Wave 10 core boss, rupture biome, 4 offensive/defensive upgrades. hp=999 for full observation.",
       "goal": "Test DPS feel with turbo + combo_master vs Core",
       "wave": 10,
       "biome": "rupture",
       "boss": "core",
-      "upgrades": ["turbo", "shield", "magnet", "combo_master"]
+      "upgrades": ["turbo", "shield", "magnet", "combo_master"],
+      "maxHp": 999,
+      "hp": 999
     },
     {
       "id": "boss-pursuer-w5-fragile",
@@ -360,19 +368,21 @@
     {
       "id": "combo-cyan",
       "name": "Combo: Cyan Ring (Combo 4)",
-      "description": "Wave 5, combo=4. Verify: encirclement ring is cyan (4–6× range).",
+      "description": "Wave 5, combo=4, combo_master active (slows decay so the combo holds long enough to encircle). Verify: encirclement ring is cyan (4–6× range).",
       "goal": "Encircle an enemy — ring should be cyan (combo 4–6)",
       "wave": 5,
-      "combo": 4
+      "combo": 4,
+      "upgrades": ["combo_master"]
     },
     {
       "id": "combo-magenta",
       "name": "Combo: Magenta Ring + Shard Burst (Combo 7)",
-      "description": "Wave 8, combo=7, score=2000. Verify: magenta ring, shard burst on 3+ enemy encirclement (cap 30 particles). Also tests MAX_COMBO=16 range.",
+      "description": "Wave 8, combo=7, score=2000, combo_master active (holds combo above 7 threshold). Verify: magenta ring, shard burst on 3+ enemy encirclement (cap 30 particles). Also tests MAX_COMBO=16 range.",
       "goal": "Encircle 3+ packed enemies — magenta ring + shard burst",
       "wave": 8,
       "combo": 7,
-      "score": 2000
+      "score": 2000,
+      "upgrades": ["combo_master"]
     }
   ]
 }

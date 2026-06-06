@@ -245,6 +245,7 @@ export interface CfgShape {
   HORDE_WAVE_GROWTH: number;
   HORDE_MAX_COUNT: number;
   HORDE_SPAWN_DIST: number;
+  HORDE_ARC_RAD: number;    // angular spread of horde spawn arc (radians)
   // World
   WORLD_W: number;
   WORLD_H: number;
@@ -446,6 +447,7 @@ export const CFG: CfgShape = {
   HORDE_WAVE_GROWTH: 0.5,
   HORDE_MAX_COUNT: 40,
   HORDE_SPAWN_DIST: 950,
+  HORDE_ARC_RAD: Math.PI / 3,
   // World
   WORLD_W: 3000,
   WORLD_H: 3000,
