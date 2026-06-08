@@ -160,11 +160,10 @@ export function handlePropCollisions(hits: Prop[], player: PlayerState): PropCol
       const ny = dy / dist;
       const dot = player.vx * nx + player.vy * ny;
       if (dot < 0) {
-        // Match JS: zero the normal component then scale all velocity by 0.3 (absorptive)
         player.vx -= dot * nx;
         player.vy -= dot * ny;
-        player.vx *= 0.3;
-        player.vy *= 0.3;
+        player.vx *= CFG.PROP_PLAYER_BOUNCE;
+        player.vy *= CFG.PROP_PLAYER_BOUNCE;
       }
       player.wallHit = true;
       events.push({ type: 'solid_bounce', x: prop.x + nx * prop.radius, y: prop.y + ny * prop.radius });
@@ -199,11 +198,10 @@ export function checkEnemyPropCollision(state: PropsState, enemy: EnemyForProp):
     const ny = dy / d;
     const dot = enemy.vx * nx + enemy.vy * ny;
     if (dot < 0) {
-      // Match JS: zero the normal component then scale all velocity by 0.4 (absorptive)
       enemy.vx -= dot * nx;
       enemy.vy -= dot * ny;
-      enemy.vx *= 0.4;
-      enemy.vy *= 0.4;
+      enemy.vx *= CFG.PROP_ENEMY_BOUNCE;
+      enemy.vy *= CFG.PROP_ENEMY_BOUNCE;
     }
     enemy.wallHit = true;
   }

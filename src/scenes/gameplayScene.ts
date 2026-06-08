@@ -3,12 +3,15 @@
 
 import type { Scene, GameContext } from './sceneManager';
 import { GameLoop } from './gameLoop';
+import type { SituationSpec } from '@dev/situationTester';
 
 export interface GameplayOptions {
   mapId?: string;
   modifierIds?: string[];
   sandbox?: boolean;
   benchmark?: string; // scenario name e.g. 'idle_5', 'drift_15'
+  /** DEV-only: jump the run into a specific situation. String = preset id from scenarios.json. */
+  situation?: SituationSpec | string;
 }
 
 export class GameplayScene implements Scene {

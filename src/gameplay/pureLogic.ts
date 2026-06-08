@@ -313,6 +313,7 @@ export function getEnemyPool(score: number): EnemyType[] {
   if (score >= 2000) pool.push('blocker');
   if (score >= 2500) pool.push('flanker');
   if (score >= 3000) pool.push('bomber');
+  if (score >= 3500) pool.push('splitter');
   return pool;
 }
 

@@ -82,6 +82,21 @@ if (isInIframe) {
     });
   }));
   dbg('boot_scene_switched');
+} else if (import.meta.env.DEV) {
+  // Expose dev console handle for in-session situation loading
+  (window as Record<string, unknown>).__oversteer = {
+    loadSituation: (idOrSpec: string | Record<string, unknown>) =>
+      sceneManager.switchTo(new GameplayScene({ situation: idOrSpec as string })),
+  };
+  // ?situation=<id> skips menu and jumps straight into a named scenario
+  const situationId = new URLSearchParams(location.search).get('situation');
+  sceneManager.switchTo(new BootScene(() => {
+    if (situationId) {
+      sceneManager.switchTo(new GameplayScene({ situation: situationId }));
+    } else {
+      sceneManager.switchTo(new MenuScene(), { fade: 0.25 });
+    }
+  }));
 } else {
   sceneManager.switchTo(new BootScene(() => {
     sceneManager.switchTo(new MenuScene(), { fade: 0.25 });

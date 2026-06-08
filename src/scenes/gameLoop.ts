@@ -6,7 +6,7 @@ import { makeUIStyle } from '@ui/textStyles';
 import type { GameContext } from './sceneManager';
 import { MobileControls } from '@ui/mobileControls';
 import { CFG, S, applyMap, type EnemyType } from '@core/config';
-import { makePlayerState, getPlayerSpeed, getPlayerRadius, type PlayerState } from '@gameplay/player/playerState';
+import { makePlayerState, getPlayerSpeed, getPlayerRadius, getEffectiveScoreMult, type PlayerState } from '@gameplay/player/playerState';
 import { updatePlayer } from '@gameplay/player/playerUpdate';
 import { PlayerRenderer } from '@gameplay/player/playerRenderer';
 import { makeTrailState, getTrailPoint, type TrailState } from '@gameplay/trail/trailState';
@@ -79,6 +79,7 @@ import { GameOverScene, type GameOverData } from './gameOverScene';
 import { DeathSequence } from '@gameplay/death/deathSequence';
 import { UpgradeBreakPhase } from '@gameplay/upgradeBreak/upgradeBreakPhase';
 import type { GameplayOptions } from './gameplayScene';
+import { applySituation, SITUATIONS_BY_ID, consumeDevPickup, consumeDevBossKilled, type SituationSpec } from '@dev/situationTester';
 
 const EMPTY_INPUT: InputState = {
   up: false, down: false, left: false, right: false,
@@ -280,7 +281,17 @@ export class GameLoop {
     const onEncircleFx = (data: { count: number; x: number; y: number }) => {
       _ctx.audioManager.play('encircle');
       this._screenFx.shake(6, 0.25);
-      this._particles.addRing(data.x, data.y, 0x00ffcc);
+      // Combo-colored ring: white < 4×, cyan 4-6×, magenta 7+
+      const combo = this._scoringState.comboLevel;
+      const ringColor = combo >= 7 ? 0xFF44FF : combo >= 4 ? 0x00ffcc : 0xFFFFFF;
+      this._particles.addRing(data.x, data.y, ringColor);
+      // Large encirclements (3+): extra burst scaled to kill count
+      if (data.count >= 3) {
+        this._particles.spawn(data.x, data.y, ringColor, Math.min(data.count * 6, 30), {
+          type: 'shard', vxMin: -220, vxMax: 220, vyMin: -220, vyMax: 220,
+          lifeMin: 0.2, lifeMax: 0.5,
+        });
+      }
     };
     const onEnemyKilledFx = (data: { x: number; y: number; type: string; isElite?: boolean }) => {
       const requests = getDeathParticles({
@@ -339,15 +350,92 @@ export class GameLoop {
       () => eventBus.off('playerDied',     onPlayerDied),
     ];
 
+    // DEV-only: apply situation spec before the first startWave()
+    let _resolvedSituation: SituationSpec | null = null;
+    if (import.meta.env.DEV && _opts.situation) {
+      _resolvedSituation = typeof _opts.situation === 'string'
+        ? (SITUATIONS_BY_ID.get(_opts.situation) ?? null)
+        : _opts.situation;
+      if (!_resolvedSituation) {
+        console.warn(`[situation] unknown preset id "${_opts.situation}"`);
+      } else {
+        applySituation(this._waveState, this._playerState, this._biomeManager, this._trailState, this._scoringState, _resolvedSituation);
+      }
+    }
+
     // Start first wave after listeners are bound so initial "WAVE N" log is not missed.
     if (!_opts.benchmark) {
       _ctx.audioManager.startBgMusic();
     }
     if (!_opts.sandbox && !_opts.benchmark) {
       startWave(this._waveState);
-      eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
-      this._hudManager.showWaveBanner(this._waveState.waveIndex);
-      _ctx.audioManager.startEngine();
+      // DEV-only post-startWave situation overrides
+      if (import.meta.env.DEV && _resolvedSituation) {
+        const spec = _resolvedSituation;
+        // Boss pattern override (must run after startWave which sets round-robin default)
+        if (spec.boss != null) {
+          this._waveState.bossActive = true;
+          this._waveState.bossPattern = spec.boss;
+          this._waveState.bossSpawned = false;
+          this._waveState.bossTelegraphTimer = 1.5;
+        }
+        // Advance wave timer to simulate partial-wave completion
+        if (spec.waveProgress != null) {
+          this._waveState.waveTimer = this._waveState.currentCombatDuration * clamp(spec.waveProgress, 0, 1);
+        }
+        // Prevent enemy spawns for isolated tests
+        if (spec.disableSpawns) {
+          this._waveState.spawnTimer = Number.POSITIVE_INFINITY;
+        }
+        // Scatter physical scrap tokens around player (distinct from scrap currency set in applySituation)
+        if (spec.scrapTokens != null) {
+          const count = typeof spec.scrapTokens === 'number' ? spec.scrapTokens : spec.scrapTokens.count;
+          const radius = typeof spec.scrapTokens === 'number' ? 250 : (spec.scrapTokens.radius ?? 250);
+          for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const r = 50 + Math.random() * Math.max(0, radius - 50);
+            this._waveState.scraps.push({
+              x: clamp(this._playerState.x + Math.cos(angle) * r, 50, CFG.WORLD_W - 50),
+              y: clamp(this._playerState.y + Math.sin(angle) * r, 50, CFG.WORLD_H - 50),
+              life: 30,
+              type: 'scrap',
+            });
+          }
+        }
+        // Place a forced pickup directly next to player (instant, not gated by scrap spawn timer)
+        if (spec.pickupAtPlayer != null) {
+          const type = typeof spec.pickupAtPlayer === 'string' ? spec.pickupAtPlayer : spec.pickupAtPlayer.type;
+          const offset = typeof spec.pickupAtPlayer === 'string' ? { x: 60, y: 0 } : (spec.pickupAtPlayer.offset ?? { x: 60, y: 0 });
+          this._waveState.scraps.push({
+            x: clamp(this._playerState.x + offset.x, 50, CFG.WORLD_W - 50),
+            y: clamp(this._playerState.y + offset.y, 50, CFG.WORLD_H - 50),
+            life: 30,
+            type,
+          });
+        }
+        // Scenario banner: boss-defeated uses gold; all others use teal with name
+        if (spec.openUpgradeBreak && spec.bossDefeated) {
+          this._screenFx.flash(0xFFCC00, 0.6, 0.9);
+          this._screenFx.shake(6, 0.4);
+          this._hudManager.showMilestoneBanner('BOSS DEFEATED!', '#FFCC00');
+          eventBus.emit('eventLog', { text: 'BOSS DEFEATED! +REROLL', color: '#ffcc00' });
+        } else {
+          this._hudManager.showMilestoneBanner(spec.hint ?? spec.name ?? spec.id ?? 'SCENARIO', '#35F2D0');
+        }
+        this._hudManager.setScenarioGoal(spec.goal ?? null);
+      }
+      // Open upgrade break directly (skips combat — for shop / upgrade-bias scenarios)
+      if (import.meta.env.DEV && _resolvedSituation?.openUpgradeBreak) {
+        this._upgradeBreak.enter(
+          this._playerState, this._waveState,
+          !!_resolvedSituation.bossDefeated,
+          _resolvedSituation.rerollBonus ?? 0,
+        );
+      } else {
+        eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
+        this._hudManager.showWaveBanner(this._waveState.waveIndex);
+        _ctx.audioManager.startEngine();
+      }
     }
 
     _ctx.camera.reset(this._playerState.x, this._playerState.y);
@@ -627,9 +715,7 @@ export class GameLoop {
     if (this._playerState.scoreMultBoostTimer > 0) {
       this._playerState.scoreMultBoostTimer = Math.max(0, this._playerState.scoreMultBoostTimer - rawDt);
     }
-    const effectiveScoreMult = this._playerState.scoreMultBoostTimer > 0
-      ? this._playerState.scoreMult * 2
-      : this._playerState.scoreMult;
+    const effectiveScoreMult = getEffectiveScoreMult(this._playerState);
     // Sync combo from player into scoring state first (near-miss may have changed it last frame)
     this._scoringState.comboLevel = this._playerState.comboLevel;
     updateScoring(
@@ -651,7 +737,7 @@ export class GameLoop {
     const waveEvents = updateWave(
       this._waveState, dilatedDt, this._scoringState.score, this._enemies.length,
       bossAlive,
-      this._biomeManager.active.enemyWeightMult,
+      this._biomeManager.effectiveWeightMult,
     );
     for (const ev of waveEvents) {
       if (ev.type === 'spawn') {
@@ -672,8 +758,15 @@ export class GameLoop {
         this._ctx.audioManager.stopEngine();
         this._ctx.audioManager.stopDrift();
         eventBus.emit('waveEnded', { wave: this._waveState.waveIndex });
+        const _bossKilled = (ev.bossKilled ?? false) || (import.meta.env.DEV ? consumeDevBossKilled() : false);
+        if (_bossKilled) {
+          this._screenFx.flash(0xFFCC00, 0.6, 0.9);
+          this._screenFx.shake(6, 0.4);
+          this._hudManager.showMilestoneBanner('BOSS DEFEATED!', '#FFCC00');
+          eventBus.emit('eventLog', { text: 'BOSS DEFEATED! +REROLL', color: '#ffcc00' });
+        }
         // Enter upgrade break phase (from game.js:911-928)
-        this._upgradeBreak.enter(this._playerState, this._waveState);
+        this._upgradeBreak.enter(this._playerState, this._waveState, _bossKilled);
       } else if (ev.type === 'horde') {
         for (const req of ev.spawnRequests) {
           const rawX = this._playerState.x + Math.cos(req.angle) * req.distance;
@@ -739,13 +832,27 @@ export class GameLoop {
     return changed;
   }
 
+  // NOTE: not in original — Splitter death spawns two chasers (not triggered by bomb kills)
+  private _spawnSplitChasers(x: number, y: number): void {
+    const baseAngle = Math.random() * Math.PI * 2;
+    for (const offset of [Math.PI / 4, -Math.PI / 4]) {
+      const a = baseAngle + offset;
+      const cx = clamp(x + Math.cos(a) * 22, 10, CFG.WORLD_W - 10);
+      const cy = clamp(y + Math.sin(a) * 22, 10, CFG.WORLD_H - 10);
+      this._enemies.push(makeEnemyState('chaser', cx, cy, this._waveState.speedBonus));
+    }
+    eventBus.emit('spawnParticles', { x, y, type: 'spark', count: 8, color: 0xFF8800 });
+  }
+
   // NOTE: not in original — Core boss minion mechanic
   private _spawnMinionRing(sourceX: number, sourceY: number, count: number): void {
-    const existing = this._enemies.filter(e => e.type === 'chaser').length;
-    const allowed = Math.max(0, CFG.BOSS_MINION_MAX - existing);
+    let chaserCount = 0;
+    for (const e of this._enemies) if (e.type === 'chaser') chaserCount++;
+    const allowed = Math.max(0, CFG.BOSS_MINION_MAX - chaserCount);
     const toSpawn = Math.min(count, allowed);
+    if (toSpawn === 0) return;
     for (let i = 0; i < toSpawn; i++) {
-      const angle = (Math.PI * 2 * i) / count;
+      const angle = (Math.PI * 2 * i) / toSpawn; // divide by toSpawn so partial rings stay evenly spread
       const x = clamp(sourceX + Math.cos(angle) * CFG.BOSS_MINION_RADIUS, 10, CFG.WORLD_W - 10);
       const y = clamp(sourceY + Math.sin(angle) * CFG.BOSS_MINION_RADIUS, 10, CFG.WORLD_H - 10);
       this._enemies.push(makeEnemyState('chaser', x, y, this._waveState.speedBonus));
@@ -761,9 +868,10 @@ export class GameLoop {
       this._playerState.y,
     );
     if (scrapPos) {
+      const _forcedPickup = import.meta.env.DEV ? consumeDevPickup() : null;
       this._waveState.scraps.push({
         x: scrapPos.x, y: scrapPos.y, life: 15,
-        type: selectPickupType(this._waveState.waveIndex, Math.random()),
+        type: _forcedPickup ?? selectPickupType(this._waveState.waveIndex, Math.random()),
       });
     }
 
@@ -829,14 +937,25 @@ export class GameLoop {
     let kills = 0;
     for (const e of this._enemies) {
       if (!e.alive) continue;
-      if (isVisible(e.x, e.y, 50)) {
-        e.alive = false;
-        kills++;
-        eventBus.emit('enemyKilled', { x: e.x, y: e.y, type: e.type, isElite: e.armored });
+      if (!isVisible(e.x, e.y, 50)) continue;
+
+      if (e.type === 'boss') {
+        // Bomb respects boss armor — same rule as encirclement (trailUpdate.ts:141)
+        if (e.armored || e.bossVulnerable === false) {
+          e.hitFlashTimer = CFG.BOSS_HIT_FLASH_S;  // deflect: flash but no damage
+          continue;
+        }
+        e.health = (e.health ?? 1) - 1;
+        e.hitFlashTimer = CFG.BOSS_HIT_FLASH_S;
+        if (e.health > 0) continue;  // chip damage only — boss survives
       }
+
+      e.alive = false;
+      kills++;
+      eventBus.emit('enemyKilled', { x: e.x, y: e.y, type: e.type, isElite: e.armored });
     }
     if (kills > 0) {
-      const bonus = Math.round(kills * 50 * this._playerState.scoreMult);
+      const bonus = Math.round(kills * 50 * getEffectiveScoreMult(this._playerState));
       addScore(this._scoringState, bonus);
       eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: bonus });
       updateRunStats(this._scoringState.runStats, { type: 'bomb', killCount: kills });
@@ -1043,7 +1162,7 @@ export class GameLoop {
         const encircleResult = computeEncircleOutcome(
           killCount,
           this._scoringState.comboLevel,
-          this._playerState.scoreMult,
+          getEffectiveScoreMult(this._playerState),
           this._playerState.encircleScoreBonus,
         );
         addScore(this._scoringState, encircleResult.scoreDelta);
@@ -1064,7 +1183,7 @@ export class GameLoop {
           const { chains, scoreGained } = applyChainLightning(
             loopResult.killedEnemies as EnemyState[],
             this._enemies,
-            this._playerState.scoreMult,
+            getEffectiveScoreMult(this._playerState),
           );
           if (scoreGained > 0) addScore(this._scoringState, scoreGained);
           for (const c of chains) {
@@ -1093,6 +1212,9 @@ export class GameLoop {
           type: (dead as EnemyState).type,
           isElite: deathEvent.isElite,
         });
+        if ((dead as EnemyState).type === 'splitter') {
+          this._spawnSplitChasers(dead.x, dead.y);
+        }
         changed = true;
       }
 
@@ -1109,8 +1231,16 @@ export class GameLoop {
     const burnResults = applyTrailBurn(this._playerState, this._enemies, this._trailState, dilatedDt);
     for (const r of burnResults) {
       if (r.enemyDied) {
-        addScore(this._scoringState, 50 * this._playerState.scoreMult);
+        addScore(this._scoringState, 50 * getEffectiveScoreMult(this._playerState));
+        // Intentional improvement: burn kills increment combo by +1 (half of encircle's +2)
+        const oldCombo = this._scoringState.comboLevel;
+        const newCombo = Math.min(CFG.MAX_COMBO, oldCombo + 1);
+        this._scoringState.comboLevel = newCombo;
+        this._playerState.comboLevel  = newCombo;
+        this._playerState.hp = applyComboHeal(oldCombo, newCombo, this._playerState.comboHeal, this._playerState.hp, this._playerState.maxHp);
+        this._checkComboMilestone(oldCombo, newCombo);
         eventBus.emit('eventLog', { text: 'BURN!', color: '#FF6600' });
+        if (r.enemyType === 'splitter') this._spawnSplitChasers(r.ex, r.ey);
       }
       eventBus.emit('spawnParticles', { x: r.ex, y: r.ey, type: 'spark', count: 4, color: 0xFF6600 });
       if (r.enemyDied) changed = true;

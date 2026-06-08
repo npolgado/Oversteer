@@ -40,15 +40,17 @@ export class UpgradeBreakPhase {
 
   /**
    * Enter the break phase: freeze the player, build the upgrade offer, show cards.
-   * Called from GameLoop when a wave_end event fires.
+   * Called from GameLoop when a wave_end event fires, or directly for situation presets.
+   * bossReward=true: grants +1 reroll as a boss kill bonus.
+   * extraRerolls: additional rerolls on top of base + bossReward (used by dev situations).
    */
-  enter(playerState: PlayerState, waveState: WaveState): void {
+  enter(playerState: PlayerState, waveState: WaveState, bossReward = false, extraRerolls = 0): void {
     this.active = true;
     this._upgradeChosen = false;
     this._upgradeConfirmTimer = CFG.UPGRADE_CONFIRM_TIME;
     this._chosenUpgrade = null;
     this._cardAnimTimer = 0;
-    this._rerollsLeft = getRerollCount(playerState);
+    this._rerollsLeft = getRerollCount(playerState) + (bossReward ? 1 : 0) + extraRerolls;
     this._currentOffer = buildUpgradeOffer(playerState, this._getUpgradeBias());
     // Freeze player (from game.js:911-928)
     playerState.vx = 0;
@@ -84,7 +86,10 @@ export class UpgradeBreakPhase {
     if (!this._upgradeChosen) {
       // NOTE: not in original — shop takes priority on 'enter' so D-pad + A buys before cards.
       // Gamepad D-pad + A: navigate/buy from shop before card input sees 'enter'.
-      const gpBought = this._shopPanel?.handleGamepadInput(input, playerState) ?? null;
+      // 'blocked' means enter was pressed on a disabled item — consume it so it doesn't reach cards.
+      const gpResult = this._shopPanel?.handleGamepadInput(input, playerState) ?? null;
+      const gpBought = (gpResult !== null && gpResult !== 'blocked') ? gpResult : null;
+      const gpConsumed = gpResult !== null; // true for successful purchase OR blocked press
 
       // Mouse/touch tap: shop intercepts before upgrade cards.
       const tap = inputManager.consumeTap();
@@ -98,9 +103,8 @@ export class UpgradeBreakPhase {
         this._audio.play('ui_click');
         eventBus.emit('eventLog', { text: `BOUGHT: ${getShopItemLabel(shopBought) ?? '?'}`, color: '#ffb000' });
       }
-      // If shop consumed 'enter' (D-pad buy), pass null tap so cards don't also act on it.
-      // When shop consumed gamepad nav, mask all menu inputs so cards don't double-act
-      const maskedInput = gpBought != null
+      // If shop consumed 'enter' (D-pad buy or blocked press), mask all menu inputs so cards don't double-act
+      const maskedInput = gpConsumed
         ? { ...input, enter: false, select1: false, menuDown: false, menuUp: false, menuLaunch: false }
         : input;
       const cardAction = this._upgradeCards.checkInput(
@@ -132,6 +136,8 @@ export class UpgradeBreakPhase {
           this._currentOffer = newOffer;
           this._cardAnimTimer = 0;
           this._upgradeCards.show(this._currentOffer, this._rerollsLeft, playerState.upgrades);
+          // upgradeCards.show() clears the shared overlay layer — rebuild the shop panel on top
+          this._shopPanel?.show(playerState);
         }
       }
     }

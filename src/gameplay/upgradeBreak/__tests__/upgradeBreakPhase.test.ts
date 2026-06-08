@@ -33,8 +33,12 @@ const noInput: InputState = {
   escape: false, perfToggle: false,
 };
 
-function makePhase(cards = makeCards(), onWaveStart = vi.fn()) {
-  return { phase: new UpgradeBreakPhase(cards as any, mockAudio as any, onWaveStart), cards, onWaveStart };
+function makeShopPanel() {
+  return { show: vi.fn(), hide: vi.fn(), update: vi.fn(), destroy: vi.fn(), handleGamepadInput: vi.fn().mockReturnValue(null), tryPurchase: vi.fn().mockReturnValue(null) };
+}
+
+function makePhase(cards = makeCards(), onWaveStart = vi.fn(), shop: ReturnType<typeof makeShopPanel> | null = null) {
+  return { phase: new UpgradeBreakPhase(cards as any, mockAudio as any, onWaveStart, shop as any), cards, onWaveStart, shop };
 }
 
 // ── enter() ───────────────────────────────────────────────────────────────────
@@ -241,6 +245,65 @@ describe('UpgradeBreakPhase empty offer auto-countdown', () => {
   });
 });
 
+// ── extraRerolls ──────────────────────────────────────────────────────────────
+
+describe('UpgradeBreakPhase.enter() extraRerolls', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('extraRerolls=5 adds 5 on top of base reroll count', () => {
+    const cards = makeCards();
+    const { phase } = makePhase(cards);
+    const player = makePlayerState();
+
+    phase.enter(player, makeWaveState(), false, 5);
+
+    // Verify we can reroll 5 extra times (base + 5); exhaust base + 5
+    const baseCount = CFG.REROLL_MAX; // default player has CFG.REROLL_MAX rerolls
+    const totalExpected = baseCount + 5;
+    const wave = makeWaveState();
+    const trail = makeTrailState();
+
+    let rerollsUsed = 0;
+    const showCountAtStart = cards.show.mock.calls.length;
+    for (let i = 0; i < totalExpected; i++) {
+      cards.checkInput.mockReturnValueOnce('reroll');
+      phase.update(0.016, noInput, player, trail, wave);
+      rerollsUsed++;
+    }
+    // All totalExpected rerolls should have fired new show() calls
+    expect(cards.show.mock.calls.length).toBe(showCountAtStart + totalExpected);
+
+    // One more should not fire (exhausted)
+    cards.checkInput.mockReturnValueOnce('reroll');
+    phase.update(0.016, noInput, player, trail, wave);
+    expect(cards.show.mock.calls.length).toBe(showCountAtStart + totalExpected);
+  });
+
+  it('bossReward=true and extraRerolls=5 grants base+1+5 total rerolls', () => {
+    const cards = makeCards();
+    const { phase } = makePhase(cards);
+    const player = makePlayerState();
+
+    phase.enter(player, makeWaveState(), true, 5);
+
+    const baseCount = CFG.REROLL_MAX;
+    const totalExpected = baseCount + 1 + 5;
+    const wave = makeWaveState();
+    const trail = makeTrailState();
+
+    for (let i = 0; i < totalExpected; i++) {
+      cards.checkInput.mockReturnValueOnce('reroll');
+      phase.update(0.016, noInput, player, trail, wave);
+    }
+    const showCountAfterAll = cards.show.mock.calls.length;
+
+    // One more — should not call show() again
+    cards.checkInput.mockReturnValueOnce('reroll');
+    phase.update(0.016, noInput, player, trail, wave);
+    expect(cards.show.mock.calls.length).toBe(showCountAfterAll);
+  });
+});
+
 // ── special upgrade side effects ──────────────────────────────────────────────
 
 describe('UpgradeBreakPhase special upgrade side effects', () => {
@@ -328,5 +391,53 @@ describe('UpgradeBreakPhase reroll', () => {
     phase.update(0.016, noInput, player, trail, wave);
 
     expect(cards.show.mock.calls.length).toBe(showCountAfterExhaust);
+  });
+});
+
+// ── B7: shop panel re-shown on reroll ─────────────────────────────────────────
+
+describe('UpgradeBreakPhase — shop re-shown after reroll (B7 fix)', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('calls shopPanel.show() on enter', () => {
+    const shop = makeShopPanel();
+    const { phase } = makePhase(makeCards(), vi.fn(), shop);
+    phase.enter(makePlayerState(), makeWaveState());
+    expect(shop.show).toHaveBeenCalledOnce();
+  });
+
+  it('calls shopPanel.show() again after a reroll (overlay layer was cleared)', () => {
+    const cards = makeCards();
+    const shop = makeShopPanel();
+    const { phase } = makePhase(cards, vi.fn(), shop);
+    const player = makePlayerState();
+    const wave = makeWaveState();
+    const trail = makeTrailState();
+
+    phase.enter(player, wave);
+    expect(shop.show).toHaveBeenCalledTimes(1);
+
+    cards.checkInput.mockReturnValueOnce('reroll');
+    phase.update(0.016, noInput, player, trail, wave);
+
+    // shop.show must be called a second time so the panel rebuilds on the cleared layer
+    expect(shop.show).toHaveBeenCalledTimes(2);
+  });
+
+  it('shop.show() is called with the current playerState on reroll', () => {
+    const cards = makeCards();
+    const shop = makeShopPanel();
+    const { phase } = makePhase(cards, vi.fn(), shop);
+    const player = makePlayerState();
+    player.scrapBank = 42;
+    const wave = makeWaveState();
+    const trail = makeTrailState();
+
+    phase.enter(player, wave);
+    cards.checkInput.mockReturnValueOnce('reroll');
+    phase.update(0.016, noInput, player, trail, wave);
+
+    const lastCall = shop.show.mock.calls[shop.show.mock.calls.length - 1];
+    expect(lastCall[0]).toBe(player);
   });
 });

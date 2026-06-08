@@ -100,7 +100,7 @@ export class UpgradeCardsUI {
         spr.position.set(CARD_W / 2, S(30));
         container.addChild(spr);
       } else {
-        const iconTxt = new Text({ text: card.icon, style: makeUIStyle({ size: S(36), color: '#ffffff', bold: true }) });
+        const iconTxt = new Text({ text: card.icon, style: makeUIStyle({ size: S(44), color: '#ffffff', bold: true }) });
         iconTxt.anchor.set(0.5, 0);
         iconTxt.position.set(CARD_W / 2, S(30));
         container.addChild(iconTxt);

@@ -79,6 +79,9 @@ export class HudManager {
   private _offTop: Graphics;
   private _offBottom: Graphics;
 
+  // DEV-only: persistent scenario goal label (bottom-center)
+  private _scenarioGoalText: Text;
+
   constructor(layer: Container) {
     this._layer = layer;
 
@@ -150,6 +153,15 @@ export class HudManager {
     this._offTop = new Graphics();
     this._offBottom = new Graphics();
 
+    // --- DEV scenario goal label (bottom-center, persistent while scenario is active) ---
+    this._scenarioGoalText = new Text({
+      text: '',
+      style: makeUIStyle({ size: S(12), color: '#88CCEE' }),
+    });
+    this._scenarioGoalText.anchor.set(0.5, 1);
+    this._scenarioGoalText.position.set(CFG.W / 2, CFG.H - S(4));
+    this._scenarioGoalText.alpha = 0;
+
     // Add all to layer
     layer.addChild(
       this._scoreBg, this._scoreLabel, this._scoreValue, this._newBestText,
@@ -161,6 +173,7 @@ export class HudManager {
       this._offLeft, this._offRight, this._offTop, this._offBottom,
       this._waveBanner, this._waveBannerText,
       this._milestoneBanner, this._milestoneBannerText,
+      this._scenarioGoalText,
     );
   }
 
@@ -216,6 +229,16 @@ export class HudManager {
       uiTween(this._milestoneBannerText, { alpha: 0, duration: 0.3, delay: 1.0, ease: 'power2.in' });
       uiTween(this._milestoneBanner,     { alpha: 0, duration: 0.3, delay: 1.0, ease: 'power2.in' });
     });
+  }
+
+  /** DEV-only: show a persistent scenario goal line at the bottom-center. Pass null to hide. */
+  setScenarioGoal(text: string | null): void {
+    if (text) {
+      this._scenarioGoalText.text = `⬡ ${text}`;
+      this._scenarioGoalText.alpha = 1;
+    } else {
+      this._scenarioGoalText.alpha = 0;
+    }
   }
 
   update(data: HudData): void {

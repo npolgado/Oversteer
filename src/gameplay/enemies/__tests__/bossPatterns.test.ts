@@ -2,6 +2,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { updatePursuer, updateCore, updateReflector } from '../bossPatterns';
+import { makeBoss as makeRealBoss } from '../enemyState';
 import { CFG } from '@core/config';
 import type { EnemyState } from '../enemyState';
 import type { PlayerState } from '@gameplay/player/playerState';
@@ -159,5 +160,27 @@ describe('updateReflector', () => {
       expect(result.ty).toBeGreaterThanOrEqual(CFG.WORLD_H / 2 - 226); // sin*cos max = 0.5
       expect(result.ty).toBeLessThanOrEqual(CFG.WORLD_H / 2 + 226);
     }
+  });
+});
+
+// ── makeBoss factory (enemyState.ts) ──────────────────────────
+
+describe('makeBoss initial state', () => {
+  it('core boss spawns with BOSS_INVULN_DUR timer (not TELEGRAPH_DUR)', () => {
+    const boss = makeRealBoss('core', 0, 0);
+    expect(boss.bossPhase).toBe('invuln');
+    expect(boss.bossPhaseTimer).toBe(CFG.BOSS_INVULN_DUR);
+  });
+
+  it('pursuer boss spawns with BOSS_TELEGRAPH_DUR timer', () => {
+    const boss = makeRealBoss('pursuer', 0, 0);
+    expect(boss.bossPhase).toBe('telegraph');
+    expect(boss.bossPhaseTimer).toBe(CFG.BOSS_TELEGRAPH_DUR);
+  });
+
+  it('reflector boss spawns with BOSS_TELEGRAPH_DUR timer', () => {
+    const boss = makeRealBoss('reflector', 0, 0);
+    expect(boss.bossPhase).toBe('telegraph');
+    expect(boss.bossPhaseTimer).toBe(CFG.BOSS_TELEGRAPH_DUR);
   });
 });

@@ -43,6 +43,11 @@ describe('enemy pool', () => {
     expect(getEnemyPool(3000)).toContain('bomber');
   });
 
+  it('splitter unlocked at 3500', () => {
+    expect(getEnemyPool(3499)).not.toContain('splitter');
+    expect(getEnemyPool(3500)).toContain('splitter');
+  });
+
   it('full pool at high score', () => {
     expect(getEnemyPool(5000)).toEqual([
       'chaser',
@@ -51,7 +56,28 @@ describe('enemy pool', () => {
       'blocker',
       'flanker',
       'bomber',
+      'splitter',
     ]);
+  });
+});
+
+// ── makeEnemyState — splitter ──────────────────────────────────
+
+describe('splitter enemy state', () => {
+  it('creates a splitter with chaser-like stats', () => {
+    const s = makeEnemyState('splitter', 100, 200, 0);
+    expect(s.type).toBe('splitter');
+    expect(s.health).toBe(1);
+    expect(s.armored).toBe(false);
+    expect(s.maxSpeed).toBe(CFG.SPLITTER_SPEED);
+    expect(s.radius).toBe(CFG.ENEMY_RADIUS);
+    expect(s.alive).toBe(true);
+  });
+
+  it('applies speedBonus to maxSpeed', () => {
+    const s = makeEnemyState('splitter', 0, 0, 50);
+    expect(s.maxSpeed).toBe(CFG.SPLITTER_SPEED + 50);
+    expect(s.baseMaxSpeed).toBe(CFG.SPLITTER_SPEED + 50);
   });
 });
 

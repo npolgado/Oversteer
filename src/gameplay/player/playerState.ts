@@ -117,6 +117,10 @@ export function getPlayerSpeed(state: PlayerState): number {
   return Math.hypot(state.vx, state.vy);
 }
 
+export function getEffectiveScoreMult(p: PlayerState): number {
+  return p.scoreMultBoostTimer > 0 ? p.scoreMult * 2 : p.scoreMult;
+}
+
 export function getPlayerRadius(state: PlayerState): number {
   let r = CFG.PLAYER_RADIUS;
   if (state.drifting) r -= CFG.PLAYER_DRIFT_SHRINK;

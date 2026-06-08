@@ -20,6 +20,7 @@ export type EnemyType =
   | 'blocker'
   | 'flanker'
   | 'bomber'
+  | 'splitter'
   | 'boss';
 
 export type EnemySprites = Record<EnemyType, string[]>;
@@ -96,7 +97,7 @@ const _JUNGLE: BiomeDescriptor = {
     { image: 'props/bush_1.png',  radius: 25, weight: 6, type: 'decoration' },
     { image: 'props/mud_1.png',   radius: 62, weight: 3, type: 'slow', duration: 2.0, strength: 0.5 },
   ],
-  enemyWeightMult: { bomber: 1.6, blocker: 1.4 },
+  enemyWeightMult: { bomber: 1.6, blocker: 1.4, splitter: 1.5 },
   musicPackId: 'jungle',
   upgradeBias: { max_hp: 2, hp_regen: 2, damage_resist: 1.5 },
 };
@@ -133,6 +134,8 @@ export interface CfgShape {
   DRIFT_BOOST: number;
   ARENA_PAD: number;
   BOUNCE_RETAIN: number;
+  PROP_PLAYER_BOUNCE: number;
+  PROP_ENEMY_BOUNCE: number;
   // Player
   PLAYER_W: number;
   PLAYER_H: number;
@@ -146,6 +149,7 @@ export interface CfgShape {
   BLOCKER_SPEED: number;
   FLANKER_SPEED: number;
   BOMBER_SPEED: number;
+  SPLITTER_SPEED: number;
   ENEMY_RADIUS: number;
   ENEMY_W: number;
   ENEMY_H: number;
@@ -243,6 +247,7 @@ export interface CfgShape {
   HORDE_WAVE_GROWTH: number;
   HORDE_MAX_COUNT: number;
   HORDE_SPAWN_DIST: number;
+  HORDE_ARC_RAD: number;    // angular spread of horde spawn arc (radians)
   // World
   WORLD_W: number;
   WORLD_H: number;
@@ -333,6 +338,8 @@ export const CFG: CfgShape = {
   DRIFT_BOOST: 60,
   ARENA_PAD: 24,
   BOUNCE_RETAIN: 0.35,
+  PROP_PLAYER_BOUNCE: 0.3,
+  PROP_ENEMY_BOUNCE: 0.4,
   // Player
   PLAYER_W: 34,
   PLAYER_H: 18,
@@ -346,6 +353,7 @@ export const CFG: CfgShape = {
   BLOCKER_SPEED: 380,
   FLANKER_SPEED: 470,
   BOMBER_SPEED: 400,
+  SPLITTER_SPEED: 420,
   ENEMY_RADIUS: 9,
   ENEMY_W: 32,
   ENEMY_H: 16,
@@ -362,7 +370,7 @@ export const CFG: CfgShape = {
   NEAR_MISS_HAZARD_PTS: 15,
   DRIFT_COMBO_INTERVAL: 1.0,
   DRIFT_COMBO_BASE: 5,
-  MAX_COMBO: 8,
+  MAX_COMBO: 16,
   // Waves
   WAVE_COMBAT: 25,
   WAVE_BREAK: 8,
@@ -443,6 +451,7 @@ export const CFG: CfgShape = {
   HORDE_WAVE_GROWTH: 0.5,
   HORDE_MAX_COUNT: 40,
   HORDE_SPAWN_DIST: 950,
+  HORDE_ARC_RAD: Math.PI / 3,
   // World
   WORLD_W: 3000,
   WORLD_H: 3000,
@@ -523,6 +532,7 @@ export const CFG: CfgShape = {
     blocker:     ['cars/truck.png', 'cars/enemy_red.png'],
     flanker:     ['cars/police.png', 'cars/enemy_orange.png'],
     bomber:      ['cars/mini_truck.png', 'cars/mini_van.png'],
+    splitter:    ['cars/enemy_orange.png', 'cars/enemy_red.png'],
     boss:        ['cars/truck.png', 'cars/mini_truck.png'],
   },
   BACKGROUND_SPRITE: 'backgrounds/background_01.png',

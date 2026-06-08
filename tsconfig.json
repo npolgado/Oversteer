@@ -20,7 +20,8 @@
       "@audio/*": ["./src/audio/*"],
       "@input/*": ["./src/input/*"],
       "@content/*": ["./src/content/*"],
-      "@debug/*": ["./src/debug/*"]
+      "@debug/*": ["./src/debug/*"],
+      "@dev/*": ["./src/dev/*"]
     },
     "baseUrl": "."
   },

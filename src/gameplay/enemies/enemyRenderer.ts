@@ -50,12 +50,16 @@ export class EnemyRenderer {
         s.width = spriteSize;
         s.height = spriteSize;
         if (enemy.type === 'interceptor') s.tint = 0xaabbff;
+        if (enemy.type === 'splitter')    s.tint = 0xFF8800;
         if (isBoss) s.tint = 0xFF6600;
         this._layer.addChild(s);
         this._sprites.set(enemy.id, s);
       } else {
         // Fallback: colored circle
-        const color = isBoss ? 0xFF6600 : (enemy.type === 'interceptor' ? 0x4444ff : 0xff4444);
+        const color = isBoss ? 0xFF6600
+          : enemy.type === 'interceptor' ? 0x4444ff
+          : enemy.type === 'splitter'    ? 0xFF8800
+          : 0xff4444;
         const g = new Graphics();
         g.circle(0, 0, enemy.radius).fill({ color });
         this._layer.addChild(g);
@@ -83,9 +87,11 @@ export class EnemyRenderer {
       // Hit flash: tint white while hitFlashTimer is active (timer decremented in enemyUpdate)
       if (enemy.type === 'boss') {
         if ((enemy.hitFlashTimer ?? 0) > 0) {
-          (sprite as Sprite).tint = 0xFFFFFF;
+          (sprite as Sprite).tint = 0xFFFFFF;          // white flash on damage
+        } else if (enemy.bossVulnerable === true) {
+          (sprite as Sprite).tint = 0xFFCC44;          // gold = attack window (Core vulnerable phase)
         } else {
-          (sprite as Sprite).tint = 0xFF6600;
+          (sprite as Sprite).tint = 0xFF6600;          // orange = armored / default
         }
 
         // Update HP bar

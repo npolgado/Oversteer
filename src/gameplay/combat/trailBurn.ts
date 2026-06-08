@@ -9,6 +9,7 @@ export interface TrailBurnResult {
   enemyDied: boolean;
   ex: number;
   ey: number;
+  enemyType?: string;
 }
 
 /**
@@ -54,7 +55,7 @@ export function applyTrailBurn(
 
     if (e.health <= 0) {
       e.alive = false;
-      results.push({ enemyDied: true, ex: e.x, ey: e.y });
+      results.push({ enemyDied: true, ex: e.x, ey: e.y, enemyType: e.type });
     } else {
       e.armored = false;
       results.push({ enemyDied: false, ex: e.x, ey: e.y });
