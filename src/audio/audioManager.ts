@@ -182,6 +182,20 @@ const audioManager = {
         b[i] = (Math.sin(2 * Math.PI * 1200 * t) * 0.2 + (Math.random() * 2 - 1) * 0.05) * env * env;
       }
     }, 0.08));
+
+    // boss_sting: deep descending chord + punch (1.2s)
+    this.sounds['boss_sting'] = new Howl(wav((b, sr, len) => {
+      for (let i = 0; i < len; i++) {
+        const t = i / sr;
+        const env = t < 0.05 ? t / 0.05 : Math.max(0, 1 - (t - 0.05) / 1.15);
+        const freq = 110 * Math.pow(0.5, t * 0.8); // descending pitch
+        b[i] = (
+          Math.sin(2 * Math.PI * freq * t) * 0.4 +
+          Math.sin(2 * Math.PI * freq * 1.5 * t) * 0.15 +
+          (Math.random() * 2 - 1) * 0.06
+        ) * env;
+      }
+    }, 1.2));
   },
 
   play(id: string): void {

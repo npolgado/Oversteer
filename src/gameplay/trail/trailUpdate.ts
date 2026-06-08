@@ -22,6 +22,7 @@ export interface EnemyState {
   alive: boolean;
   armored: boolean;
   type?: string;
+  health?: number;
 }
 
 export interface TrailLoopResult {
@@ -116,7 +117,15 @@ function _detectLoop(
       if (!e.alive) continue;
       if (!pointInPoly(e.x, e.y, poly)) continue;
 
-      if (e.armored) {
+      if (e.type === 'boss') {
+        // Boss takes one hit per encirclement; dies at 0 health
+        e.health = (e.health ?? 1) - 1;
+        if (e.health <= 0) {
+          e.alive = false;
+          killedEnemies.push(e);
+          encircleCount += 1;
+        }
+      } else if (e.armored) {
         // First hit strips armor; enemy survives
         e.armored = false;
       } else {

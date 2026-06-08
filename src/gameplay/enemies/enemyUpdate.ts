@@ -5,6 +5,7 @@ import { updatePhysics } from '@gameplay/physics';
 import { angleDiff, clamp, dist } from '@core/utils';
 import { CFG } from '@core/config';
 import { computeFlankTarget, computeBlockerTarget } from '@gameplay/pureLogic';
+import { updatePursuer, updateCore, updateReflector } from './bossPatterns';
 import type { PlayerState } from '@gameplay/player/playerState';
 import type { EnemyState } from './enemyState';
 
@@ -28,8 +29,20 @@ export function updateEnemy(
   let tx = player.x;
   let ty = player.y;
 
+  // Boss patterns override all normal AI
+  if (state.type === 'boss') {
+    const pattern = state.bossPattern ?? 'pursuer';
+    let result;
+    if (pattern === 'pursuer')   result = updatePursuer(state, player, dt);
+    else if (pattern === 'core') result = updateCore(state, player, dt);
+    else                         result = updateReflector(state, player, dt);
+
+    tx = result.tx;
+    ty = result.ty;
+    throttle = result.throttle;
+  }
   // AI branches per type (mirror entities.js update method)
-  if (state.type === 'interceptor') {
+  else if (state.type === 'interceptor') {
     // Lead the player
     const lookAhead = 0.5;
     tx = player.x + player.vx * lookAhead;

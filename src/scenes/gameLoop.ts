@@ -61,6 +61,7 @@ import { eventBus } from '@core/eventBus';
 import { HudManager, type HudData } from '@ui/hud/hudManager';
 import { EventLog } from '@ui/hud/eventLog';
 import { UpgradeCardsUI } from '@ui/menus/upgradeCards';
+import { ShopPanelUI } from '@ui/menus/shopPanel';
 import { inputManager } from '@input/inputManager';
 import type { InputState } from '@input/inputManager';
 import { PerfOverlay } from '@ui/PerfOverlay';
@@ -240,6 +241,7 @@ export class GameLoop {
       new UpgradeCardsUI(_ctx.pixiApp.overlayLayer),
       _ctx.audioManager,
       (waveIndex) => { this._hudManager.showWaveBanner(waveIndex); },
+      new ShopPanelUI(_ctx.pixiApp.overlayLayer),
     );
 
     // --- Event subscriptions ---
@@ -600,13 +602,20 @@ export class GameLoop {
 
   private _tickScoring(dilatedDt: number): void {
     // --- Per-frame scoring: base score, drift combo, combo decay ---
+    // Tick score-surge boost timer
+    if (this._playerState.scoreMultBoostTimer > 0) {
+      this._playerState.scoreMultBoostTimer = Math.max(0, this._playerState.scoreMultBoostTimer - dilatedDt);
+    }
+    const effectiveScoreMult = this._playerState.scoreMultBoostTimer > 0
+      ? this._playerState.scoreMult * 2
+      : this._playerState.scoreMult;
     // Sync combo from player into scoring state first (near-miss may have changed it last frame)
     this._scoringState.comboLevel = this._playerState.comboLevel;
     updateScoring(
       this._scoringState,
       this._playerState.drifting,
       this._playerState.driftTime,
-      this._playerState.scoreMult,
+      effectiveScoreMult,
       this._playerState.comboMaster,
       dilatedDt,
     );
@@ -652,6 +661,21 @@ export class GameLoop {
         this._hudManager.showMilestoneBanner('HORDE' + '!'.repeat(ev.count), '#FF4444');
         this._screenFx.shake(5, 0.3);
         this._ctx.camera.setHeadingMode(true);
+      } else if (ev.type === 'boss_spawn') {
+        // Spawn boss at arena center
+        const boss = makeEnemyState('boss', CFG.WORLD_W / 2, CFG.WORLD_H / 2, 0);
+        boss.bossPattern = ev.pattern;
+        boss.bossPhase = ev.pattern === 'core' ? 'invuln' : 'telegraph';
+        this._enemies.push(boss);
+        changed = true;
+        this._screenFx.flash(0xFF4040, 0.5, 0.6);
+        this._screenFx.shake(8, 0.5);
+        this._hudManager.showMilestoneBanner(
+          `WAVE ${this._waveState.waveIndex} — BOSS`,
+          '#FF4040',
+        );
+        this._ctx.audioManager.play('boss_sting');
+        eventBus.emit('eventLog', { text: 'BOSS WAVE!', color: '#FF4040' });
       } else if (ev.type === 'break_end') {
         startWave(this._waveState);
         eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
@@ -659,6 +683,17 @@ export class GameLoop {
       }
     }
     return changed;
+  }
+
+  /** Spawn a ring of minions around a source position (used by Core boss). */
+  private _spawnMinionRing(sourceX: number, sourceY: number, count: number): void {
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count;
+      const dist = 120;
+      const x = clamp(sourceX + Math.cos(angle) * dist, 10, CFG.WORLD_W - 10);
+      const y = clamp(sourceY + Math.sin(angle) * dist, 10, CFG.WORLD_H - 10);
+      this._enemies.push(makeEnemyState('chaser', x, y, this._waveState.speedBonus));
+    }
   }
 
   private _tickScraps(dilatedDt: number): void {
@@ -698,6 +733,8 @@ export class GameLoop {
     for (const ev of allEvents) {
       if (ev === 'scrap') {
         addScore(this._scoringState, 10); // +10 per scrap (intentional improvement over original)
+        this._playerState.scrapBank++;
+        this._scoringState.runStats.scrapCollected++;
         eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: 10 });
         eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 8 });
         eventBus.emit('eventLog', { text: '+SCRAP', color: '#35f2d0' });
@@ -712,6 +749,21 @@ export class GameLoop {
         eventBus.emit('eventLog', { text: 'TRAIL+', color: '#cc66ff' });
       } else if (ev === 'bomb') {
         this._applyBombPickup();
+      } else if (ev === 'time_slow') {
+        this._screenFx.slowmo(0.3, 3.0);
+        eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 12 });
+        eventBus.emit('eventLog', { text: 'TIME SLOW!', color: '#44aaff' });
+        this._ctx.audioManager.play('scrap_pickup');
+      } else if (ev === 'trail_token') {
+        this._trailState.maxPoints = Math.min(800, this._trailState.maxPoints + 200);
+        eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 10 });
+        eventBus.emit('eventLog', { text: 'TRAIL++', color: '#ff44cc' });
+        this._ctx.audioManager.play('scrap_pickup');
+      } else if (ev === 'shield_pickup') {
+        this._playerState.shield = true;
+        eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 14 });
+        eventBus.emit('eventLog', { text: 'SHIELD!', color: '#44ff88' });
+        this._ctx.audioManager.play('scrap_pickup');
       }
     }
   }
@@ -839,6 +891,12 @@ export class GameLoop {
           radius: CFG.BOMB_ZONE_RADIUS,
           phase: 0,
         });
+      }
+      // Core boss: spawn minion ring when flag is set
+      if (enemy._bossSpawnMinion) {
+        enemy._bossSpawnMinion = false;
+        this._spawnMinionRing(enemy.x, enemy.y, 6);
+        changed = true;
       }
       checkEnemyPropCollision(this._propsState, enemy);
       if (result.despawned) {

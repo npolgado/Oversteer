@@ -19,7 +19,8 @@ export type EnemyType =
   | 'elite'
   | 'blocker'
   | 'flanker'
-  | 'bomber';
+  | 'bomber'
+  | 'boss';
 
 export type EnemySprites = Record<EnemyType, string[]>;
 
@@ -136,8 +137,20 @@ export interface CfgShape {
   DMG_BLOCKER: number;
   DMG_FLANKER: number;
   DMG_BOMBER: number;
+  DMG_BOSS: number;
   DMG_SCALE_PER_WAVE: number;
   DMG_SCALE_MAX: number;
+  // Boss
+  BOSS_SPEED: number;
+  BOSS_HP: number;
+  BOSS_RADIUS: number;
+  BOSS_SPRITE_S: number;
+  BOSS_TELEGRAPH_DUR: number;
+  BOSS_CHARGE_DUR: number;
+  BOSS_CHARGE_SPEED: number;
+  BOSS_MINION_INTERVAL: number;
+  BOSS_VULNERABLE_DUR: number;
+  BOSS_INVULN_DUR: number;
   // Horde
   HORDE_TRIGGER_MIN: number;
   HORDE_TRIGGER_MAX: number;
@@ -317,8 +330,20 @@ export const CFG: CfgShape = {
   DMG_BLOCKER: 12,
   DMG_FLANKER: 20,
   DMG_BOMBER: 14,
+  DMG_BOSS: 25,
   DMG_SCALE_PER_WAVE: 0.12,
   DMG_SCALE_MAX: 3.0,
+  // Boss
+  BOSS_SPEED: 320,
+  BOSS_HP: 8,
+  BOSS_RADIUS: 20,
+  BOSS_SPRITE_S: 80,
+  BOSS_TELEGRAPH_DUR: 2.0,
+  BOSS_CHARGE_DUR: 1.0,
+  BOSS_CHARGE_SPEED: 700,
+  BOSS_MINION_INTERVAL: 4.0,
+  BOSS_VULNERABLE_DUR: 3.0,
+  BOSS_INVULN_DUR: 5.0,
   // Horde
   HORDE_TRIGGER_MIN: 0.60,
   HORDE_TRIGGER_MAX: 0.85,
@@ -407,6 +432,7 @@ export const CFG: CfgShape = {
     blocker:     ['cars/truck.png', 'cars/enemy_red.png'],
     flanker:     ['cars/police.png', 'cars/enemy_orange.png'],
     bomber:      ['cars/mini_truck.png', 'cars/mini_van.png'],
+    boss:        ['cars/truck.png', 'cars/mini_truck.png'],
   },
   BACKGROUND_SPRITE: 'backgrounds/background_01.png',
 };

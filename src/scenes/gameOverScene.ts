@@ -93,6 +93,7 @@ export class GameOverScene implements Scene {
       `Near misses: ${d.runStats.nearMissTotal}`,
       `Drift time: ${d.runStats.totalDriftTime.toFixed(1)}s`,
       `Enemies killed: ${d.runStats.enemiesKilled}`,
+      `Scrap collected: ${d.runStats.scrapCollected}`,
     ];
     for (const stat of stats) {
       const txt = new Text({ text: stat, style: statStyle });

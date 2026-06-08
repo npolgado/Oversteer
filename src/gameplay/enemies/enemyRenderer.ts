@@ -28,18 +28,21 @@ export class EnemyRenderer {
     for (const enemy of enemies) {
       if (this._sprites.has(enemy.id)) continue;
 
+      const isBoss = enemy.type === 'boss';
+      const spriteSize = isBoss ? CFG.BOSS_SPRITE_S : CFG.ENEMY_SPRITE_S;
       const texture = Assets.get(enemy.sprite);
       if (texture) {
         const s = new Sprite(texture);
         s.anchor.set(0.5);
-        s.width = CFG.ENEMY_SPRITE_S;
-        s.height = CFG.ENEMY_SPRITE_S;
+        s.width = spriteSize;
+        s.height = spriteSize;
         if (enemy.type === 'interceptor') s.tint = 0xaabbff;
+        if (isBoss) s.tint = 0xFF6600;
         this._layer.addChild(s);
         this._sprites.set(enemy.id, s);
       } else {
         // Fallback: colored circle
-        const color = enemy.type === 'interceptor' ? 0x4444ff : 0xff4444;
+        const color = isBoss ? 0xFF6600 : (enemy.type === 'interceptor' ? 0x4444ff : 0xff4444);
         const g = new Graphics();
         g.circle(0, 0, enemy.radius).fill({ color });
         this._layer.addChild(g);

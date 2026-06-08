@@ -12,6 +12,7 @@ import type { TrailState } from '@gameplay/trail/trailState';
 import type { WaveState } from '@gameplay/spawning/waveManager';
 import type { InputState } from '@input/inputManager';
 import type { UpgradeCardsUI } from '@ui/menus/upgradeCards';
+import type { ShopPanelUI } from '@ui/menus/shopPanel';
 import type { audioManager as AudioManagerType } from '@audio/audioManager';
 
 export class UpgradeBreakPhase {
@@ -32,6 +33,7 @@ export class UpgradeBreakPhase {
     private _audio: typeof AudioManagerType,
     /** Called when a new wave begins (after countdown). Receives the new wave index. */
     private _onWaveStart: (waveIndex: number) => void,
+    private _shopPanel: ShopPanelUI | null = null,
   ) {}
 
   /**
@@ -58,6 +60,7 @@ export class UpgradeBreakPhase {
     if (this._currentOffer.length > 0) {
       this._upgradeCards.show(this._currentOffer, this._rerollsLeft, playerState.upgrades);
     }
+    this._shopPanel?.show(playerState);
   }
 
   /**
@@ -75,7 +78,14 @@ export class UpgradeBreakPhase {
     this._upgradeCards.update(dt);
 
     if (!this._upgradeChosen) {
-      const cardAction = this._upgradeCards.checkInput(input, inputManager.consumeTap()) ?? null;
+      // Shop intercepts taps before upgrade cards — if shop consumed the tap, cards see null.
+      const tap = inputManager.consumeTap();
+      const shopBought = this._shopPanel?.tryPurchase(tap, playerState);
+      if (shopBought != null) {
+        this._audio.play('ui_click');
+        eventBus.emit('eventLog', { text: `BOUGHT: ${['Field Repair', 'Brief Invincibility', 'Score Surge'][shopBought]}`, color: '#ffb000' });
+      }
+      const cardAction = this._upgradeCards.checkInput(input, shopBought == null ? tap : null) ?? null;
 
       if (cardAction !== null && cardAction !== 'reroll') {
         const upgrade = this._currentOffer[cardAction as number];
@@ -111,6 +121,7 @@ export class UpgradeBreakPhase {
       if (this._upgradeConfirmTimer <= 0) {
         this.active = false;
         playerState.frozen = false;
+        this._shopPanel?.hide();
         startWave(waveState);
         eventBus.emit('waveStarted', { wave: waveState.waveIndex });
         this._audio.startEngine();
@@ -121,5 +132,6 @@ export class UpgradeBreakPhase {
 
   destroy(): void {
     this._upgradeCards.destroy();
+    this._shopPanel?.destroy();
   }
 }
