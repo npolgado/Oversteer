@@ -6,6 +6,13 @@ import { log, logError } from '@debug/logger';
 
 const _TRACK_NAMES = ['hype', 'neon', 'slipstream', 'tron'] as const;
 
+const MUSIC_PACKS: Record<string, readonly string[]> = {
+  default:   ['hype', 'neon', 'slipstream', 'tron'],
+  wasteland: ['neon', 'hype'],
+  rupture:   ['tron', 'slipstream'],
+  jungle:    ['hype', 'slipstream'],
+};
+
 const audioManager = {
   ctx: null as AudioContext | null,
   masterGain: null as GainNode | null,
@@ -30,6 +37,7 @@ const audioManager = {
   _shuffleOrder: [] as number[],
   _shuffleIdx: 0,
   _stopping: false,
+  _activePackIds: [] as number[],
 
   init(): void {
     try {
@@ -63,6 +71,7 @@ const audioManager = {
           },
         })
       );
+      this._activePackIds = _TRACK_NAMES.map((_, i) => i);
 
       // Explicit verification line — visible in logs/game.log and debug overlay.
       const soundCount = Object.keys(this.sounds).length;
@@ -290,9 +299,8 @@ const audioManager = {
   // NOTE: not in original — original arena-drifter JS used random pick-on-start with loop:true.
 
   _buildShuffle(): void {
-    const n = this._bgTracks.length;
-    const order = Array.from({ length: n }, (_, i) => i);
-    for (let i = n - 1; i > 0; i--) {
+    const order = this._activePackIds.slice();
+    for (let i = order.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [order[i], order[j]] = [order[j], order[i]];
     }
@@ -350,6 +358,27 @@ const audioManager = {
     // Advance so the next startBgMusic plays a fresh track instead of replaying this one.
     this._shuffleIdx++;
     if (this._shuffleIdx >= this._shuffleOrder.length) this._buildShuffle();
+  },
+
+  /** Swap the active music pack. Re-uses existing Howl instances; only the shuffle subset changes. */
+  loadMusicPack(packId: string): void {
+    const trackNames = MUSIC_PACKS[packId] ?? MUSIC_PACKS['default'];
+    const newIds = (trackNames as readonly string[])
+      .map(name => (_TRACK_NAMES as readonly string[]).indexOf(name))
+      .filter(i => i !== -1);
+
+    const same = newIds.length === this._activePackIds.length &&
+      newIds.every((id, i) => id === this._activePackIds[i]);
+    if (same) return;
+
+    this._activePackIds = newIds;
+    this._buildShuffle();
+    log('audio', `loadMusicPack(${packId})  tracks=[${trackNames.join(',')}]`);
+
+    if (this._musicPlaying) {
+      this.fadeBgMusic(0.6);
+      this.startBgMusic();
+    }
   },
 
   fadeBgMusic(dur: number): void {

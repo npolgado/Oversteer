@@ -140,20 +140,34 @@ export type PickupType =
 
 // Canonical spawn-weight table. Weights are relative; 0 = gated off at this wave.
 // Mirror in pickupRegistry.ts draw functions when adding a new type.
-export function selectPickupType(waveIndex: number, roll: number): PickupType {
-  type W = [PickupType, number];
-  const pool: W[] = [
+
+// Pool is memoized per wave-index bucket; gates open at waves 2/3/4/5 only.
+type _PickupEntry = [PickupType, number];
+const _pickupPoolCache = new Map<number, { pool: _PickupEntry[]; total: number }>();
+
+function _buildPickupPool(waveIndex: number): { pool: _PickupEntry[]; total: number } {
+  const pool: _PickupEntry[] = [
     ['scrap',        10],
     ['trail_boost',  1.5],
     ['speed_pickup', 1.5],
-    ...(waveIndex >= 2 ? [['trail_token',    0.8] as W] : []),
-    ...(waveIndex >= 3 ? [['time_slow',      0.6] as W] : []),
-    ...(waveIndex >= 4 ? [['shield_pickup',  0.4] as W] : []),
-    ...(waveIndex >= 5 ? [['bomb',           0.5] as W] : []),
+    ...(waveIndex >= 2 ? [['trail_token',    0.8] as _PickupEntry] : []),
+    ...(waveIndex >= 3 ? [['time_slow',      0.6] as _PickupEntry] : []),
+    ...(waveIndex >= 4 ? [['shield_pickup',  0.4] as _PickupEntry] : []),
+    ...(waveIndex >= 5 ? [['bomb',           0.5] as _PickupEntry] : []),
   ];
-  const total = pool.reduce((s, [, w]) => s + w, 0);
-  let cursor = roll * total;
-  for (const [id, w] of pool) {
+  return { pool, total: pool.reduce((s, [, w]) => s + w, 0) };
+}
+
+export function selectPickupType(waveIndex: number, roll: number): PickupType {
+  // Gate keys are 0,1,2,3,4,5+ — clamp to 5 so high wave numbers reuse the same entry
+  const key = Math.min(waveIndex, 5);
+  let cached = _pickupPoolCache.get(key);
+  if (!cached) {
+    cached = _buildPickupPool(waveIndex);
+    _pickupPoolCache.set(key, cached);
+  }
+  let cursor = roll * cached.total;
+  for (const [id, w] of cached.pool) {
     cursor -= w;
     if (cursor <= 0) return id;
   }

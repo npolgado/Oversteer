@@ -87,19 +87,26 @@ function _generateChunk(cx: number, cy: number, state: PropsState, pool: PropDef
   }
 }
 
-export function generateProps(state: PropsState): void {
-  // Build weighted pool once per generation (CFG.PROP_POOL only changes on map switch)
-  const pool = CFG.PROP_POOL.flatMap((def) => Array<PropDef>(def.weight).fill(def));
-  if (pool.length === 0) return;
+export function generateProps(state: PropsState, pool?: PropDef[]): void {
+  const defPool = pool ?? CFG.PROP_POOL;
+  const weightedPool = defPool.flatMap((def) => Array<PropDef>(def.weight).fill(def));
+  if (weightedPool.length === 0) return;
 
   const cs = CFG.PROP_CHUNK_SIZE;
   const cols = Math.ceil(CFG.WORLD_W / cs);
   const rows = Math.ceil(CFG.WORLD_H / cs);
   for (let cy = 0; cy < rows; cy++) {
     for (let cx = 0; cx < cols; cx++) {
-      _generateChunk(cx, cy, state, pool);
+      _generateChunk(cx, cy, state, weightedPool);
     }
   }
+}
+
+/** Clear and re-seed props from a new pool (used on biome transition). */
+export function regenerateProps(state: PropsState, pool: PropDef[]): void {
+  state.chunks.clear();
+  state.allProps.length = 0;
+  generateProps(state, pool);
 }
 
 // ── Spatial lookup ────────────────────────────────────────────────────────────

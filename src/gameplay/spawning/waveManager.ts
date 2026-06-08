@@ -65,12 +65,12 @@ export type WaveEvent =
   | { type: 'boss_spawn'; pattern: BossPattern };
 
 export function isBossWave(waveIndex: number): boolean {
-  return waveIndex > 0 && waveIndex % 5 === 0;
+  return waveIndex > 0 && waveIndex % CFG.BOSS_WAVE_INTERVAL === 0;
 }
 
 export function getBossPattern(waveIndex: number): BossPattern {
   const patterns: BossPattern[] = ['pursuer', 'core', 'reflector'];
-  return patterns[Math.floor(waveIndex / 5 - 1) % patterns.length];
+  return patterns[Math.floor(waveIndex / CFG.BOSS_WAVE_INTERVAL - 1) % patterns.length];
 }
 
 // ── Factory ────┐───────┐─────────────┐───────┐─────────
@@ -153,10 +153,40 @@ export function computeSpeedBonus(score: number): number {
 
 // ── Spawn type selection ──────┐────────
 
-function pickEnemyType(score: number, waveIndex: number): EnemyType {
-  const pool = getEnemyPool(score);
+// Weighted pool cache — rebuilt only when score bucket or biome changes.
+// Using reference equality on base (getEnemyPool returns stable array refs)
+// and on weightMult (biome objects are stable per active biome).
+let _cachedBase: readonly EnemyType[] | null = null;
+let _cachedMult: Partial<Record<EnemyType, number>> | null = null;
+let _cachedPool: EnemyType[] = [];
+
+function _buildWeightedPool(
+  base: readonly EnemyType[],
+  weightMult: Partial<Record<EnemyType, number>>,
+): EnemyType[] {
+  const out: EnemyType[] = [];
+  for (const t of base) {
+    // Math.max(1, ...) prevents a mult < 0.125 from silently dropping the type
+    const copies = Math.max(1, Math.round((weightMult[t] ?? 1) * 4));
+    for (let k = 0; k < copies; k++) out.push(t);
+  }
+  return out;
+}
+
+function pickEnemyType(
+  score: number,
+  waveIndex: number,
+  weightMult: Partial<Record<EnemyType, number>> = {},
+): EnemyType {
+  const base = getEnemyPool(score);
+  if (base !== _cachedBase || weightMult !== _cachedMult) {
+    _cachedBase = base;
+    _cachedMult = weightMult;
+    _cachedPool = _buildWeightedPool(base, weightMult);
+  }
+  const pool = _cachedPool.length > 0 ? _cachedPool : (base as EnemyType[]);
   const type = pool[Math.floor(Math.random() * pool.length)];
-  // Elite override: 20% chance from wave 4+
+  // Elite override: 12% chance from wave 4+
   if (waveIndex >= 4 && Math.random() < 0.12) return 'elite';
   return type;
 }
@@ -168,6 +198,8 @@ export function updateWave(
   dt: number,
   score: number,
   enemyCount: number,
+  bossAlive = false,
+  enemyWeightMult: Partial<Record<EnemyType, number>> = {},
 ): WaveEvent[] {
   const events: WaveEvent[] = [];
 
@@ -186,8 +218,8 @@ export function updateWave(
           state.bossSpawned = true;
           events.push({ type: 'boss_spawn', pattern: state.bossPattern! });
         }
-      } else if (enemyCount === 0) {
-        // Boss is dead — end combat phase
+      } else if (!bossAlive) {
+        // Boss is dead — end combat phase (minions may still be alive; use bossAlive not enemyCount)
         state.phase = 'break';
         state.breakTimer = CFG.WAVE_BREAK;
         events.push({ type: 'wave_end' });
@@ -221,7 +253,7 @@ export function updateWave(
         const requests: SpawnRequest[] = [];
         for (let i = 0; i < count; i++) {
           const angle = (Math.PI * 2 * i) / count;
-          requests.push({ type: pickEnemyType(score, state.waveIndex), count: 1, angle, distance: CFG.HORDE_SPAWN_DIST });
+          requests.push({ type: pickEnemyType(score, state.waveIndex, enemyWeightMult), count: 1, angle, distance: CFG.HORDE_SPAWN_DIST });
         }
         events.push({ type: 'horde', spawnRequests: requests, count });
       }
@@ -230,7 +262,7 @@ export function updateWave(
     // Regular spawn timer
     state.spawnTimer -= dt;
     if (state.spawnTimer <= 0) {
-      const type = pickEnemyType(score, state.waveIndex);
+      const type = pickEnemyType(score, state.waveIndex, enemyWeightMult);
       const angle = Math.random() * Math.PI * 2;
       events.push({
         type: 'spawn',
@@ -243,7 +275,7 @@ export function updateWave(
     if (state.burstQueue > 0) {
       state.burstDelay -= dt;
       if (state.burstDelay <= 0) {
-        const type = pickEnemyType(score, state.waveIndex);
+        const type = pickEnemyType(score, state.waveIndex, enemyWeightMult);
         const angle = Math.random() * Math.PI * 2;
         events.push({
           type: 'spawn',

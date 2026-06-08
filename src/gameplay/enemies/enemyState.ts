@@ -51,6 +51,7 @@ export interface EnemyState extends PhysicsEntity {
   bossChargeTargetY?: number;
   bossVulnerable?: boolean;
   _bossSpawnMinion?: boolean;
+  hitFlashTimer?: number;
 }
 
 let _nextId = 0;
@@ -500,6 +501,21 @@ export function makeEnemyState(
         _dropBomb: false,
       };
   }
+}
+
+/**
+ * Create a boss EnemyState with the correct initial phase for the given pattern.
+ * Core starts in 'invuln' (armored). Pursuer and Reflector start in 'telegraph'.
+ */
+export function makeBoss(
+  pattern: 'pursuer' | 'core' | 'reflector',
+  x: number,
+  y: number,
+): EnemyState {
+  const boss = makeEnemyState('boss', x, y, 0);
+  boss.bossPattern = pattern;
+  boss.bossPhase = pattern === 'core' ? 'invuln' : 'telegraph';
+  return boss;
 }
 
 export function getEnemySpeed(state: EnemyState): number {

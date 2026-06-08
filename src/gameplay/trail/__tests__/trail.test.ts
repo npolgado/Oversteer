@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { pointInPoly } from '@gameplay/pureLogic';
+import { CFG } from '@core/config';
 import {
   makeTrailState,
   getTrailPoint,
@@ -374,5 +375,152 @@ describe('elite encirclement scoring', () => {
     expect(enemies[1].alive).toBe(false);
     expect(enemies[2].alive).toBe(false);
     expect(enemies[3].alive).toBe(true);
+  });
+});
+
+// ── Boss HP encirclement (P2.3) ────────────────────────────────
+
+// Helper: push a square trail around (150,150) with enough points to detect a loop
+function pushSquareAroundCenter(state: ReturnType<typeof makeTrailState>, player: PlayerState): void {
+  // 12 points per side = 48 total, well above SKIP_RECENT (20) + 5
+  const square = [
+    ...Array.from({ length: 12 }, (_, i) => ({ x: 100 + i * 5, y: 100 })),
+    ...Array.from({ length: 12 }, (_, i) => ({ x: 160, y: 100 + i * 5 })),
+    ...Array.from({ length: 12 }, (_, i) => ({ x: 160 - i * 5, y: 160 })),
+    ...Array.from({ length: 12 }, (_, i) => ({ x: 100, y: 160 - i * 5 })),
+  ];
+  for (const pt of square) pushTrailPoint(state, pt.x, pt.y);
+  // Force close-distance check by setting player near first trail point
+  player.x = 102;
+  player.y = 102;
+}
+
+describe('boss HP encirclement', () => {
+  it('boss starts with CFG.BOSS_HP health and survives CFG.BOSS_HP - 1 encirclements', () => {
+    const boss: EnemyState = { x: 130, y: 130, alive: true, armored: false, type: 'boss', health: CFG.BOSS_HP, radius: 5 };
+    const player = makeTestPlayer(0, 0);
+
+    for (let hit = 0; hit < CFG.BOSS_HP - 1; hit++) {
+      const state = makeTrailState();
+      state.closeDist = 40;
+      state.checkTimer = 0.15;
+      pushSquareAroundCenter(state, player);
+      const result = updateTrail(state, player, [boss], 0);
+      // Boss takes damage but should still be alive until the final hit
+      expect(boss.alive).toBe(true);
+      expect(boss.health).toBe(CFG.BOSS_HP - (hit + 1));
+      // hitBosses populated (not killed yet)
+      expect(result?.hitBosses).toContain(boss);
+    }
+  });
+
+  it('boss dies on the CFG.BOSS_HP-th encirclement', () => {
+    const boss: EnemyState = { x: 130, y: 130, alive: true, armored: false, type: 'boss', health: 1, radius: 5 };
+    const player = makeTestPlayer(0, 0);
+    const state = makeTrailState();
+    state.closeDist = 40;
+    state.checkTimer = 0.15;
+    pushSquareAroundCenter(state, player);
+
+    const result = updateTrail(state, player, [boss], 0);
+
+    expect(boss.alive).toBe(false);
+    expect(boss.health).toBeLessThanOrEqual(0);
+    expect(result?.killedEnemies).toContain(boss);
+    expect(result?.encircleCount).toBe(1);
+  });
+
+  it('diagonal trail edge hits boss via 8-offset check', () => {
+    // Boss at (202,202), just past the bottom-right corner of a (100-200)x(100-200) square.
+    // All 4 cardinal offsets land outside (each overshoots a different edge).
+    // The NW diagonal (x-D, y-D) = (~181,~181) lands inside.
+    // This verifies the 8-offset check catches diagonal tangency that 4-cardinal check misses.
+    const poly = [
+      { x: 100, y: 100 }, { x: 200, y: 100 },
+      { x: 200, y: 200 }, { x: 100, y: 200 },
+    ];
+    const r = 30;
+    const D = r * 0.707; // ≈ 21.2
+
+    const bx = 202, by = 202;
+    expect(pointInPoly(bx,      by,     poly)).toBe(false); // center outside
+    expect(pointInPoly(bx,      by - r, poly)).toBe(false); // N: x=202 > 200
+    expect(pointInPoly(bx + r,  by,     poly)).toBe(false); // E
+    expect(pointInPoly(bx,      by + r, poly)).toBe(false); // S
+    expect(pointInPoly(bx - r,  by,     poly)).toBe(false); // W: y=202 > 200
+    // NW diagonal is the one that lands inside (both offsets pull toward interior)
+    expect(pointInPoly(bx - D,  by - D, poly)).toBe(true);  // NW diagonal inside
+  });
+
+  it('Reflector boss with armored=true survives encirclement at full HP', () => {
+    // bossPatterns.ts:100 — Reflector sets armored=true every tick; trail must not damage it
+    const boss: EnemyState = {
+      x: 130, y: 130, alive: true, armored: true, type: 'boss',
+      health: CFG.BOSS_HP, radius: 5, bossVulnerable: false,
+    };
+    const player = makeTestPlayer(0, 0);
+    const state = makeTrailState();
+    state.closeDist = 40;
+    state.checkTimer = 0.15;
+    pushSquareAroundCenter(state, player);
+
+    const result = updateTrail(state, player, [boss], 0);
+
+    // No damage — still alive at full HP; flash shown but no kill/hit counted
+    expect(boss.alive).toBe(true);
+    expect(boss.health).toBe(CFG.BOSS_HP);
+    // Result is null because no encircleCount and no hitBosses
+    expect(result).toBeNull();
+    // Flash still fires to give player feedback
+    expect(boss.hitFlashTimer).toBe(CFG.BOSS_HIT_FLASH_S);
+  });
+
+  it('Core boss in invuln phase (armored=true, bossVulnerable=false) deflects trail', () => {
+    // bossPatterns.ts:69 — Core sets armored=true during invuln/telegraph phase
+    const boss: EnemyState = {
+      x: 130, y: 130, alive: true, armored: true, type: 'boss',
+      health: CFG.BOSS_HP, radius: 5, bossVulnerable: false,
+    };
+    const player = makeTestPlayer(0, 0);
+    const state = makeTrailState();
+    state.closeDist = 40;
+    state.checkTimer = 0.15;
+    pushSquareAroundCenter(state, player);
+
+    updateTrail(state, player, [boss], 0);
+
+    expect(boss.health).toBe(CFG.BOSS_HP);
+    expect(boss.alive).toBe(true);
+  });
+
+  it('Core boss in vulnerable phase (armored=false, bossVulnerable=true) takes trail damage', () => {
+    // bossPatterns.ts:80 — Core sets armored=false, bossVulnerable=true during vulnerable phase
+    const boss: EnemyState = {
+      x: 130, y: 130, alive: true, armored: false, type: 'boss',
+      health: CFG.BOSS_HP, radius: 5, bossVulnerable: true,
+    };
+    const player = makeTestPlayer(0, 0);
+    const state = makeTrailState();
+    state.closeDist = 40;
+    state.checkTimer = 0.15;
+    pushSquareAroundCenter(state, player);
+
+    const result = updateTrail(state, player, [boss], 0);
+
+    expect(boss.health).toBe(CFG.BOSS_HP - 1);
+    expect(result?.hitBosses).toContain(boss);
+  });
+
+  it('hitFlashTimer is set to CFG.BOSS_HIT_FLASH_S on each hit', () => {
+    const boss: EnemyState = { x: 130, y: 130, alive: true, armored: false, type: 'boss', health: CFG.BOSS_HP, radius: 5 };
+    const player = makeTestPlayer(0, 0);
+    const state = makeTrailState();
+    state.closeDist = 40;
+    state.checkTimer = 0.15;
+    pushSquareAroundCenter(state, player);
+
+    updateTrail(state, player, [boss], 0);
+
+    expect(boss.hitFlashTimer).toBe(CFG.BOSS_HIT_FLASH_S);
   });
 });

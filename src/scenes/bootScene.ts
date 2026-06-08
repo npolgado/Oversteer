@@ -26,6 +26,7 @@ const ASSETS_TO_LOAD = [
   // Backgrounds
   { alias: 'backgrounds/background_01.png', src: 'backgrounds/background_01.png' },
   { alias: 'backgrounds/background_02.png', src: 'backgrounds/background_02.png' },
+  { alias: 'backgrounds/background_03.png', src: 'backgrounds/background_03.png' },
 ];
 
 export class BootScene implements Scene {
