@@ -12,6 +12,7 @@ dist-local/
 .aider*
 .worktrees/
 .claude/
+.claudesettings.json
 logs/
 pi-plan-output.plan.json
 *.plan.json

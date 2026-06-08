@@ -13,7 +13,17 @@ Top-down arena drift game: 3000×3000 world, waves, trail encirclement kills, ne
 
 **Repo:** `arena-drifter/` — `index.html` + 9 JS modules. Shared logic in `logic.js` (CFG, `U`/`S`, pure functions — e.g. `getEnemyPool`, `shouldSpawnElite`, `computeFlankTarget`, `computeBlockerTarget`, `applyBombZoneDamage`, `computeModifierScoreMult`). Tests: legacy **`test/*.test.js`** (allowlisted in `npm run test:old`) + Vitest `src/**/*.test.ts` (`npm test`). Pre-push runs both.
 
-**Docs:** `docs/archive/version_1_roadmap/`, `patch_notes.md`. Old experiments: `HISTORY.md`.
+**Docs:** `docs/archive/version_1_roadmap/`, `docs/patch_notes.md`. Old experiments: `HISTORY.md`.
+
+## Phase 4 systems (TS port)
+
+| System | Key files |
+|--------|-----------|
+| **Scrap economy + shop** | `src/gameplay/pickups/pickupRegistry.ts`, `src/ui/menus/shopPanel.ts` |
+| **Boss waves** | `src/gameplay/enemies/bossPatterns.ts` (Pursuer / Core / Reflector / Bomb) |
+| **Biome framework** | `src/gameplay/world/biomeManager.ts`, `src/gameplay/world/runProgression.ts`; descriptors in `src/core/config.ts` |
+| **Splitter enemy** | Cases in `src/gameplay/enemies/enemyState.ts` + `enemyRenderer.ts` |
+| **DEV situation tester** | `src/dev/situationTester.ts` — invoke via `?situation=<preset>` URL param (DEV builds only, tree-shaken in production). Presets in `src/dev/scenarios.json`. |
 
 ## Arena-drifter module load order (`index.html`)
 

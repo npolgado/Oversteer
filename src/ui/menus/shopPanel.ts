@@ -193,6 +193,13 @@ export class ShopPanelUI {
    *   doesn't leak into upgrade cards).
    * - Returns null if the tap missed all buttons.
    */
+  private _executePurchase(def: ShopItemDef, player: PlayerState): void {
+    player.scrapBank -= def.cost;
+    def.apply(player);
+    this._hintShown = true;
+    this._rebuild(player);
+  }
+
   tryPurchase(tap: { x: number; y: number } | null, player: PlayerState): number | 'blocked' | null {
     if (!this._visible || !tap) return null;
     for (let i = 0; i < this._items.length; i++) {
@@ -202,10 +209,7 @@ export class ShopPanelUI {
         const canAfford = player.scrapBank >= def.cost;
         const isUsable = !def.canApply || def.canApply(player);
         if (canAfford && isUsable) {
-          player.scrapBank -= def.cost;
-          def.apply(player);
-          this._hintShown = true;
-          this._rebuild(player); // refresh to show updated bank + disabled state
+          this._executePurchase(def, player);
           return i;
         }
         return 'blocked'; // tapped a disabled button — consume to prevent tap leaking
@@ -241,10 +245,7 @@ export class ShopPanelUI {
       const canAfford = player.scrapBank >= def.cost;
       const isUsable = !def.canApply || def.canApply(player);
       if (canAfford && isUsable) {
-        player.scrapBank -= def.cost;
-        def.apply(player);
-        this._hintShown = true;
-        this._rebuild(player);
+        this._executePurchase(def, player);
         return this._focusedIndex;
       }
       return 'blocked'; // consume the press so it doesn't leak to upgrade cards

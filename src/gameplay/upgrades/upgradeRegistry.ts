@@ -95,7 +95,7 @@ export const UPGRADE_REGISTRY: UpgradeDef[] = [
     apply(p) { p.driftShield = true; },
   },
   {
-    id: 'combo_heal', name: 'Combo Medic', desc: 'Heal at combo milestones 3/5/8', icon: '✦', stackable: false,
+    id: 'combo_heal', name: 'Combo Medic', desc: 'Heal 10/15/25 HP at combo milestones 3, 5, 8', icon: '✦', stackable: false,
     apply(p) { p.comboHeal = true; },
   },
   {

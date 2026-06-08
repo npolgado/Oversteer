@@ -134,6 +134,8 @@ export interface CfgShape {
   DRIFT_BOOST: number;
   ARENA_PAD: number;
   BOUNCE_RETAIN: number;
+  PROP_PLAYER_BOUNCE: number;
+  PROP_ENEMY_BOUNCE: number;
   // Player
   PLAYER_W: number;
   PLAYER_H: number;
@@ -336,6 +338,8 @@ export const CFG: CfgShape = {
   DRIFT_BOOST: 60,
   ARENA_PAD: 24,
   BOUNCE_RETAIN: 0.35,
+  PROP_PLAYER_BOUNCE: 0.3,
+  PROP_ENEMY_BOUNCE: 0.4,
   // Player
   PLAYER_W: 34,
   PLAYER_H: 18,
