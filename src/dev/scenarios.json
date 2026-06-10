@@ -383,6 +383,57 @@
       "combo": 7,
       "score": 2000,
       "upgrades": ["combo_master"]
+    },
+    {
+      "id": "biome-rupture-entry",
+      "name": "Biome Transition: Rupture Entry (Wave 8)",
+      "description": "Phase 4.5. Starts at wave 8 in rupture biome. Verify: blue tint 0x99BBFF, fog 0.13, flanker-heavy spawn pool, rupture music (tron lead), crystal hazard props (collision + damage).",
+      "goal": "Verify rupture: blue tint + fog, flankers, crystal prop damage",
+      "wave": 8,
+      "biome": "rupture"
+    },
+    {
+      "id": "biome-jungle-entry",
+      "name": "Biome Transition: Jungle Entry (Wave 15)",
+      "description": "Phase 4.5. Starts at wave 15 in jungle biome. Verify: green tint, heavy green fog (0.20), corruption zone spawning + growth, slipstream music lead.",
+      "goal": "Verify jungle: heavy fog, corruption zones growing, slipstream music",
+      "wave": 15,
+      "biome": "jungle"
+    },
+    {
+      "id": "biome-branch-choice",
+      "name": "Biome Branching: Route Choice (Wave 7 break)",
+      "description": "Phase 4.5. Opens the upgrade break at wave 7. After picking an upgrade, the biome chooser should appear: Rupture (normal) vs Jungle (+50% score). Verify chooser UI, keyboard/gamepad/touch input, and banner on confirmation.",
+      "goal": "Pick upgrade, then choose biome — verify chooser UI + score badge",
+      "wave": 7,
+      "openUpgradeBreak": true
+    },
+    {
+      "id": "hazard-heat-cracks",
+      "name": "Hazard: Wasteland Heat Cracks (Wave 2)",
+      "description": "Phase 4.5. Wave 2 wasteland, no enemies. Heat crack zones: orange telegraph outline (1.5 s), then bright eruption (1.2 s burst 12 damage if inside). Verify telegraph → erupt → expire cycle.",
+      "goal": "Watch crack zones: dim outline → bright burst → gone",
+      "wave": 2,
+      "biome": "wasteland",
+      "disableSpawns": true
+    },
+    {
+      "id": "hazard-crystals",
+      "name": "Hazard: Rupture Crystal Props (Wave 9)",
+      "description": "Phase 4.5. Wave 9 rupture biome, no enemies. Drive into rock props — normal solid rocks bounce without damage; crystal (hazard) rocks bounce AND deal 8 damage respecting invuln timer.",
+      "goal": "Hit solid rock (bounce only) then crystal rock (bounce + damage)",
+      "wave": 9,
+      "biome": "rupture",
+      "disableSpawns": true
+    },
+    {
+      "id": "hazard-corruption",
+      "name": "Hazard: Jungle Corruption Zones (Wave 16)",
+      "description": "Phase 4.5. Wave 16 jungle biome, no enemies. Corruption zones: spawn small (r=50), grow to r=140 over time, multiply up to cap 6. DPS + slow while inside. Verify visual: pulsing green/purple.",
+      "goal": "Watch zones grow and multiply; verify DPS + slow inside",
+      "wave": 16,
+      "biome": "jungle",
+      "disableSpawns": true
     }
   ]
 }

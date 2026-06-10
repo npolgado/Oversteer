@@ -77,6 +77,28 @@ describe('upgradeBias weighting', () => {
     expect(turboRate).toBeGreaterThan(magRate * 1.5);
   });
 
+  it('Wasteland upgradeBias (turbo:2, nitro_drift:2, speed_demon:1.5, drift_king:1.5) favors speed upgrades', () => {
+    const player = makePlayer();
+    const TRIALS = 300;
+    const speedIds = new Set(['turbo', 'nitro_drift', 'speed_demon', 'drift_king']);
+    const counts: Record<string, number> = {};
+    const bias = { turbo: 2, nitro_drift: 2, speed_demon: 1.5, drift_king: 1.5 };
+    for (let t = 0; t < TRIALS; t++) {
+      for (const u of buildUpgradeOffer(player, bias)) {
+        counts[u.id] = (counts[u.id] ?? 0) + 1;
+      }
+    }
+    const totalSlots = TRIALS * CFG.UPGRADES_TO_OFFER;
+    const speedCount = Object.entries(counts)
+      .filter(([id]) => speedIds.has(id))
+      .reduce((sum, [, n]) => sum + n, 0);
+    // Unbiased: 4 speed upgrades out of 26 total = ~15.4%.
+    // With bias (turbo/nitro_drift ×2, speed_demon/drift_king ×1.5), expect ≥ 1.3× the unbiased rate.
+    const unbiasedRate = 4 / 26;
+    const actualRate = speedCount / totalSlots;
+    expect(actualRate).toBeGreaterThan(unbiasedRate * 1.3);
+  });
+
   it('empty bias produces uniform-like selection (no bias key has weight)', () => {
     const player = makePlayer();
     const offer = buildUpgradeOffer(player, {});

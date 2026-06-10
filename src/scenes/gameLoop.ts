@@ -25,7 +25,9 @@ import {
 } from '@gameplay/world/propsSystem';
 import { PropsRenderer } from '@gameplay/world/propsRenderer';
 import { BiomeManager } from '@gameplay/world/biomeManager';
-import { isBiomeTransition, biomeForWave } from '@gameplay/world/runProgression';
+import { isBiomeTransition, RunProgression } from '@gameplay/world/runProgression';
+import { makeBiomeHazardState, clearBiomeHazards, updateBiomeHazards, type BiomeHazardState } from '@gameplay/world/biomeHazards';
+import { BiomeChoicePanel } from '@ui/menus/biomeChoicePanel';
 import { makeEnemyState, makeBoss, type EnemyState } from '@gameplay/enemies/enemyState';
 import { updateEnemy } from '@gameplay/enemies/enemyUpdate';
 import { EnemyRenderer } from '@gameplay/enemies/enemyRenderer';
@@ -159,6 +161,8 @@ export class GameLoop {
   private _death: DeathSequence;
   private _upgradeBreak: UpgradeBreakPhase;
   private _biomeManager: BiomeManager;
+  private _biomeHazardState: BiomeHazardState;
+  private _runProgression: RunProgression;
 
   constructor(private _opts: GameplayOptions, private _ctx: GameContext) {
     const {
@@ -212,6 +216,12 @@ export class GameLoop {
     generateProps(this._propsState);
     this._propsRenderer = new PropsRenderer({ propsLayer });
     this._propsRenderer.setProps(this._propsState.allProps);
+    // NOTE: not in original — when a DEV situation jumps to a non-wasteland biome,
+    // regenerate props from the biome's propPool (overrides map pool above).
+    if (import.meta.env.DEV && this._biomeManager.active.id !== 'wasteland') {
+      regenerateProps(this._propsState, this._biomeManager.active.propPool);
+      this._propsRenderer.setProps(this._propsState.allProps);
+    }
 
     this._enemyRenderer = new EnemyRenderer({ enemiesLayer });
     this._enemyRenderer.sync(this._enemies);
@@ -245,14 +255,28 @@ export class GameLoop {
       this._particles,
       () => this._transitionToGameOver(),
     );
+    this._biomeManager = new BiomeManager('wasteland');
+    this._biomeHazardState = makeBiomeHazardState();
+    this._runProgression = new RunProgression();
     this._upgradeBreak = new UpgradeBreakPhase(
       new UpgradeCardsUI(_ctx.pixiApp.overlayLayer),
       _ctx.audioManager,
-      (waveIndex) => { this._hudManager.showWaveBanner(waveIndex); },
+      (waveIndex) => {
+        this._applyBiomeTransition(waveIndex);
+        this._hudManager.showWaveBanner(waveIndex);
+      },
       new ShopPanelUI(_ctx.pixiApp.overlayLayer),
       () => this._biomeManager.active.upgradeBias,
+      () => this._runProgression.pendingChoice(this._waveState.waveIndex + 1),
+      (id) => {
+        this._runProgression.choose(id);
+        if (this._runProgression.rewardMult > 1) {
+          this._playerState.scoreMult *= this._runProgression.rewardMult;
+          eventBus.emit('eventLog', { text: '+50% SCORE BONUS — JUNGLE PATH', color: '#66DD66' });
+        }
+      },
+      new BiomeChoicePanel(_ctx.pixiApp.overlayLayer),
     );
-    this._biomeManager = new BiomeManager('wasteland');
 
     // --- Event subscriptions ---
     const onNearMiss    = () => this._eventLog.add('NEAR MISS +25', 0xffff00);
@@ -445,14 +469,21 @@ export class GameLoop {
       this._setupBenchmark(_opts.benchmark);
     }
 
-    const bgTexture = Assets.get(CFG.BACKGROUND_SPRITE);
-    if (bgTexture) {
-      const bg = new Sprite(bgTexture);
-      bg.width = CFG.WORLD_W;
-      bg.height = CFG.WORLD_H;
-      bg.tint = this._biomeManager.active.lightingTint;
-      this._bgSprite = bg;
-      backgroundLayer.addChild(bg);
+    {
+      // Use the active biome's background when a DEV situation has jumped to a non-wasteland biome;
+      // otherwise fall back to the map-configured sprite (preserves Loopy map visuals on wave 1).
+      const bgSrc = this._biomeManager.active.id !== 'wasteland'
+        ? this._biomeManager.active.backgroundSprite
+        : CFG.BACKGROUND_SPRITE;
+      const bgTexture = Assets.get(bgSrc);
+      if (bgTexture) {
+        const bg = new Sprite(bgTexture);
+        bg.width = CFG.WORLD_W;
+        bg.height = CFG.WORLD_H;
+        bg.tint = this._biomeManager.active.lightingTint;
+        this._bgSprite = bg;
+        backgroundLayer.addChild(bg);
+      }
     }
 
     {
@@ -618,6 +649,7 @@ export class GameLoop {
     this._tickScraps(dilatedDt);
     this._tickProps(dilatedDt);
     this._tickHazardZones(dilatedDt);
+    this._tickBiomeHazards(dilatedDt);
     enemiesChanged = this._tickEnemies(dilatedDt) || enemiesChanged;
     enemiesChanged = this._tickCombat(rawDt, dilatedDt) || enemiesChanged;
     enemiesChanged = this._tickTrail(dilatedDt) || enemiesChanged;
@@ -800,36 +832,50 @@ export class GameLoop {
         this._ctx.audioManager.play('boss_sting');
         eventBus.emit('eventLog', { text: 'BOSS WAVE!', color: '#FF4040' });
       } else if (ev.type === 'break_end') {
-        const nextWave = this._waveState.waveIndex + 1;
-        if (isBiomeTransition(nextWave)) {
-          const newBiomeId = biomeForWave(nextWave);
-          this._biomeManager.setBiome(newBiomeId);
-          const biome = this._biomeManager.active;
-          this._ctx.audioManager.loadMusicPack(biome.musicPackId);
-          // Regenerate props from the new biome's pool and refresh renderer
-          regenerateProps(this._propsState, biome.propPool);
-          this._propsRenderer.setProps(this._propsState.allProps);
-          // Swap background texture and tint
-          if (this._bgSprite) {
-            const tex = Assets.get(biome.backgroundSprite);
-            if (tex) this._bgSprite.texture = tex;
-            this._bgSprite.tint = biome.lightingTint;
-          }
-          // Update fog overlay
-          if (this._fogOverlay) {
-            this._fogOverlay.tint = biome.fogColor;
-            this._fogOverlay.alpha = biome.fogDensity;
-          }
-          this._hudManager.showMilestoneBanner(biome.name.toUpperCase(), '#35F2D0');
-          this._screenFx.flash(0x35F2D0, 0.3, 0.8);
-          changed = true;
-        }
+        // NOTE: In normal gameplay the live path is UpgradeBreakPhase calling startWave()
+        // then the _onWaveStart callback (which calls _applyBiomeTransition). This branch
+        // only fires in dev/sandbox scenarios where waveManager runs freely without an upgrade break.
         startWave(this._waveState);
+        this._applyBiomeTransition(this._waveState.waveIndex);
         eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
         this._hudManager.showWaveBanner(this._waveState.waveIndex);
       }
     }
     return changed;
+  }
+
+  // NOTE: not in original — Applies biome swap effects when a new wave starts at a transition wave.
+  // Called from the UpgradeBreakPhase _onWaveStart callback (live gameplay path) and from
+  // the break_end wave event handler (dev/sandbox path). Idempotent when not a transition wave.
+  private _applyBiomeTransition(startedWave: number): void {
+    if (!isBiomeTransition(startedWave)) return;
+    // Wave 15: reset the rewardMult applied during segment 1
+    if (startedWave === 15 && this._runProgression.rewardMult > 1) {
+      this._playerState.scoreMult /= this._runProgression.rewardMult;
+      this._runProgression.resetRewardMult();
+    }
+    const newBiomeId = this._runProgression.biomeForWave(startedWave);
+    this._biomeManager.setBiome(newBiomeId);
+    const biome = this._biomeManager.active;
+    this._ctx.audioManager.loadMusicPack(biome.musicPackId);
+    // Regenerate props from the new biome's pool and refresh renderer
+    regenerateProps(this._propsState, biome.propPool);
+    this._propsRenderer.setProps(this._propsState.allProps);
+    // Swap background texture and tint
+    if (this._bgSprite) {
+      const tex = Assets.get(biome.backgroundSprite);
+      if (tex) this._bgSprite.texture = tex;
+      this._bgSprite.tint = biome.lightingTint;
+    }
+    // Update fog overlay
+    if (this._fogOverlay) {
+      this._fogOverlay.tint = biome.fogColor;
+      this._fogOverlay.alpha = biome.fogDensity;
+    }
+    this._hudManager.showMilestoneBanner(biome.name.toUpperCase(), '#35F2D0');
+    this._screenFx.flash(0x35F2D0, 0.5, 1.0);
+    this._screenFx.shake(4, 0.3);
+    clearBiomeHazards(this._biomeHazardState);
   }
 
   // NOTE: not in original — Splitter death spawns two chasers (not triggered by bomb kills)
@@ -977,6 +1023,21 @@ export class GameLoop {
     for (const ev of propEvents) {
       if (ev.type === 'solid_bounce') {
         eventBus.emit('spawnParticles', { x: ev.x, y: ev.y, type: 'shard', count: 2 });
+      } else if (ev.type === 'hazard_hit') {
+        // Crystal hazard: apply damage respecting invuln/ghost frames/damageResist
+        if (this._playerState.invulnTimer <= 0 && this._playerState.ghostFrameTimer <= 0) {
+          const dmg = Math.ceil((ev.damage ?? 8) * (1 - (this._playerState.damageResist ?? 0)));
+          if (dmg > 0) {
+            this._playerState.hp = Math.max(0, this._playerState.hp - dmg);
+            this._playerState.invulnTimer = CFG.INVULN_TIME;
+            this._playerState.lastHitTimer = 0;
+            eventBus.emit('playerDamaged', { amount: dmg, x: ev.x, y: ev.y });
+            eventBus.emit('spawnParticles', { x: ev.x, y: ev.y, type: 'shard', count: 4 });
+            if (this._playerState.hp <= 0 && !this._death.active) {
+              this._death.trigger();
+            }
+          }
+        }
       }
     }
     updatePropCooldowns(this._propsState, dilatedDt);
@@ -1024,6 +1085,53 @@ export class GameLoop {
         if (prevHp !== effect.hp) {
           this._playerState.lastHitTimer = 0;
         }
+        if (this._playerState.hp <= 0 && !this._death.active) {
+          this._death.trigger();
+        }
+      }
+    }
+  }
+
+  /** Ticks per-biome hazard zones (heat cracks, corruption). Applies damage to player. */
+  private _tickBiomeHazards(dilatedDt: number): void {
+    const rules = this._biomeManager.active.hazardRules;
+    if (!rules || rules.kind === 'none') return;
+
+    const result = updateBiomeHazards(
+      this._biomeHazardState,
+      rules,
+      dilatedDt,
+      this._playerState.x,
+      this._playerState.y,
+      Math.random,
+    );
+
+    // Heat crack burst damage — applied once at eruption
+    if (result.burstDamage > 0 && this._playerState.invulnTimer <= 0 && this._playerState.ghostFrameTimer <= 0) {
+      const dmg = Math.ceil(result.burstDamage * (1 - (this._playerState.damageResist ?? 0)));
+      if (dmg > 0) {
+        const prevHp = this._playerState.hp;
+        this._playerState.hp = Math.max(0, this._playerState.hp - dmg);
+        if (this._playerState.hp !== prevHp) {
+          this._playerState.invulnTimer = CFG.INVULN_TIME;
+          this._playerState.lastHitTimer = 0;
+          eventBus.emit('playerDamaged', { amount: dmg, x: this._playerState.x, y: this._playerState.y });
+        }
+        if (this._playerState.hp <= 0 && !this._death.active) {
+          this._death.trigger();
+        }
+      }
+    }
+
+    // Corruption DPS — continuous while inside zone (slow also applied)
+    if (result.inCorruption && this._playerState.invulnTimer <= 0 && this._playerState.ghostFrameTimer <= 0) {
+      const dps = rules.dps ?? 0;
+      if (dps > 0) {
+        const dmg = dps * dilatedDt * (1 - (this._playerState.damageResist ?? 0));
+        this._playerState.hp = Math.max(0, this._playerState.hp - dmg);
+        this._playerState.slowTimer = Math.max(this._playerState.slowTimer ?? 0, 0.1);
+        this._playerState.slowStrength = 0.35;
+        this._playerState.lastHitTimer = 0;
         if (this._playerState.hp <= 0 && !this._death.active) {
           this._death.trigger();
         }
@@ -1261,7 +1369,7 @@ export class GameLoop {
 
   private _tickRenderers(dilatedDt: number): void {
     this._enemyRenderer.update(this._enemies);
-    this._pickupRenderer.update(this._waveState.scraps, this._waveState.hazardZones, this._waveState.boostZones);
+    this._pickupRenderer.update(this._waveState.scraps, this._waveState.hazardZones, this._waveState.boostZones, this._biomeHazardState.zones);
     this._trailRenderer.update(this._trailState);
     this._playerRenderer.update(this._playerState);
 

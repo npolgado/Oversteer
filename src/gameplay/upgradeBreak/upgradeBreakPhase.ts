@@ -15,6 +15,8 @@ import type { UpgradeCardsUI } from '@ui/menus/upgradeCards';
 import type { ShopPanelUI } from '@ui/menus/shopPanel';
 import { getShopItemLabel } from '@ui/menus/shopPanel';
 import type { audioManager as AudioManagerType } from '@audio/audioManager';
+import type { BiomeId } from '@core/config';
+import type { BiomeChoicePanel } from '@ui/menus/biomeChoicePanel';
 
 export class UpgradeBreakPhase {
   active = false;
@@ -24,6 +26,10 @@ export class UpgradeBreakPhase {
   private _currentOffer: UpgradeDef[] = [];
   private _rerollsLeft = 0;
   private _chosenUpgrade: UpgradeDef | null = null;
+
+  // NOTE: not in original — biome route branching state
+  private _biomeChoiceShown = false;
+  private _biomeChosen = false;
 
   get upgradeChosen(): boolean { return this._upgradeChosen; }
   get upgradeConfirmTimer(): number { return this._upgradeConfirmTimer; }
@@ -36,6 +42,12 @@ export class UpgradeBreakPhase {
     private _onWaveStart: (waveIndex: number) => void,
     private _shopPanel: ShopPanelUI | null = null,
     private _getUpgradeBias: () => Record<string, number> = () => ({}),
+    /** Returns the two biome choices if a selection is pending for the next wave, else null. */
+    private _getBiomeChoice: () => [BiomeId, BiomeId] | null = () => null,
+    /** Called when the player selects a biome. */
+    private _onBiomeChosen: (id: BiomeId) => void = () => {},
+    /** Biome choice panel — null in tests/sandbox where branching is not used. */
+    private _biomeChoicePanel: BiomeChoicePanel | null = null,
   ) {}
 
   /**
@@ -52,6 +64,9 @@ export class UpgradeBreakPhase {
     this._cardAnimTimer = 0;
     this._rerollsLeft = getRerollCount(playerState) + (bossReward ? 1 : 0) + extraRerolls;
     this._currentOffer = buildUpgradeOffer(playerState, this._getUpgradeBias());
+    // Reset biome choice state
+    this._biomeChoiceShown = false;
+    this._biomeChosen = false;
     // Freeze player (from game.js:911-928)
     playerState.vx = 0;
     playerState.vy = 0;
@@ -80,6 +95,7 @@ export class UpgradeBreakPhase {
   ): void {
     this._cardAnimTimer += dt;
     this._upgradeCards.update(dt);
+    this._biomeChoicePanel?.update(dt);
 
     this._shopPanel?.update(dt);
 
@@ -144,6 +160,30 @@ export class UpgradeBreakPhase {
 
     // Post-selection countdown (also handles empty pool auto-start)
     if (this._upgradeChosen || this._currentOffer.length === 0) {
+      // NOTE: not in original — gate countdown on biome choice when one is pending
+      if (!this._biomeChosen) {
+        const choices = this._getBiomeChoice();
+        if (choices !== null) {
+          // Show the chooser once, then wait for input
+          if (!this._biomeChoiceShown) {
+            this._biomeChoiceShown = true;
+            this._biomeChoicePanel?.show(choices);
+          }
+          const tap = inputManager.consumeTap();
+          const chosenIdx = this._biomeChoicePanel?.checkInput(input, tap) ?? null;
+          if (chosenIdx !== null) {
+            const chosenId = choices[chosenIdx];
+            this._audio.play('ui_click');
+            this._onBiomeChosen(chosenId);
+            this._biomeChoicePanel?.hide();
+            this._biomeChosen = true;
+          }
+          return; // Don't tick countdown until biome is chosen
+        } else {
+          this._biomeChosen = true; // no choice pending at this wave
+        }
+      }
+
       this._upgradeConfirmTimer -= dt;
       if (this._upgradeConfirmTimer <= 0) {
         this.active = false;
@@ -160,5 +200,6 @@ export class UpgradeBreakPhase {
   destroy(): void {
     this._upgradeCards.destroy();
     this._shopPanel?.destroy();
+    this._biomeChoicePanel?.destroy();
   }
 }

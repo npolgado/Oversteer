@@ -155,6 +155,60 @@ describe('handlePropCollisions — slow debuff', () => {
   });
 });
 
+describe('handlePropCollisions — hazard_hit (crystal prop)', () => {
+  it('pushes player out like a solid and emits hazard_hit event', () => {
+    const player = makePlayerState();
+    player.x = 1500;
+    player.y = 1500;
+    player.vx = 100;
+    player.vy = 0;
+
+    const prop: Prop = {
+      x: 1510, y: 1500, radius: 35,
+      type: 'hazard',
+      textureKey: 'props/rock_1.png',
+      nearMissCooldown: 0,
+      damage: 8,
+    };
+    const events = handlePropCollisions([prop], player);
+
+    const dx = player.x - prop.x;
+    const dy = player.y - prop.y;
+    const dist = Math.hypot(dx, dy);
+    expect(dist).toBeGreaterThanOrEqual(CFG.PLAYER_RADIUS + prop.radius - 0.001);
+    expect(player.wallHit).toBe(true);
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('hazard_hit');
+    expect(events[0].damage).toBe(8);
+  });
+
+  it('uses default damage 8 when prop.damage is undefined', () => {
+    const player = makePlayerState();
+    const prop: Prop = {
+      x: player.x, y: player.y, radius: 35,
+      type: 'hazard',
+      textureKey: 'props/rock_1.png',
+      nearMissCooldown: 0,
+    };
+    const events = handlePropCollisions([prop], player);
+    expect(events[0].damage).toBe(8);
+  });
+
+  it('decoration is not affected by hazard_hit changes', () => {
+    const state = makePropsState();
+    const player = makePlayerState();
+    const prop: Prop = {
+      x: player.x, y: player.y, radius: 25,
+      type: 'decoration',
+      textureKey: 'props/bush_1.png',
+      nearMissCooldown: 0,
+    };
+    addTestProp(state, prop);
+    const hits = checkPlayerCollision(state, player);
+    expect(hits).toHaveLength(0);
+  });
+});
+
 describe('handlePropCollisions — slip debuff', () => {
   it('applies slipTimer and slipStrength to player', () => {
     const player = makePlayerState();

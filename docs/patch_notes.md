@@ -2,6 +2,25 @@
 
 ---
 
+## 2026-06-09 - dev_1.4.5 - Phase 4.5: Biome Gap Closure
+
+Post-close audit of Phase 4 found that biome transitions **never activated in real gameplay** (break_end event unreachable due to UpgradeBreakPhase calling startWave directly). All biome-differentiation features were dead code.
+
+- **Biome transition bug fixed (P0)**: Extracted `_applyBiomeTransition()` and wired it into the `UpgradeBreakPhase._onWaveStart` callback. Biome swaps, music crossfades, fog, and prop regeneration now fire at waves 8 and 15 in normal play.
+- **Per-biome hazard rules**: Each biome now has a `hazardRules` field driving distinct hazard mechanics:
+  - Wasteland — **heat cracks**: orange telegraph zone (1.5s) → eruption burst (12 damage if inside, once per crack)
+  - Rupture — **crystal hazard props**: solid bounce + 8 damage on contact; invuln-respecting
+  - Jungle — **spreading corruption zones**: grow from r=50 to r=140, multiply up to 6 zones, DPS + slow while inside
+- **Route branching**: At the wave-7 upgrade break, a biome-choice panel appears after the upgrade selection. Players choose Rupture (normal path) or Jungle (harder: +50% score multiplier for waves 8-14). Wave 15 auto-assigns the remaining biome.
+- **Wasteland upgradeBias**: `turbo × 2`, `nitro_drift × 2`, `speed_demon × 1.5`, `drift_king × 1.5` — speed-upgrade weighting for onboarding biome.
+- **Music differentiation**: Unique lead track per biome guaranteed on crossfade (wasteland → neon, rupture → tron, jungle → slipstream). `_buildShuffle` result is reordered to place the lead track at the first post-fade position.
+- **Transition visual punch-up**: Stronger per-biome tints (wasteland `0xFFE0C0`, rupture `0x99BBFF`), higher fog density (wasteland 0.07, rupture 0.13, jungle 0.20), longer flash (0.5/1.0s) + shake on every biome transition.
+- **DEV situations**: 7 new test presets — `biome-rupture-entry`, `biome-jungle-entry`, `biome-branch-choice`, `hazard-heat-cracks`, `hazard-crystals`, `hazard-corruption` (plus updated `biome-wasteland` description).
+- **DEV init fix**: Situation presets jumping to non-wasteland biomes now correctly use the biome's background texture and prop pool on initialization.
+- dev: test count grows to 856 Vitest tests (43 test files).
+
+---
+
 ## 2026-06-05 - dev_1.4.1 - Phase 4 Bugfixes
 
 Post-playtest bugfix pass. Fixes 6 of 7 confirmed bugs from the 2026-06-01 session.
