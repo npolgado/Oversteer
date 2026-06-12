@@ -1,7 +1,7 @@
 // config.ts — Ported from arena-drifter/logic.js
 // Mutable config object; applyMap() mutates it at runtime.
 
-export type PropType = 'solid' | 'slow' | 'slip' | 'decoration';
+export type PropType = 'solid' | 'slow' | 'slip' | 'decoration' | 'hazard';
 
 export interface PropDef {
   image: string;
@@ -10,6 +10,7 @@ export interface PropDef {
   type: PropType;
   duration?: number;
   strength?: number;
+  damage?: number;
 }
 
 export type EnemyType =
@@ -33,6 +34,23 @@ export interface MapCfgOverrides {
 
 // ── Biome framework ───────────────────────────────────────────────────────────
 
+// NOTE: not in original — Phase 4.5 per-biome hazard rules
+export interface BiomeHazardRules {
+  kind: 'none' | 'heat_crack' | 'corruption';
+  spawnInterval: number;
+  maxZones: number;
+  radius: number;
+  // heat_crack only
+  telegraphTime?: number;
+  eruptDuration?: number;
+  burstDamage?: number;
+  // corruption only
+  growthRate?: number;
+  maxRadius?: number;
+  multiplyInterval?: number;
+  dps?: number;
+}
+
 export interface BiomeDescriptor {
   id: string;
   name: string;
@@ -44,6 +62,7 @@ export interface BiomeDescriptor {
   enemyWeightMult: Partial<Record<EnemyType, number>>;  // >1 = more of this type
   musicPackId: string;     // key into MUSIC_PACKS (future asset set)
   upgradeBias: Record<string, number>;  // upgrade id → weight multiplier
+  hazardRules: BiomeHazardRules;
 }
 
 // Neon Wasteland — onboarding biome, waves 1-7
@@ -51,9 +70,9 @@ const _WASTELAND: BiomeDescriptor = {
   id: 'wasteland',
   name: 'Neon Wasteland',
   backgroundSprite: 'backgrounds/background_01.png',
-  lightingTint: 0xFFFFFF,
+  lightingTint: 0xFFE0C0,
   fogColor: 0xFF6600,
-  fogDensity: 0.04,
+  fogDensity: 0.07,
   propPool: [
     { image: 'props/tree_1.png',  radius: 50, weight: 3, type: 'solid' },
     { image: 'props/rock_1.png',  radius: 40, weight: 2, type: 'solid' },
@@ -63,7 +82,8 @@ const _WASTELAND: BiomeDescriptor = {
   ],
   enemyWeightMult: {},
   musicPackId: 'wasteland',
-  upgradeBias: {},
+  upgradeBias: { turbo: 2, nitro_drift: 2, speed_demon: 1.5, drift_king: 1.5 },
+  hazardRules: { kind: 'heat_crack', spawnInterval: 6, maxZones: 4, radius: 70, telegraphTime: 1.5, eruptDuration: 1.2, burstDamage: 12 },
 };
 
 // Frozen Rupture — handling variation, waves 8-14
@@ -71,17 +91,19 @@ const _RUPTURE: BiomeDescriptor = {
   id: 'rupture',
   name: 'Frozen Rupture',
   backgroundSprite: 'backgrounds/background_02.png',
-  lightingTint: 0xCCEEFF,
+  lightingTint: 0x99BBFF,
   fogColor: 0x88CCFF,
-  fogDensity: 0.06,
+  fogDensity: 0.13,
   propPool: [
     { image: 'props/rock_1.png',  radius: 40, weight: 4, type: 'solid' },
+    { image: 'props/rock_1.png',  radius: 35, weight: 3, type: 'hazard', damage: 8 },
     { image: 'props/mud_1.png',   radius: 55, weight: 6, type: 'slip', duration: 2.5, strength: 0.7 },
     { image: 'props/bush_1.png',  radius: 25, weight: 2, type: 'decoration' },
   ],
   enemyWeightMult: { flanker: 1.8 },
   musicPackId: 'rupture',
   upgradeBias: { tight_turns: 2, drift_king: 2, drift_shield: 1.5 },
+  hazardRules: { kind: 'none', spawnInterval: 0, maxZones: 0, radius: 0 },
 };
 
 // Corruption Jungle — density stress test, waves 15+
@@ -90,8 +112,8 @@ const _JUNGLE: BiomeDescriptor = {
   name: 'Corruption Jungle',
   backgroundSprite: 'backgrounds/background_03.png',
   lightingTint: 0x88FF88,
-  fogColor: 0x224422,
-  fogDensity: 0.12,
+  fogColor: 0x336622,
+  fogDensity: 0.20,
   propPool: [
     { image: 'props/tree_1.png',  radius: 50, weight: 6, type: 'solid' },
     { image: 'props/bush_1.png',  radius: 25, weight: 6, type: 'decoration' },
@@ -100,6 +122,7 @@ const _JUNGLE: BiomeDescriptor = {
   enemyWeightMult: { bomber: 1.6, blocker: 1.4, splitter: 1.5 },
   musicPackId: 'jungle',
   upgradeBias: { max_hp: 2, hp_regen: 2, damage_resist: 1.5 },
+  hazardRules: { kind: 'corruption', spawnInterval: 8, maxZones: 6, radius: 50, growthRate: 12, maxRadius: 140, multiplyInterval: 10, dps: 0.7 },
 };
 
 export const BIOMES: BiomeDescriptor[] = [_WASTELAND, _RUPTURE, _JUNGLE];

@@ -376,6 +376,18 @@ const audioManager = {
     log('audio', `loadMusicPack(${packId})  tracks=[${trackNames.join(',')}]`);
 
     if (this._musicPlaying) {
+      // Guarantee the lead track (first in pack) plays immediately after the crossfade.
+      // fadeBgMusic will advance _shuffleIdx by 1 (currently 0 after _buildShuffle).
+      // Swap the lead into position 1 so startBgMusic lands on it.
+      if (newIds.length > 0 && this._shuffleOrder.length > 1) {
+        const leadId = newIds[0];
+        const nextIdx = (this._shuffleIdx + 1) % this._shuffleOrder.length;
+        const leadPos = this._shuffleOrder.indexOf(leadId);
+        if (leadPos !== -1 && leadPos !== nextIdx) {
+          [this._shuffleOrder[nextIdx], this._shuffleOrder[leadPos]] =
+            [this._shuffleOrder[leadPos], this._shuffleOrder[nextIdx]];
+        }
+      }
       this.fadeBgMusic(0.6);
       this.startBgMusic();
     }

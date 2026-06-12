@@ -134,7 +134,39 @@ Expand beyond the original game with a world/biome system and new content.
 
 **Phase 4 closed: dev_1.4.0 (2026-06-01)**
 
-Deferred to a later phase: enemy curses, upgrade synergies + mastery tier, route branching between worlds, biome hazard events (lava/lightning/timed roadblocks), and §7 drift exploit + auto-repair balance pass (intentional — design doc recommends balancing after all new content lands).
+Post-close audit (2026-06-09) found that biome transitions never activated in real gameplay: the transition logic lived in the waveManager `break_end` handler, but `UpgradeBreakPhase` calls `startWave()` directly and `break_end` is unreachable in normal play. This was fixed in Phase 4.5.
+
+Deferred to a later phase: enemy curses, upgrade synergies + mastery tier, and §7 drift exploit + auto-repair balance pass (intentional — design doc recommends balancing after all new content lands).
+
+---
+
+## Phase 4.5 — Biome Gap Closure - dev_1.4.5
+
+### Goal
+
+Fix the biome activation bug and deliver the deferred Phase 4 scope: per-biome hazard mechanics, route branching, Wasteland upgrade bias, and music differentiation.
+
+### Scope
+
+- **P0 bugfix**: `_applyBiomeTransition()` extracted and called from the `UpgradeBreakPhase._onWaveStart` callback — biome swaps, music, props, and fog now fire in real gameplay
+- **Per-biome hazard rules** (`hazardRules` on BiomeDescriptor):
+  - Wasteland — heat cracks: telegraph (dim orange) → eruption (burst damage 12)
+  - Rupture — crystal hazard props (bounce + 8 damage on contact, invuln-respecting)
+  - Jungle — spreading corruption zones (grow to r=140, multiply up to 6, DPS+slow)
+- **Route branching**: At the wave-7 break, players choose Rupture (normal) or Jungle (harder, +50% score multiplier for waves 8-14)
+- **Wasteland upgradeBias**: `{ turbo:2, nitro_drift:2, speed_demon:1.5, drift_king:1.5 }` — speed upgrade weighting
+- **Music differentiation**: unique lead track per biome guaranteed on crossfade (wasteland→neon, rupture→tron, jungle→slipstream)
+- **DEV scenarios**: 7 new presets for hazard, transition, and branching testing
+- Transition visual punch-up: stronger tints, higher fog density, longer flash+shake
+
+### Success Criteria
+
+- Biome swap visually obvious at waves 8 and 15 ✅
+- Each biome has at least one gameplay-modifying mechanic ✅
+- Route branching chooser works on keyboard, gamepad, and touch ✅
+- All new logic covered by Vitest tests ✅
+
+**Phase 4.5 closed: dev_1.4.5 (2026-06-09)**
 
 ---
 

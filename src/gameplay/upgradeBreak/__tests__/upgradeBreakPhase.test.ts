@@ -304,6 +304,108 @@ describe('UpgradeBreakPhase.enter() extraRerolls', () => {
   });
 });
 
+// ── biome choice gating — countdown freezes until choice is made ──────────────
+
+describe('UpgradeBreakPhase — biome choice gate', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  function setupWithBiomeChoice(getBiomeChoice: () => ['rupture', 'jungle'] | null) {
+    const cards = makeCards();
+    const onWaveStart = vi.fn();
+    const onBiomeChosen = vi.fn();
+    const phase = new UpgradeBreakPhase(
+      cards as any, mockAudio as any, onWaveStart,
+      null, () => ({}),
+      getBiomeChoice, onBiomeChosen,
+      null, // no real panel in tests
+    );
+    const player = makePlayerState();
+    const wave = makeWaveState();
+    wave.waveIndex = 7;
+    const trail = makeTrailState();
+
+    phase.enter(player, wave);
+    cards.checkInput.mockReturnValueOnce(0); // select upgrade
+    phase.update(0.016, noInput, player, trail, wave);
+    cards.checkInput.mockReturnValue(null);
+
+    return { phase, player, wave, trail, onWaveStart, onBiomeChosen };
+  }
+
+  it('countdown does NOT tick when biome choice is pending', () => {
+    const { phase, player, wave, trail } = setupWithBiomeChoice(() => ['rupture', 'jungle']);
+    const before = phase.upgradeConfirmTimer;
+    phase.update(0.5, noInput, player, trail, wave);
+    expect(phase.upgradeConfirmTimer).toBeCloseTo(before, 4); // unchanged
+  });
+
+  it('_onWaveStart NOT called while biome choice pending', () => {
+    const { phase, player, wave, trail, onWaveStart } = setupWithBiomeChoice(() => ['rupture', 'jungle']);
+    phase.update(CFG.UPGRADE_CONFIRM_TIME + 1, noInput, player, trail, wave);
+    expect(onWaveStart).not.toHaveBeenCalled();
+  });
+
+  it('countdown resumes and _onWaveStart fires after biome is chosen (via _onBiomeChosen side-channel)', () => {
+    let choicePending = true;
+    const { phase, player, wave, trail, onWaveStart } = setupWithBiomeChoice(
+      () => choicePending ? ['rupture', 'jungle'] : null,
+    );
+    // Simulate biome choice: stop returning pending choices (as if choose() was called)
+    choicePending = false;
+    phase.update(CFG.UPGRADE_CONFIRM_TIME + 1, noInput, player, trail, wave);
+    expect(onWaveStart).toHaveBeenCalledOnce();
+  });
+
+  it('when no choice pending, countdown runs normally', () => {
+    const { phase, player, wave, trail, onWaveStart } = setupWithBiomeChoice(() => null);
+    phase.update(CFG.UPGRADE_CONFIRM_TIME + 1, noInput, player, trail, wave);
+    expect(onWaveStart).toHaveBeenCalledOnce();
+  });
+});
+
+// ── _onWaveStart receives the new waveIndex (biome transition contract) ───────
+
+describe('UpgradeBreakPhase _onWaveStart waveIndex contract', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('_onWaveStart is called with waveIndex 8 when break entered at wave 7', () => {
+    const cards = makeCards();
+    const onWaveStart = vi.fn();
+    const phase = new UpgradeBreakPhase(cards as any, mockAudio as any, onWaveStart);
+    const player = makePlayerState();
+    const wave = makeWaveState();
+    wave.waveIndex = 7; // last combat wave before biome transition
+    const trail = makeTrailState();
+
+    phase.enter(player, wave);
+    cards.checkInput.mockReturnValueOnce(0);
+    phase.update(0.016, noInput, player, trail, wave);
+    cards.checkInput.mockReturnValue(null);
+    phase.update(CFG.UPGRADE_CONFIRM_TIME + 1, noInput, player, trail, wave);
+
+    expect(onWaveStart).toHaveBeenCalledOnce();
+    expect(onWaveStart).toHaveBeenCalledWith(8);
+  });
+
+  it('_onWaveStart is called with waveIndex 15 when break entered at wave 14', () => {
+    const cards = makeCards();
+    const onWaveStart = vi.fn();
+    const phase = new UpgradeBreakPhase(cards as any, mockAudio as any, onWaveStart);
+    const player = makePlayerState();
+    const wave = makeWaveState();
+    wave.waveIndex = 14;
+    const trail = makeTrailState();
+
+    phase.enter(player, wave);
+    cards.checkInput.mockReturnValueOnce(0);
+    phase.update(0.016, noInput, player, trail, wave);
+    cards.checkInput.mockReturnValue(null);
+    phase.update(CFG.UPGRADE_CONFIRM_TIME + 1, noInput, player, trail, wave);
+
+    expect(onWaveStart).toHaveBeenCalledWith(15);
+  });
+});
+
 // ── special upgrade side effects ──────────────────────────────────────────────
 
 describe('UpgradeBreakPhase special upgrade side effects', () => {

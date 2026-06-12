@@ -69,6 +69,34 @@ describe('BIOMES registry', () => {
   });
 });
 
+// ── biome transition activation contract ──────────────────────────────────────
+
+describe('biome transition activation contract', () => {
+  it('_applyBiomeTransition contract: at wave 8, biomeForWave returns rupture and isBiomeTransition is true', () => {
+    expect(isBiomeTransition(8)).toBe(true);
+    expect(biomeForWave(8)).toBe('rupture');
+  });
+
+  it('_applyBiomeTransition contract: at wave 15, biomeForWave returns jungle and isBiomeTransition is true', () => {
+    expect(isBiomeTransition(15)).toBe(true);
+    expect(biomeForWave(15)).toBe('jungle');
+  });
+
+  it('BiomeManager driven by the _onWaveStart sequence ends on rupture at wave 8', () => {
+    const mgr = new BiomeManager('wasteland');
+    // Simulate what _applyBiomeTransition does for the wave-8 callback
+    if (isBiomeTransition(8)) mgr.setBiome(biomeForWave(8));
+    expect(mgr.active.id).toBe('rupture');
+  });
+
+  it('BiomeManager driven by the _onWaveStart sequence ends on jungle at wave 15', () => {
+    const mgr = new BiomeManager('wasteland');
+    if (isBiomeTransition(8))  mgr.setBiome(biomeForWave(8));
+    if (isBiomeTransition(15)) mgr.setBiome(biomeForWave(15));
+    expect(mgr.active.id).toBe('jungle');
+  });
+});
+
 // ── BiomeManager ──────────────────────────────────────────────────────────────
 
 describe('BiomeManager', () => {

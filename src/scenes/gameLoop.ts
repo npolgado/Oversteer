@@ -25,7 +25,9 @@ import {
 } from '@gameplay/world/propsSystem';
 import { PropsRenderer } from '@gameplay/world/propsRenderer';
 import { BiomeManager } from '@gameplay/world/biomeManager';
-import { isBiomeTransition, biomeForWave } from '@gameplay/world/runProgression';
+import { RunProgression, accrueScrap } from '@gameplay/world/runProgression';
+import { makeBiomeHazardState, type BiomeHazardState } from '@gameplay/world/biomeHazards';
+import { BiomeChoicePanel } from '@ui/menus/biomeChoicePanel';
 import { makeEnemyState, makeBoss, type EnemyState } from '@gameplay/enemies/enemyState';
 import { updateEnemy } from '@gameplay/enemies/enemyUpdate';
 import { EnemyRenderer } from '@gameplay/enemies/enemyRenderer';
@@ -47,6 +49,8 @@ import {
   updateRunStats,
   applyHazardZoneDamage,
   type HazardZoneEffect,
+  type TrailPoint,
+  type PlayerForPickup,
 } from '@gameplay/pureLogic';
 import { makeScoringState, updateScoring, addScore, type ScoringState } from '@gameplay/scoring';
 import { saveManager } from '@core/saveManager';
@@ -78,6 +82,7 @@ import { sceneManager } from './sceneManager';
 import { GameOverScene, type GameOverData } from './gameOverScene';
 import { DeathSequence } from '@gameplay/death/deathSequence';
 import { UpgradeBreakPhase } from '@gameplay/upgradeBreak/upgradeBreakPhase';
+import { BiomeSystem } from './biomeSystem';
 import type { GameplayOptions } from './gameplayScene';
 import { applySituation, SITUATIONS_BY_ID, consumeDevPickup, consumeDevBossKilled, type SituationSpec } from '@dev/situationTester';
 
@@ -159,6 +164,13 @@ export class GameLoop {
   private _death: DeathSequence;
   private _upgradeBreak: UpgradeBreakPhase;
   private _biomeManager: BiomeManager;
+  private _biomeHazardState: BiomeHazardState;
+  private _runProgression: RunProgression;
+  private _biomeSystem!: BiomeSystem; // NOTE: not in original — initialized in constructor after bg/fog refs exist
+  private _scrapCarry = 0; // NOTE: not in original — fractional carry for Jungle rewardMult scrap grants
+  // Reusable scratch objects for hot-path tick methods — avoids per-frame allocation
+  private _trailScratch: TrailPoint[] = [];
+  private _pickupPlayerScratch: PlayerForPickup = { x: 0, y: 0, radius: 0, magnetRange: 0, trailMagnet: false };
 
   constructor(private _opts: GameplayOptions, private _ctx: GameContext) {
     const {
@@ -212,6 +224,12 @@ export class GameLoop {
     generateProps(this._propsState);
     this._propsRenderer = new PropsRenderer({ propsLayer });
     this._propsRenderer.setProps(this._propsState.allProps);
+    // NOTE: not in original — when a DEV situation jumps to a non-wasteland biome,
+    // regenerate props from the biome's propPool (overrides map pool above).
+    if (import.meta.env.DEV && this._biomeManager.active.id !== 'wasteland') {
+      regenerateProps(this._propsState, this._biomeManager.active.propPool);
+      this._propsRenderer.setProps(this._propsState.allProps);
+    }
 
     this._enemyRenderer = new EnemyRenderer({ enemiesLayer });
     this._enemyRenderer.sync(this._enemies);
@@ -245,14 +263,28 @@ export class GameLoop {
       this._particles,
       () => this._transitionToGameOver(),
     );
+    this._biomeManager = new BiomeManager('wasteland');
+    this._biomeHazardState = makeBiomeHazardState();
+    this._runProgression = new RunProgression();
     this._upgradeBreak = new UpgradeBreakPhase(
       new UpgradeCardsUI(_ctx.pixiApp.overlayLayer),
       _ctx.audioManager,
-      (waveIndex) => { this._hudManager.showWaveBanner(waveIndex); },
+      (waveIndex) => {
+        this._applyBiomeTransition(waveIndex);
+        this._hudManager.showWaveBanner(waveIndex);
+      },
       new ShopPanelUI(_ctx.pixiApp.overlayLayer),
       () => this._biomeManager.active.upgradeBias,
+      () => this._runProgression.pendingChoice(this._waveState.waveIndex + 1),
+      (id) => {
+        this._runProgression.choose(id);
+        if (this._runProgression.rewardMult > 1) {
+          this._playerState.scoreMult *= this._runProgression.rewardMult;
+          eventBus.emit('eventLog', { text: '+50% SCORE BONUS — JUNGLE PATH', color: '#66DD66' });
+        }
+      },
+      new BiomeChoicePanel(_ctx.pixiApp.overlayLayer),
     );
-    this._biomeManager = new BiomeManager('wasteland');
 
     // --- Event subscriptions ---
     const onNearMiss    = () => this._eventLog.add('NEAR MISS +25', 0xffff00);
@@ -445,14 +477,21 @@ export class GameLoop {
       this._setupBenchmark(_opts.benchmark);
     }
 
-    const bgTexture = Assets.get(CFG.BACKGROUND_SPRITE);
-    if (bgTexture) {
-      const bg = new Sprite(bgTexture);
-      bg.width = CFG.WORLD_W;
-      bg.height = CFG.WORLD_H;
-      bg.tint = this._biomeManager.active.lightingTint;
-      this._bgSprite = bg;
-      backgroundLayer.addChild(bg);
+    {
+      // Use the active biome's background when a DEV situation has jumped to a non-wasteland biome;
+      // otherwise fall back to the map-configured sprite (preserves Loopy map visuals on wave 1).
+      const bgSrc = this._biomeManager.active.id !== 'wasteland'
+        ? this._biomeManager.active.backgroundSprite
+        : CFG.BACKGROUND_SPRITE;
+      const bgTexture = Assets.get(bgSrc);
+      if (bgTexture) {
+        const bg = new Sprite(bgTexture);
+        bg.width = CFG.WORLD_W;
+        bg.height = CFG.WORLD_H;
+        bg.tint = this._biomeManager.active.lightingTint;
+        this._bgSprite = bg;
+        backgroundLayer.addChild(bg);
+      }
     }
 
     {
@@ -469,6 +508,20 @@ export class GameLoop {
     const arenaGlow = new Graphics();
     this._arenaGlow = arenaGlow;
     backgroundLayer.addChild(arenaGlow);
+
+    // NOTE: not in original — BiomeSystem must be wired after _bgSprite/_fogOverlay exist
+    this._biomeSystem = new BiomeSystem({
+      biomeManager:  this._biomeManager,
+      runProgression: this._runProgression,
+      hazardState:   this._biomeHazardState,
+      propsState:    this._propsState,
+      propsRenderer: this._propsRenderer,
+      audioManager:  _ctx.audioManager,
+      hudManager:    this._hudManager,
+      screenFx:      this._screenFx,
+      getBgSprite:   () => this._bgSprite ?? null,
+      getFogOverlay: () => this._fogOverlay ?? null,
+    });
   }
 
   update(dt: number): void {
@@ -618,6 +671,7 @@ export class GameLoop {
     this._tickScraps(dilatedDt);
     this._tickProps(dilatedDt);
     this._tickHazardZones(dilatedDt);
+    this._tickBiomeHazards(dilatedDt);
     enemiesChanged = this._tickEnemies(dilatedDt) || enemiesChanged;
     enemiesChanged = this._tickCombat(rawDt, dilatedDt) || enemiesChanged;
     enemiesChanged = this._tickTrail(dilatedDt) || enemiesChanged;
@@ -800,36 +854,25 @@ export class GameLoop {
         this._ctx.audioManager.play('boss_sting');
         eventBus.emit('eventLog', { text: 'BOSS WAVE!', color: '#FF4040' });
       } else if (ev.type === 'break_end') {
-        const nextWave = this._waveState.waveIndex + 1;
-        if (isBiomeTransition(nextWave)) {
-          const newBiomeId = biomeForWave(nextWave);
-          this._biomeManager.setBiome(newBiomeId);
-          const biome = this._biomeManager.active;
-          this._ctx.audioManager.loadMusicPack(biome.musicPackId);
-          // Regenerate props from the new biome's pool and refresh renderer
-          regenerateProps(this._propsState, biome.propPool);
-          this._propsRenderer.setProps(this._propsState.allProps);
-          // Swap background texture and tint
-          if (this._bgSprite) {
-            const tex = Assets.get(biome.backgroundSprite);
-            if (tex) this._bgSprite.texture = tex;
-            this._bgSprite.tint = biome.lightingTint;
-          }
-          // Update fog overlay
-          if (this._fogOverlay) {
-            this._fogOverlay.tint = biome.fogColor;
-            this._fogOverlay.alpha = biome.fogDensity;
-          }
-          this._hudManager.showMilestoneBanner(biome.name.toUpperCase(), '#35F2D0');
-          this._screenFx.flash(0x35F2D0, 0.3, 0.8);
-          changed = true;
-        }
+        // NOTE: In normal gameplay the live path is UpgradeBreakPhase calling startWave()
+        // then the _onWaveStart callback (which calls _applyBiomeTransition). This branch
+        // only fires in dev/sandbox scenarios where waveManager runs freely without an upgrade break.
         startWave(this._waveState);
+        this._applyBiomeTransition(this._waveState.waveIndex);
         eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
         this._hudManager.showWaveBanner(this._waveState.waveIndex);
       }
     }
     return changed;
+  }
+
+  // NOTE: not in original — Delegates biome swap effects to BiomeSystem.
+  // Called from the UpgradeBreakPhase _onWaveStart callback (live gameplay path) and from
+  // the break_end wave event handler (dev/sandbox path). Idempotent when not a transition wave.
+  private _applyBiomeTransition(startedWave: number): void {
+    this._biomeSystem.applyTransition(startedWave, this._playerState);
+    // Reset scrap carry after rewardMult is reset inside BiomeSystem (wave 15 only)
+    if (startedWave === 15) this._scrapCarry = 0;
   }
 
   // NOTE: not in original — Splitter death spawns two chasers (not triggered by bomb kills)
@@ -879,56 +922,61 @@ export class GameLoop {
     tickBoostZoneSpawn(this._waveState, dilatedDt, this._playerState.x, this._playerState.y);
 
     // --- Collection ---
-    const trailPointsForScraps = Array.from(
-      { length: this._trailState.count },
-      (_, i) => getTrailPoint(this._trailState, i),
-    );
-    const pickupForPlayer = {
-      x:           this._playerState.x,
-      y:           this._playerState.y,
-      radius:      getPlayerRadius(this._playerState),
-      magnetRange: this._playerState.magnetRange,
-      trailMagnet: this._playerState.trailMagnet,
-    };
-    const allEvents = [
-      ...updateScraps(this._waveState.scraps, pickupForPlayer, dilatedDt, trailPointsForScraps),
-      ...updateBoostZones(this._waveState.boostZones, pickupForPlayer, dilatedDt),
-    ];
-    for (const ev of allEvents) {
-      if (ev === 'scrap') {
-        addScore(this._scoringState, 10); // +10 per scrap (intentional improvement over original)
-        this._playerState.scrapBank++; // NOTE: not in original — scrap economy currency
-        this._scoringState.runStats.scrapCollected++; // NOTE: not in original — run stats tracking
-        eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: 10 });
-        eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 8 });
-        eventBus.emit('eventLog', { text: '+SCRAP', color: '#35f2d0' });
-        this._ctx.audioManager.play('scrap_pickup');
-      } else if (ev === 'speed_pickup' || ev === 'boost') {
-        this._playerState.speedBoostTimer = CFG.BOOST_ZONE_DURATION;
-        eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 10 });
-        eventBus.emit('eventLog', { text: ev === 'boost' ? 'SPEED BOOST!' : 'SPEED!', color: '#35f2d0' });
-      } else if (ev === 'trail_boost') {
-        this._trailState.maxPoints = Math.min(600, this._trailState.maxPoints + 200);
-        eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 10 });
-        eventBus.emit('eventLog', { text: 'TRAIL+', color: '#cc66ff' });
-      } else if (ev === 'bomb') {
-        this._applyBombPickup();
-      } else if (ev === 'time_slow') {
-        this._screenFx.slowmo(0.3, 3.0);
-        eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 12 });
-        eventBus.emit('eventLog', { text: 'TIME SLOW!', color: '#44aaff' });
-        this._ctx.audioManager.play('scrap_pickup');
-      } else if (ev === 'trail_token') {
-        this._trailState.maxPoints = Math.min(800, this._trailState.maxPoints + 200);
-        eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 10 });
-        eventBus.emit('eventLog', { text: 'TRAIL++', color: '#ff44cc' });
-        this._ctx.audioManager.play('scrap_pickup');
-      } else if (ev === 'shield_pickup') {
-        this._playerState.shield = true;
-        eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 14 });
-        eventBus.emit('eventLog', { text: 'SHIELD!', color: '#44ff88' });
-        this._ctx.audioManager.play('scrap_pickup');
-      }
+    // Repopulate scratch arrays in place — avoids per-frame allocation on this hot path
+    this._trailScratch.length = this._trailState.count;
+    for (let i = 0; i < this._trailState.count; i++) {
+      this._trailScratch[i] = getTrailPoint(this._trailState, i);
+    }
+    this._pickupPlayerScratch.x           = this._playerState.x;
+    this._pickupPlayerScratch.y           = this._playerState.y;
+    this._pickupPlayerScratch.radius      = getPlayerRadius(this._playerState);
+    this._pickupPlayerScratch.magnetRange = this._playerState.magnetRange;
+    this._pickupPlayerScratch.trailMagnet = this._playerState.trailMagnet;
+    for (const ev of updateScraps(this._waveState.scraps, this._pickupPlayerScratch, dilatedDt, this._trailScratch)) {
+      this._handlePickupEvent(ev, dilatedDt);
+    }
+    for (const ev of updateBoostZones(this._waveState.boostZones, this._pickupPlayerScratch, dilatedDt)) {
+      this._handlePickupEvent(ev, dilatedDt);
+    }
+  }
+
+  private _handlePickupEvent(ev: string, _dt: number): void {
+    if (ev === 'scrap') {
+      const scoreDelta = Math.round(10 * getEffectiveScoreMult(this._playerState)); // NOTE: not in original — scales with Jungle rewardMult
+      addScore(this._scoringState, scoreDelta);
+      const { grant, carry } = accrueScrap(this._scrapCarry, this._runProgression.rewardMult); // NOTE: not in original — fractional carry for Jungle +50% scrap
+      this._scrapCarry = carry;
+      this._playerState.scrapBank += grant; // NOTE: not in original — scrap economy currency
+      this._scoringState.runStats.scrapCollected += grant; // NOTE: not in original — run stats tracking
+      eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: scoreDelta });
+      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 8 });
+      eventBus.emit('eventLog', { text: '+SCRAP', color: '#35f2d0' });
+      this._ctx.audioManager.play('scrap_pickup');
+    } else if (ev === 'speed_pickup' || ev === 'boost') {
+      this._playerState.speedBoostTimer = CFG.BOOST_ZONE_DURATION;
+      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 10 });
+      eventBus.emit('eventLog', { text: ev === 'boost' ? 'SPEED BOOST!' : 'SPEED!', color: '#35f2d0' });
+    } else if (ev === 'trail_boost') {
+      this._trailState.maxPoints = Math.min(600, this._trailState.maxPoints + 200);
+      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 10 });
+      eventBus.emit('eventLog', { text: 'TRAIL+', color: '#cc66ff' });
+    } else if (ev === 'bomb') {
+      this._applyBombPickup();
+    } else if (ev === 'time_slow') {
+      this._screenFx.slowmo(0.3, 3.0);
+      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 12 });
+      eventBus.emit('eventLog', { text: 'TIME SLOW!', color: '#44aaff' });
+      this._ctx.audioManager.play('scrap_pickup');
+    } else if (ev === 'trail_token') {
+      this._trailState.maxPoints = Math.min(800, this._trailState.maxPoints + 200);
+      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 10 });
+      eventBus.emit('eventLog', { text: 'TRAIL++', color: '#ff44cc' });
+      this._ctx.audioManager.play('scrap_pickup');
+    } else if (ev === 'shield_pickup') {
+      this._playerState.shield = true;
+      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 14 });
+      eventBus.emit('eventLog', { text: 'SHIELD!', color: '#44ff88' });
+      this._ctx.audioManager.play('scrap_pickup');
     }
   }
 
@@ -977,6 +1025,21 @@ export class GameLoop {
     for (const ev of propEvents) {
       if (ev.type === 'solid_bounce') {
         eventBus.emit('spawnParticles', { x: ev.x, y: ev.y, type: 'shard', count: 2 });
+      } else if (ev.type === 'hazard_hit') {
+        // Crystal hazard: apply damage respecting invuln/ghost frames/damageResist
+        if (this._playerState.invulnTimer <= 0 && this._playerState.ghostFrameTimer <= 0) {
+          const dmg = Math.ceil((ev.damage ?? 8) * (1 - (this._playerState.damageResist ?? 0)));
+          if (dmg > 0) {
+            this._playerState.hp = Math.max(0, this._playerState.hp - dmg);
+            this._playerState.invulnTimer = CFG.HIT_INVULN;
+            this._playerState.lastHitTimer = 0;
+            eventBus.emit('playerDamaged', { amount: dmg, x: ev.x, y: ev.y });
+            eventBus.emit('spawnParticles', { x: ev.x, y: ev.y, type: 'shard', count: 4 });
+            if (this._playerState.hp <= 0 && !this._death.active) {
+              this._death.trigger();
+            }
+          }
+        }
       }
     }
     updatePropCooldowns(this._propsState, dilatedDt);
@@ -1031,13 +1094,20 @@ export class GameLoop {
     }
   }
 
+  /** Ticks per-biome hazard zones (heat cracks, corruption). Delegates to BiomeSystem. */
+  private _tickBiomeHazards(dilatedDt: number): void {
+    this._biomeSystem.tick(dilatedDt, this._playerState, this._death);
+  }
+
   /** Returns true if enemies array was modified. */
   private _tickEnemies(dilatedDt: number): boolean {
     let changed = false;
-    const trailPts = Array.from(
-      { length: this._trailState.count },
-      (_, i) => getTrailPoint(this._trailState, i),
-    );
+    // Repopulate scratch array in place — same instance used by _tickScraps (both run within one frame)
+    this._trailScratch.length = this._trailState.count;
+    for (let i = 0; i < this._trailState.count; i++) {
+      this._trailScratch[i] = getTrailPoint(this._trailState, i);
+    }
+    const trailPts = this._trailScratch;
 
     for (let i = this._enemies.length - 1; i >= 0; i--) {
       const enemy = this._enemies[i];
@@ -1261,7 +1331,7 @@ export class GameLoop {
 
   private _tickRenderers(dilatedDt: number): void {
     this._enemyRenderer.update(this._enemies);
-    this._pickupRenderer.update(this._waveState.scraps, this._waveState.hazardZones, this._waveState.boostZones);
+    this._pickupRenderer.update(this._waveState.scraps, this._waveState.hazardZones, this._waveState.boostZones, this._biomeHazardState.zones);
     this._trailRenderer.update(this._trailState);
     this._playerRenderer.update(this._playerState);
 

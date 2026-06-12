@@ -9,7 +9,7 @@ import { getPlayerRadius } from '@gameplay/player/playerState';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type PropCollisionType = 'solid' | 'slow' | 'slip' | 'decoration';
+export type PropCollisionType = 'solid' | 'slow' | 'slip' | 'decoration' | 'hazard';
 
 export interface Prop {
   x: number;
@@ -20,6 +20,7 @@ export interface Prop {
   nearMissCooldown: number;
   duration?: number;
   strength?: number;
+  damage?: number;
 }
 
 export interface PropsState {
@@ -28,9 +29,10 @@ export interface PropsState {
 }
 
 export interface PropCollisionEvent {
-  type: 'solid_bounce' | 'slow_enter' | 'slip_enter';
+  type: 'solid_bounce' | 'slow_enter' | 'slip_enter' | 'hazard_hit';
   x: number;
   y: number;
+  damage?: number;
 }
 
 // Minimal structural type for enemy prop collision — full EnemyState satisfies this
@@ -79,6 +81,7 @@ function _generateChunk(cx: number, cy: number, state: PropsState, pool: PropDef
       nearMissCooldown: 0,
       duration: def.duration,
       strength: def.strength,
+      damage: def.damage,
     };
 
     if (!state.chunks.has(key)) state.chunks.set(key, []);
@@ -167,6 +170,26 @@ export function handlePropCollisions(hits: Prop[], player: PlayerState): PropCol
       }
       player.wallHit = true;
       events.push({ type: 'solid_bounce', x: prop.x + nx * prop.radius, y: prop.y + ny * prop.radius });
+    } else if (prop.type === 'hazard') {
+      // Crystal hazard: same pushout/bounce as solid, but deals damage
+      const dx = player.x - prop.x;
+      const dy = player.y - prop.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      const overlap = pr + prop.radius - dist;
+      if (overlap <= 0) continue;
+      player.x += (dx / dist) * overlap;
+      player.y += (dy / dist) * overlap;
+      const nx = dx / dist;
+      const ny = dy / dist;
+      const dot = player.vx * nx + player.vy * ny;
+      if (dot < 0) {
+        player.vx -= dot * nx;
+        player.vy -= dot * ny;
+        player.vx *= CFG.PROP_PLAYER_BOUNCE;
+        player.vy *= CFG.PROP_PLAYER_BOUNCE;
+      }
+      player.wallHit = true;
+      events.push({ type: 'hazard_hit', x: prop.x + nx * prop.radius, y: prop.y + ny * prop.radius, damage: prop.damage ?? 8 });
     } else if (prop.type === 'slow') {
       player.slowTimer = prop.duration ?? 2.0;
       player.slowStrength = prop.strength ?? 0.5;
