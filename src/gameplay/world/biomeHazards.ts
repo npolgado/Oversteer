@@ -15,7 +15,7 @@ export interface BiomeHazardZone {
   stateTimer: number;
   /** Corruption only: timer to next multiplication */
   multiplyTimer: number;
-  /** Heat crack only: burst damage applied exactly once */
+  /** Heat crack only: burst damage applied once per zone, on first player overlap during eruption */
   didBurst: boolean;
 }
 
@@ -106,17 +106,16 @@ export function updateBiomeHazards(
       }
       // Separate check (not else-if) so active logic runs on the same tick as transition
       if (z.state === 'active') {
+        // Burst damage fires once per zone on the first tick the player is inside during eruption.
+        // didBurst is set only when damage is actually applied, so driving in mid-eruption still triggers.
         if (!z.didBurst) {
           const dx = px - z.x;
           const dy = py - z.y;
           if (dx * dx + dy * dy < z.radius * z.radius) {
             _result.burstDamage += rules.burstDamage ?? 12;
+            z.didBurst = true;
           }
-          z.didBurst = true;
         }
-        // Expire check uses remaining time after the eruptDuration (stateTimer was reset at transition)
-        // For large dt spanning both phases: stateTimer reset to eruptDuration but not further decremented here.
-        // Expiry fires on a subsequent tick once stateTimer ticks down normally.
         if (z.stateTimer <= 0) {
           zones[i] = zones[zones.length - 1];
           zones.pop();

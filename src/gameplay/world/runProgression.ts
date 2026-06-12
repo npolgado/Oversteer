@@ -16,6 +16,15 @@ export function isBiomeTransition(waveIndex: number): boolean {
   return waveIndex === 8 || waveIndex === 15;
 }
 
+// NOTE: not in original — fractional scrap carry for rewardMult > 1 (Jungle path +50% bonus)
+// Converts a rewardMult into a whole-number grant with leftover carry for the next pickup.
+// Example: mult 1.5 → grants [1,2,1,2,...] across successive calls (2 pickups = 3 scrap).
+export function accrueScrap(carry: number, rewardMult: number): { grant: number; carry: number } {
+  const total = carry + rewardMult;
+  const grant = Math.floor(total);
+  return { grant, carry: total - grant };
+}
+
 // ── RunProgression class (stateful per-run schedule) ──────────────────────────
 // NOTE: not in original — Phase 4.5 route branching system.
 // Keeps pure helpers above for tests/dev/situations; this class manages live run state.

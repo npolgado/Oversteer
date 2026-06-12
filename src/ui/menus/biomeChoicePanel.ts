@@ -8,6 +8,7 @@ import type { InputState } from '@input/inputManager';
 import type { BiomeId } from '@core/config';
 import { CFG, S } from '@core/config';
 import { makeUIStyle } from '@ui/textStyles';
+import { lerp } from '@core/utils';
 
 const PANEL_W = S(280);
 const PANEL_H = S(200);
@@ -17,8 +18,6 @@ const BIOME_INFO: Record<string, { icon: string; blurb: string; color: string }>
   rupture: { icon: '❄️', blurb: 'Ice plains & crystal hazards.\nHigh-skill handling challenge.', color: '#99BBFF' },
   jungle:  { icon: '🌿', blurb: 'Spreading corruption zones.\nHigher risk — +50% SCORE.', color: '#66DD66' },
 };
-
-function lerp(a: number, b: number, t: number): number { return a + (b - a) * t; }
 
 export class BiomeChoicePanel {
   private _layer: Container;

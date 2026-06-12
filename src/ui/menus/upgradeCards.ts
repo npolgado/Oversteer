@@ -10,14 +10,11 @@ import { UPGRADE_REGISTRY } from '@gameplay/upgrades/upgradeRegistry';
 import type { InputState } from '@input/inputManager';
 import { CFG, S } from '@core/config';
 import { makeUIStyle } from '@ui/textStyles';
+import { lerp } from '@core/utils';
 
 const CARD_W = S(220);
 const CARD_H = S(300);
 const CARD_GAP = S(30);
-
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
 
 // back.out(1.7) — matches the feel of the old GSAP ease
 function backOut(t: number): number {

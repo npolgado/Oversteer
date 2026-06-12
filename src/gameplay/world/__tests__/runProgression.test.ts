@@ -1,7 +1,7 @@
 // runProgression.test.ts — Tests for RunProgression class (route branching).
 
 import { describe, it, expect } from 'vitest';
-import { RunProgression, biomeForWave, isBiomeTransition } from '../runProgression';
+import { RunProgression, biomeForWave, isBiomeTransition, accrueScrap } from '../runProgression';
 
 describe('RunProgression — default schedule matches pure helper', () => {
   it('biomeForWave is consistent with the pure helper by default', () => {
@@ -97,6 +97,53 @@ describe('RunProgression — choose is idempotent', () => {
     rp.choose('jungle');
     rp.choose('rupture'); // ignored
     expect(rp.biomeForWave(8)).toBe('jungle');
+  });
+});
+
+describe('accrueScrap', () => {
+  it('mult 1 always grants exactly 1 with no carry', () => {
+    let carry = 0;
+    for (let i = 0; i < 4; i++) {
+      const r = accrueScrap(carry, 1);
+      expect(r.grant).toBe(1);
+      expect(r.carry).toBeCloseTo(0);
+      carry = r.carry;
+    }
+  });
+
+  it('mult 1.5 produces alternating grants of 1 and 2 (2 pickups = 3 scrap)', () => {
+    let carry = 0;
+    const grants: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      const r = accrueScrap(carry, 1.5);
+      grants.push(r.grant);
+      carry = r.carry;
+    }
+    expect(grants).toEqual([1, 2, 1, 2]);
+    expect(grants.reduce((a, b) => a + b, 0)).toBe(6); // 4 pickups = 6 scrap at ×1.5
+  });
+
+  it('mult 2 always grants exactly 2 with no carry', () => {
+    let carry = 0;
+    for (let i = 0; i < 3; i++) {
+      const r = accrueScrap(carry, 2);
+      expect(r.grant).toBe(2);
+      expect(r.carry).toBeCloseTo(0);
+      carry = r.carry;
+    }
+  });
+
+  it('carry is always less than 1 after each call', () => {
+    const mults = [1, 1.25, 1.5, 1.75, 2];
+    for (const mult of mults) {
+      let carry = 0;
+      for (let i = 0; i < 6; i++) {
+        const r = accrueScrap(carry, mult);
+        expect(r.carry).toBeGreaterThanOrEqual(0);
+        expect(r.carry).toBeLessThan(1);
+        carry = r.carry;
+      }
+    }
   });
 });
 

@@ -57,11 +57,9 @@ describe('biomeHazards heat_crack — spawning', () => {
 
   it('newly spawned zones start in telegraph state', () => {
     const state = makeBiomeHazardState();
-    // Use dt < telegraphTime (1.5) so the spawned zone stays in telegraph
-    updateBiomeHazards(state, rules, 7, 1500, 1500, seededRng(2));
-    // Newly spawned zone in this tick starts in telegraph regardless of prior dt
-    // (stateTimer is set to telegraphTime at spawn)
-    const justSpawned = state.zones.find(z => !z.didBurst && z.stateTimer > 0);
+    // dt=1.0: triggers spawn (spawnTimer=0 → -1 ≤ 0), then zone ticks stateTimer 1.5-1.0=0.5 → stays telegraph
+    updateBiomeHazards(state, rules, 1.0, 1500, 1500, seededRng(2));
+    const justSpawned = state.zones.find(z => z.stateTimer > 0);
     if (justSpawned) {
       expect(justSpawned.state).toBe('telegraph');
     }
@@ -126,6 +124,37 @@ describe('biomeHazards heat_crack — telegraph → active', () => {
     // Tick 2: still active — burst should NOT fire again
     const result = updateBiomeHazards(state, rules, 0.1, 1500, 1500, seededRng(8));
     expect(result.burstDamage).toBe(0);
+  });
+
+  it('player entering mid-eruption still triggers burst exactly once', () => {
+    const state = spawnOneZone(1500, 1500);
+    const r = seededRng(99);
+    // Tick 1: transition — player is outside (far away), burst NOT fired, didBurst stays false
+    const r1 = updateBiomeHazards(state, rules, 1.1, 2500, 2500, r);
+    expect(r1.burstDamage).toBe(0);
+    expect(state.zones[0]?.didBurst).toBe(false);
+    // Tick 2: still active — player drives inside, burst fires now
+    const r2 = updateBiomeHazards(state, rules, 0.1, 1500, 1500, r);
+    expect(r2.burstDamage).toBe(12);
+    expect(state.zones[0]?.didBurst).toBe(true);
+    // Tick 3: still inside — no second burst
+    const r3 = updateBiomeHazards(state, rules, 0.1, 1500, 1500, r);
+    expect(r3.burstDamage).toBe(0);
+  });
+
+  it('player never enters — no damage for entire eruption, zone expires normally', () => {
+    const state = spawnOneZone(1500, 1500);
+    const r = seededRng(100);
+    // Transition tick — player far away
+    const r1 = updateBiomeHazards(state, rules, 1.1, 2500, 2500, r);
+    expect(r1.burstDamage).toBe(0);
+    // Remaining eruption — player stays away
+    const r2 = updateBiomeHazards(state, rules, 0.5, 2500, 2500, r);
+    expect(r2.burstDamage).toBe(0);
+    // Let eruptDuration (1.2) expire — zone should be removed
+    updateBiomeHazards(state, rules, 1.3, 2500, 2500, r);
+    const activeZones = state.zones.filter(z => z.state === 'active' && z.didBurst === false);
+    expect(activeZones.length).toBe(0);
   });
 
   it('zone expires after eruptDuration', () => {
