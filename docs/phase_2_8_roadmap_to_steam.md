@@ -170,6 +170,37 @@ Fix the biome activation bug and deliver the deferred Phase 4 scope: per-biome h
 
 ---
 
+## Phase 4.9 — Core Feel Lock - dev_1.4.9
+
+### Goal
+
+Lock the moment-to-moment game feel before adding Phase 5 atmosphere. Bosses must have readable attack→dodge→loop cycles. Worlds must feel spatially distinct. The §7 balance pass fires now that all content has landed.
+
+### Scope
+
+- **Boss pattern rhythm rework** — each boss gets a telegraphed, recurring threat→dodge→safe-to-loop cycle:
+  - Pursuer: post-charge `recover` phase (~1.2s stagger = punish/loop window)
+  - Core: shorten armored phase 5.0→3.5s; pre-vulnerable gold-flicker + audio riser in final 1s
+  - Reflector: center-pause vulnerable window (~2.5s) after each figure-eight pass; no longer bomb-only
+  - All: white hit-flash on every chip + distinct audio cue + small knockback
+- **Boss-arena geometry** — on boss spawn, place a central pillar ring + cover blocks; cleared on boss death. Enemies flow around pillars (existing solid-prop collision). Gives player something to drift around and hide behind.
+- **Per-biome persistent geometry** — each world has a distinct spatial signature regenerated on biome transition: Wasteland open + scattered rocks, Rupture central pillar + flanking columns, Jungle dense chokepoint clusters. Pairs with each biome's existing enemy bias.
+- **§7 balance pass** — drift exploit gate (proximity + engagement), hp_regen stack cap restored (≤3, parity with canvas reference), auto-repair pacing tuned (HP_REGEN_DELAY, per-stack heal, DMG_SCALE_PER_WAVE, SPAWN_INTERVAL_MIN)
+- **Open-bug sweep** — music autoplay (first-gesture hook), instant-wave-end guard, chain-lightning arc FX
+- **DEV scenarios** — boss-window presets, geometry presets, balance validation presets
+
+### Success Criteria
+
+- Each boss has a telegraphed loop window; player can defeat all three by encirclement (Reflector no longer bomb-only)
+- Boss arena always has structural anchors during boss waves
+- Three biomes feel spatially distinct; prop layout clearly differs between worlds
+- Drift combo does not grow in an empty arena (no enemies, no recent engagement)
+- Music starts on first user input without a click
+- No instant wave-ends observed across 5+ normal-wave loads
+- All new logic covered by Vitest tests
+
+---
+
 ## Phase 5 — Three.js Integration - dev_1.5.0
 
 ### Goal

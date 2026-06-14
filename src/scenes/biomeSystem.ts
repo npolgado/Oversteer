@@ -14,6 +14,7 @@ import {
   type BiomeHazardState,
 } from '@gameplay/world/biomeHazards';
 import { regenerateProps, type PropsState } from '@gameplay/world/propsSystem';
+import { spawnBiomeStructures, clearBiomeStructures } from '@gameplay/world/bossArena';
 import type { PropsRenderer } from '@gameplay/world/propsRenderer';
 import type { HudManager } from '@ui/hud/hudManager';
 import type { ScreenFX } from '@render/screenFx';
@@ -56,8 +57,10 @@ export class BiomeSystem {
     biomeManager.setBiome(newBiomeId);
     const biome = biomeManager.active;
     audioManager.loadMusicPack(biome.musicPackId);
-    // Regenerate props from the new biome's pool and refresh renderer
+    // Regenerate props from the new biome's pool, then apply persistent biome structures
+    clearBiomeStructures(propsState);
     regenerateProps(propsState, biome.propPool);
+    spawnBiomeStructures(propsState, biome.structures);
     propsRenderer.setProps(propsState.allProps);
     // Swap background texture and tint
     const bgSprite = getBgSprite();

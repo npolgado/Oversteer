@@ -84,12 +84,16 @@ export class EnemyRenderer {
       sprite.rotation = enemy.heading + Math.PI / 2;
       sprite.alpha = enemy.fadeAlpha;
 
-      // Hit flash: tint white while hitFlashTimer is active (timer decremented in enemyUpdate)
+      // Boss tint priority: hit-flash > loop-window > warning > armored/default
       if (enemy.type === 'boss') {
         if ((enemy.hitFlashTimer ?? 0) > 0) {
           (sprite as Sprite).tint = 0xFFFFFF;          // white flash on damage
         } else if (enemy.bossVulnerable === true) {
-          (sprite as Sprite).tint = 0xFFCC44;          // gold = attack window (Core vulnerable phase)
+          (sprite as Sprite).tint = 0x44FFCC;          // cyan = loop window (Pursuer recover / Reflector pause / Core vulnerable)
+        } else if (enemy.bossWarning === true) {
+          // Core pre-vulnerable flicker — alternate gold/orange at ~4Hz
+          const flicker = Math.floor(Date.now() / 125) % 2 === 0;
+          (sprite as Sprite).tint = flicker ? 0xFFCC44 : 0xFF6600;
         } else {
           (sprite as Sprite).tint = 0xFF6600;          // orange = armored / default
         }

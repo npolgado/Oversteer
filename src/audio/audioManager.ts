@@ -58,6 +58,24 @@ const audioManager = {
 
       this.masterGain.gain.value = this.muted ? 0 : 1;
       this._genAllSounds();
+      // NOTE: not in original — browser autoplay policy: resume AudioContext on first user gesture.
+      // startBgMusic() is called before any user interaction; music is silently blocked.
+      // This one-shot listener fires on the first input and starts music if it was pending.
+      const _resumeOnGesture = () => {
+        if (Howler.ctx && Howler.ctx.state === 'suspended') {
+          Howler.ctx.resume().then(() => {
+            if (this._musicPlaying && !this._currentBg) {
+              this.startBgMusic();
+            }
+          }).catch(() => {});
+        }
+        window.removeEventListener('pointerdown', _resumeOnGesture);
+        window.removeEventListener('keydown', _resumeOnGesture);
+        window.removeEventListener('touchstart', _resumeOnGesture);
+      };
+      window.addEventListener('pointerdown', _resumeOnGesture);
+      window.addEventListener('keydown', _resumeOnGesture);
+      window.addEventListener('touchstart', _resumeOnGesture);
       const base = import.meta.env.BASE_URL ?? '/';
       this._bgTracks = _TRACK_NAMES.map(name =>
         new Howl({

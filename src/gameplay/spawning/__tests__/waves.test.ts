@@ -131,6 +131,7 @@ describe('updateWave in combat phase', () => {
   it('transitions to break after combatDuration', () => {
     const s = makeWaveState();
     startWave(s);
+    s.hasSpawnedThisWave = true; // guard requires at least one spawn before wave_end
 
     // Advance past the combat duration
     const events = updateWave(s, s.currentCombatDuration + 1, 0, 0);
@@ -141,6 +142,7 @@ describe('updateWave in combat phase', () => {
   it('emits break_end after WAVE_BREAK seconds in break', () => {
     const s = makeWaveState();
     startWave(s);
+    s.hasSpawnedThisWave = true; // guard requires at least one spawn before wave_end
     // Get to break
     updateWave(s, s.currentCombatDuration + 1, 0, 0);
     expect(s.phase).toBe('break');
@@ -445,6 +447,7 @@ describe('wave_end bossKilled flag', () => {
   it('wave_end from normal timer does not carry bossKilled', () => {
     const state = makeWaveState();
     startWave(state); // wave 1 — not a boss wave
+    state.hasSpawnedThisWave = true; // guard requires at least one spawn before wave_end
     const events = updateWave(state, state.currentCombatDuration + 1, 0, 0, false);
     const endEv = events.find(e => e.type === 'wave_end') as { type: 'wave_end'; bossKilled?: boolean } | undefined;
     expect(endEv).toBeDefined();

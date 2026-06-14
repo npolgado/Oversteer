@@ -46,6 +46,7 @@ export interface WaveState {
   bossPattern: BossPattern | null;
   bossSpawned: boolean;
   bossTelegraphTimer: number;
+  hasSpawnedThisWave: boolean;  // NOTE: not in original — guards instant wave-end before first spawn
 }
 
 export interface SpawnRequest {
@@ -103,6 +104,7 @@ export function makeWaveState(): WaveState {
     bossPattern: null,
     bossSpawned: false,
     bossTelegraphTimer: 0,
+    hasSpawnedThisWave: false,
   };
 }
 
@@ -143,6 +145,7 @@ export function startWave(state: WaveState): void {
     state.bossSpawned = false;
     state.bossTelegraphTimer = 0;
   }
+  state.hasSpawnedThisWave = false;
 }
 
 // ── Speed bonus ─────────────────┐─────────
@@ -228,8 +231,9 @@ export function updateWave(
       // Boss waves allow regular spawning to continue alongside the boss
     }
 
-    // Normal wave: end on timer
-    if (state.waveTimer >= state.currentCombatDuration) {
+    // Normal wave: end on timer, but only after at least one enemy has spawned this wave
+    // (guards race condition where timer expires before first-spawn delay elapses on fast loads)
+    if (state.waveTimer >= state.currentCombatDuration && state.hasSpawnedThisWave) {
       state.phase = 'break';
       state.breakTimer = CFG.WAVE_BREAK;
       // wave_end does NOT clear scraps (they persist into break phase)
@@ -269,6 +273,7 @@ export function updateWave(
         type: 'spawn',
         requests: [{ type, count: 1, angle, distance: 550 }],
       });
+      state.hasSpawnedThisWave = true;
       state.spawnTimer = state.currentSpawnInterval * state.cadenceMult;
     }
 

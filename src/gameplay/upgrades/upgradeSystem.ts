@@ -20,10 +20,13 @@ export function buildUpgradeOffer(
   rng: () => number = Math.random,
 ): UpgradeDef[] {
   const extraRerollCount = player.upgrades.filter(u => u === 'extra_rerolls').length;
+  // Parity with arena-drifter/game.js:409-413: hp_regen capped at 3 stacks
+  const hpRegenCount = player.upgrades.filter(u => u === 'hp_regen').length;
 
   const pool = UPGRADE_REGISTRY.filter(u => {
     if (!STACKABLE_IDS.has(u.id) && player.upgrades.includes(u.id)) return false;
     if (u.id === 'extra_rerolls' && extraRerollCount >= 2) return false;
+    if (u.id === 'hp_regen' && hpRegenCount >= 3) return false;
     return true;
   });
 

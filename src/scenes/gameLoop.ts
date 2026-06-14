@@ -5,7 +5,7 @@ import { Sprite, Assets, Graphics, Text, TextStyle } from 'pixi.js';
 import { makeUIStyle } from '@ui/textStyles';
 import type { GameContext } from './sceneManager';
 import { MobileControls } from '@ui/mobileControls';
-import { CFG, S, applyMap, type EnemyType } from '@core/config';
+import { CFG, S, applyMap, BIOMES_BY_ID, type EnemyType } from '@core/config';
 import { makePlayerState, getPlayerSpeed, getPlayerRadius, getEffectiveScoreMult, type PlayerState } from '@gameplay/player/playerState';
 import { updatePlayer } from '@gameplay/player/playerUpdate';
 import { PlayerRenderer } from '@gameplay/player/playerRenderer';
@@ -24,6 +24,7 @@ import {
   type PropsState,
 } from '@gameplay/world/propsSystem';
 import { PropsRenderer } from '@gameplay/world/propsRenderer';
+import { spawnBossArena, clearBossArena, spawnBiomeStructures } from '@gameplay/world/bossArena';
 import { BiomeManager } from '@gameplay/world/biomeManager';
 import { RunProgression, accrueScrap } from '@gameplay/world/runProgression';
 import { makeBiomeHazardState, type BiomeHazardState } from '@gameplay/world/biomeHazards';
@@ -222,14 +223,10 @@ export class GameLoop {
     this._trailRenderer = new TrailRenderer({ trailLayer, trailBloomLayer });
     this._propsState = makePropsState();
     generateProps(this._propsState);
+    // Spawn initial biome (Wasteland) persistent structures
+    spawnBiomeStructures(this._propsState, BIOMES_BY_ID['wasteland'].structures);
     this._propsRenderer = new PropsRenderer({ propsLayer });
     this._propsRenderer.setProps(this._propsState.allProps);
-    // NOTE: not in original — when a DEV situation jumps to a non-wasteland biome,
-    // regenerate props from the biome's propPool (overrides map pool above).
-    if (import.meta.env.DEV && this._biomeManager.active.id !== 'wasteland') {
-      regenerateProps(this._propsState, this._biomeManager.active.propPool);
-      this._propsRenderer.setProps(this._propsState.allProps);
-    }
 
     this._enemyRenderer = new EnemyRenderer({ enemiesLayer });
     this._enemyRenderer.sync(this._enemies);
@@ -392,6 +389,12 @@ export class GameLoop {
         console.warn(`[situation] unknown preset id "${_opts.situation}"`);
       } else {
         applySituation(this._waveState, this._playerState, this._biomeManager, this._trailState, this._scoringState, _resolvedSituation);
+        // NOTE: not in original — DEV situation may have swapped biome away from wasteland;
+        // regenerate props from the new biome's propPool so visuals match.
+        if (this._biomeManager.active.id !== 'wasteland') {
+          regenerateProps(this._propsState, this._biomeManager.active.propPool);
+          this._propsRenderer.setProps(this._propsState.allProps);
+        }
       }
     }
 
@@ -772,6 +775,13 @@ export class GameLoop {
     const effectiveScoreMult = getEffectiveScoreMult(this._playerState);
     // Sync combo from player into scoring state first (near-miss may have changed it last frame)
     this._scoringState.comboLevel = this._playerState.comboLevel;
+    // Drift exploit gate: combo only grows when an enemy is nearby OR a kill/near-miss just happened
+    const px = this._playerState.x, py = this._playerState.y;
+    const enemyNear = this._enemies.some(e => {
+      const dx = e.x - px, dy = e.y - py;
+      return dx * dx + dy * dy < CFG.DRIFT_COMBO_ENGAGE_R * CFG.DRIFT_COMBO_ENGAGE_R;
+    });
+    const recentEngagement = this._scoringState.lastEngagementTimer < CFG.DRIFT_COMBO_ENGAGE_T;
     updateScoring(
       this._scoringState,
       this._playerState.drifting,
@@ -779,6 +789,7 @@ export class GameLoop {
       effectiveScoreMult,
       this._playerState.comboMaster,
       dilatedDt,
+      enemyNear || recentEngagement,
     );
     // Sync combo back to player (decay may have reduced it)
     this._playerState.comboLevel = this._scoringState.comboLevel;
@@ -807,6 +818,9 @@ export class GameLoop {
         // Clear enemies (scraps persist into break)
         for (const e of this._enemies) e.alive = false;
         this._enemies.length = 0;
+        // Remove boss-arena pillars so normal waves stay open
+        clearBossArena(this._propsState);
+        this._propsRenderer.setProps(this._propsState.allProps);
         changed = true;
         this._ctx.camera.setHeadingMode(false);
         this._ctx.audioManager.stopEngine();
@@ -844,6 +858,9 @@ export class GameLoop {
         const bossY = clamp(this._playerState.y + Math.sin(bossAngle) * bossDist, bossPad, CFG.WORLD_H - bossPad);
         const boss = makeBoss(ev.pattern, bossX, bossY);
         this._enemies.push(boss);
+        // Spawn structural loop-anchors for this boss pattern
+        spawnBossArena(this._propsState, ev.pattern);
+        this._propsRenderer.setProps(this._propsState.allProps);
         changed = true;
         this._screenFx.flash(0xFF4040, 0.5, 0.6);
         this._screenFx.shake(8, 0.5);
@@ -1170,6 +1187,7 @@ export class GameLoop {
         this._scoringState.comboLevel = nmResult.comboLevel;
         this._playerState.comboLevel  = nmResult.comboLevel;
         updateRunStats(this._scoringState.runStats, { type: 'near_miss', comboLevel: oldCombo });
+        this._scoringState.lastEngagementTimer = 0;  // near-miss counts as engagement
         // Combo heal at milestones 3/5/8 (intentional: also fires from near-miss like original)
         this._playerState.hp = applyComboHeal(
           oldCombo, nmResult.comboLevel,
@@ -1213,17 +1231,23 @@ export class GameLoop {
     const loopResult = updateTrail(this._trailState, this._playerState, this._enemies, dilatedDt);
 
     if (loopResult !== null) {
-      // Boss non-lethal hit feedback: flash, shake, EventLog
+      // Boss non-lethal chip hit: shake, sparks, knockback, EventLog
       for (const hitBoss of loopResult.hitBosses) {
         const remaining = (hitBoss as EnemyState).health ?? 0;
-        this._screenFx.shake(3, 0.15);
-        this._particles.spawn(hitBoss.x, hitBoss.y, 0xFF6600, 12, {
+        this._screenFx.shake(5, 0.2);
+        this._particles.spawn(hitBoss.x, hitBoss.y, 0x44FFCC, 18, {
           type: 'spark',
-          vxMin: -160, vxMax: 160,
-          vyMin: -160, vyMax: 160,
-          lifeMin: 0.15, lifeMax: 0.3,
+          vxMin: -200, vxMax: 200,
+          vyMin: -200, vyMax: 200,
+          lifeMin: 0.2, lifeMax: 0.35,
         });
-        eventBus.emit('eventLog', { text: `BOSS HIT! ${remaining} HP left`, color: '#FF6600' });
+        // Knockback: push boss away from encirclement center (player position)
+        const kbDx = (hitBoss as EnemyState).x - this._playerState.x;
+        const kbDy = (hitBoss as EnemyState).y - this._playerState.y;
+        const kbDist = Math.hypot(kbDx, kbDy) || 1;
+        (hitBoss as EnemyState).vx += (kbDx / kbDist) * CFG.BOSS_CHIP_KNOCKBACK;
+        (hitBoss as EnemyState).vy += (kbDy / kbDist) * CFG.BOSS_CHIP_KNOCKBACK;
+        eventBus.emit('eventLog', { text: `BOSS HIT! ${remaining} HP left`, color: '#44FFCC' });
       }
 
       const killCount = loopResult.killedEnemies.length;
@@ -1239,6 +1263,7 @@ export class GameLoop {
         this._scoringState.comboLevel = encircleResult.comboLevel;
         this._playerState.comboLevel  = encircleResult.comboLevel;
         updateRunStats(this._scoringState.runStats, { type: 'encircle', killCount, comboLevel: oldCombo });
+        this._scoringState.lastEngagementTimer = 0;  // encirclement kill counts as engagement
         // Combo heal at milestones (intentional improvement: also fires from encirclement)
         this._playerState.hp = applyComboHeal(
           oldCombo, encircleResult.comboLevel,
@@ -1257,7 +1282,21 @@ export class GameLoop {
           );
           if (scoreGained > 0) addScore(this._scoringState, scoreGained);
           for (const c of chains) {
-            eventBus.emit('spawnParticles', { x: c.midX, y: c.midY, type: 'spark', count: 6, color: 0x88CCFF });
+            // Arc: dense sparks along the chain line (src→dst) + burst at midpoint
+            const steps = 5;
+            for (let s = 0; s <= steps; s++) {
+              const t = s / steps;
+              const jx = (c.dstX - c.srcX) * t + c.srcX + (Math.random() - 0.5) * 24;
+              const jy = (c.dstY - c.srcY) * t + c.srcY + (Math.random() - 0.5) * 24;
+              this._particles.spawn(jx, jy, 0xAAEEFF, 3, {
+                type: 'spark', vxMin: -60, vxMax: 60, vyMin: -60, vyMax: 60, lifeMin: 0.1, lifeMax: 0.22,
+              });
+            }
+            // Bright burst at midpoint
+            this._particles.spawn(c.midX, c.midY, 0xFFFFFF, 12, {
+              type: 'spark', vxMin: -120, vxMax: 120, vyMin: -120, vyMax: 120, lifeMin: 0.15, lifeMax: 0.3,
+            });
+            this._ctx.audioManager.play('near_miss');  // reuse near_miss sfx as chain audio cue
           }
         }
       }

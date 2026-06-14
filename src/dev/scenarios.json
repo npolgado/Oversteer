@@ -216,8 +216,8 @@
     {
       "id": "boss-reflector-w15",
       "name": "Boss: Reflector (Wave 15)",
-      "description": "Wave 15 boss fight, no upgrades, jungle biome. Permanently armored — trail encirclement NEVER damages it. Figure-eight movement. Wave ends via timer, not kill. hp=999 to survive the full wave.",
-      "goal": "Survive the timer — this boss cannot be killed",
+      "description": "Wave 15 boss fight, no upgrades, jungle biome. Figure-eight movement; armored during the figure-eight. Pauses at center every pass for ~2.5s with armor dropped (cyan tint) — encircle during that window to deal chip damage. hp=999 for full observation.",
+      "goal": "Wait for center-pause (cyan tint) — encircle then; avoid figure-eight",
       "wave": 15,
       "biome": "jungle",
       "boss": "reflector",
@@ -434,6 +434,86 @@
       "wave": 16,
       "biome": "jungle",
       "disableSpawns": true
+    },
+    {
+      "id": "boss-pursuer-recover",
+      "name": "Phase 4.9 — Boss: Pursuer Recover Window",
+      "description": "Phase 4.9. Pursuer boss, wasteland biome, hp=999. Observe the full cycle: telegraph (orbit, wind-up tint) → charge (dodge) → recover (stagger, cyan/vulnerable tint, ~1.2 s — this is the loop window). Boss arena pillars should be present.",
+      "goal": "Dodge the charge, then loop during the recover phase (cyan tint)",
+      "wave": 5,
+      "biome": "wasteland",
+      "boss": "pursuer",
+      "maxHp": 999,
+      "hp": 999
+    },
+    {
+      "id": "boss-core-window",
+      "name": "Phase 4.9 — Boss: Core Invuln → Vulnerable",
+      "description": "Phase 4.9. Core boss, rupture biome, hp=999. Armored phase now 3.5s (was 5s); gold flicker in the last 1s telegraphs the flip. Vulnerable window (cyan): loop then. Pillar ring provides the loop track.",
+      "goal": "Wait for gold flicker → cyan flip; loop during vulnerable window",
+      "wave": 10,
+      "biome": "rupture",
+      "boss": "core",
+      "maxHp": 999,
+      "hp": 999
+    },
+    {
+      "id": "boss-reflector-pause",
+      "name": "Phase 4.9 — Boss: Reflector Center-Pause",
+      "description": "Phase 4.9. Reflector boss, jungle biome, hp=999. Figure-eight while armored; center-pauses ~2.5s with armor dropped (cyan) after each pass. This is the ONLY damage window. Side pylons flank the figure-eight path.",
+      "goal": "Wait for center-pause (cyan); encircle — confirm reflector is now killable",
+      "wave": 15,
+      "biome": "jungle",
+      "boss": "reflector",
+      "maxHp": 999,
+      "hp": 999
+    },
+    {
+      "id": "arena-boss-pillars",
+      "name": "Phase 4.9 — Geometry: Boss Arena Pillars",
+      "description": "Phase 4.9. Wave 5 pursuer boss with no upgrades. Confirms 6 pillar ring + 4 corner cover blocks spawn on boss_spawn and enemies flow around them. Watch PerfMon (bottom-left) for frame spikes.",
+      "goal": "Pillars present? Enemies flow around them? PerfMon stable?",
+      "wave": 5,
+      "biome": "wasteland",
+      "boss": "pursuer",
+      "hp": 999,
+      "maxHp": 999
+    },
+    {
+      "id": "biome-rupture-pillar",
+      "name": "Phase 4.9 — Geometry: Rupture Central Pillar",
+      "description": "Phase 4.9. Rupture biome, wave 10, no enemies. Verify central pillar + flanking columns spawned by biome geometry and persist across the wave. Drive into them — solid collision expected.",
+      "goal": "Central pillar present and solid; columns flank it",
+      "wave": 10,
+      "biome": "rupture",
+      "disableSpawns": true
+    },
+    {
+      "id": "biome-jungle-chokepoints",
+      "name": "Phase 4.9 — Geometry: Jungle Chokepoint Clusters",
+      "description": "Phase 4.9. Jungle biome, wave 15, no enemies. Verify 4 corner chokepoint clusters create narrow lanes between them. Drive through the lanes; each cluster should be solid.",
+      "goal": "Four corner clusters present; lanes navigable; solid collision",
+      "wave": 15,
+      "biome": "jungle",
+      "disableSpawns": true
+    },
+    {
+      "id": "drift-exploit-empty",
+      "name": "Phase 4.9 — Balance: Drift Gate (No Enemies)",
+      "description": "Phase 4.9. No enemies, spawns disabled. Drift continuously — combo must NOT grow (no enemies within DRIFT_COMBO_ENGAGE_R=500px, no recent near-miss). Confirms the drift exploit gate.",
+      "goal": "Drift freely — combo counter must stay at 0",
+      "wave": 3,
+      "disableSpawns": true
+    },
+    {
+      "id": "regen-stack-cap",
+      "name": "Phase 4.9 — Balance: HP Regen 3-Stack Cap",
+      "description": "Phase 4.9. Opens upgrade break at wave 3 with 300 scrap, 0 hp_regen stacks. Pick hp_regen three times (max). On the 4th reroll, hp_regen should NOT appear as an option — the 3-stack cap is enforced.",
+      "goal": "Pick hp_regen ×3, then reroll — it must vanish from options",
+      "wave": 3,
+      "scrap": 300,
+      "openUpgradeBreak": true,
+      "rerollBonus": 20
     }
   ]
 }

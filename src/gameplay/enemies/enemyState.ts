@@ -45,7 +45,8 @@ export interface EnemyState extends PhysicsEntity {
   _dropBomb?: boolean;
   // Boss AI state
   bossPattern?: 'pursuer' | 'core' | 'reflector';
-  bossPhase?: 'telegraph' | 'charge' | 'orbit' | 'spawning' | 'vulnerable' | 'invuln';
+  bossPhase?: 'telegraph' | 'charge' | 'recover' | 'orbit' | 'spawning' | 'vulnerable' | 'invuln';
+  bossWarning?: boolean;  // NOTE: not in original — true during pre-vulnerable warning window (Core)
   bossPhaseTimer?: number;
   bossChargeTargetX?: number;
   bossChargeTargetY?: number;

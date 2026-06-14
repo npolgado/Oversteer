@@ -158,7 +158,7 @@ describe('computeWaveTiming', () => {
   it('wave 5 reaches minimum spawn values', () => {
     const timing = computeWaveTiming(5);
     expect(Math.abs(timing.firstSpawn - 0.6)).toBeLessThan(1e-6);
-    expect(timing.spawnInterval).toBe(1.5);
+    expect(timing.spawnInterval).toBeCloseTo(CFG.SPAWN_INTERVAL_MIN);
     expect(timing.combatDuration).toBe(70);
   });
 
@@ -167,7 +167,7 @@ describe('computeWaveTiming', () => {
     expect(timing.firstSpawn).toBeLessThan(2.5);
     expect(timing.firstSpawn).toBeGreaterThan(0.6);
     expect(timing.spawnInterval).toBeLessThan(4.0);
-    expect(timing.spawnInterval).toBeGreaterThan(1.5);
+    expect(timing.spawnInterval).toBeGreaterThan(CFG.SPAWN_INTERVAL_MIN);
     expect(timing.noBursts).toBe(false);
   });
 
@@ -359,20 +359,28 @@ describe('applyComboDecay', () => {
 });
 
 describe('driftComboScoreTick', () => {
-  it('awards points at each interval boundary', () => {
-    const r1 = driftComboScoreTick(0.9, 0, 2);
+  it('awards points at each interval boundary when engaged', () => {
+    const r1 = driftComboScoreTick(0.9, 0, 2, true);
     expect(r1.scoreDelta).toBe(0);
-    const r2 = driftComboScoreTick(1.1, 0, 2);
+    const r2 = driftComboScoreTick(1.1, 0, 2, true);
     expect(r2.scoreDelta).toBe(15);
-    const r3 = driftComboScoreTick(2.2, r2.nextTick, 2);
+    const r3 = driftComboScoreTick(2.2, r2.nextTick, 2, true);
     expect(r3.scoreDelta).toBe(15);
+  });
+
+  it('does not award points when not engaged (drift exploit gate)', () => {
+    const r1 = driftComboScoreTick(1.1, 0, 2, false);
+    expect(r1.scoreDelta).toBe(0);
+    // Tick pointer still advances so burst won't occur when engagement resumes
+    expect(r1.nextTick).toBe(1);
   });
 });
 
 describe('computeCollisionDamage', () => {
   it('scales damage after wave 5 and caps', () => {
     expect(computeCollisionDamage(15, 3)).toBe(15);
-    expect(computeCollisionDamage(15, 6)).toBe(17);
+    // wave 6: scale = 1 + DMG_SCALE_PER_WAVE(0.08) * 1 = 1.08 → 15*1.08=16.2 → 16
+    expect(computeCollisionDamage(15, 6)).toBe(16);
     expect(computeCollisionDamage(15, 50)).toBe(45);
   });
 });
@@ -406,12 +414,13 @@ describe('applyShieldBreak', () => {
 
 describe('applyHpRegen', () => {
   it('waits for delay and clamps to max', () => {
-    const player = { hp: 90, maxHp: 100, hpRegen: 5, lastHitTimer: 1.5 };
-    applyHpRegen(player, 0.4);
+    // HP_REGEN_DELAY = 1.0; start at 0.5 (below delay), accumulate via each call
+    const player = { hp: 90, maxHp: 100, hpRegen: 5, lastHitTimer: 0.5 };
+    applyHpRegen(player, 0.4);  // lastHitTimer → 0.9 < 1.0 → no heal
     expect(player.hp).toBe(90);
-    applyHpRegen(player, 0.2);
+    applyHpRegen(player, 0.2);  // lastHitTimer → 1.1 >= 1.0 → heal 5*0.2=1
     expect(player.hp).toBe(91);
-    applyHpRegen(player, 5);
+    applyHpRegen(player, 5);    // large dt → heal past max → clamp
     expect(player.hp).toBe(100);
   });
 });
@@ -837,9 +846,9 @@ describe('computeCollisionDamage — boundary inputs', () => {
 
   it('cap boundary: wave just below and just above threshold produce correct values', () => {
     // threshold wave = 5 + (DMG_SCALE_MAX - 1) / DMG_SCALE_PER_WAVE
-    // With DMG_SCALE_MAX=3, DMG_SCALE_PER_WAVE=0.12: threshold = 5 + 16.67 ≈ wave 22
-    const belowCap = computeCollisionDamage(15, 21); // scale = 1 + 0.12*16 = 2.92x < cap
-    const aboveCap = computeCollisionDamage(15, 23); // scale would be 3.16x → clamped to 3.0x
+    // With DMG_SCALE_MAX=3, DMG_SCALE_PER_WAVE=0.08: threshold = 5 + 25 = wave 30
+    const belowCap = computeCollisionDamage(15, 28); // scale = 1 + 0.08*23 = 2.84x < cap
+    const aboveCap = computeCollisionDamage(15, 32); // scale would be 3.16x → clamped to 3.0x
     expect(belowCap).toBeLessThan(Math.round(15 * CFG.DMG_SCALE_MAX));
     expect(aboveCap).toBe(Math.round(15 * CFG.DMG_SCALE_MAX));
   });

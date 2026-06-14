@@ -4,6 +4,7 @@ import { makePlayerState } from '@gameplay/player/playerState';
 import { makeTrailState } from '@gameplay/trail/trailState';
 import { BiomeManager } from '@gameplay/world/biomeManager';
 import { makeScoringState } from '@gameplay/scoring';
+import { makePropsState, generateProps, regenerateProps } from '@gameplay/world/propsSystem';
 import { applySituation, SITUATIONS_BY_ID, consumeDevPickup, consumeDevBossKilled } from '../situationTester';
 
 function makeState() {
@@ -380,5 +381,64 @@ describe('SITUATIONS_BY_ID preset catalog', () => {
     const spec = SITUATIONS_BY_ID.get('pickup-shield') as { hp?: number; disableSpawns?: boolean };
     expect(spec?.hp).toBe(1);
     expect(spec?.disableSpawns).toBe(true);
+  });
+});
+
+// ── Regression: GameLoop biome-init ordering (Phase 4.5) ─────────────────────
+// The Phase 4.5 commit added a DEV props-regenerate block that accessed
+// this._biomeManager before it was assigned, crashing GameLoop construction.
+// These tests verify the correct call order: applySituation (which calls
+// biomeManager.setBiome) must run BEFORE props are regenerated for the biome.
+
+describe('applySituation biome→props ordering (Phase 4.5 regression)', () => {
+  it('BiomeManager is wasteland before applySituation runs', () => {
+    const bm = new BiomeManager('wasteland');
+    expect(bm.active.id).toBe('wasteland');
+  });
+
+  it('applySituation with biome-rupture-entry swaps biome to rupture', () => {
+    const { waveState, playerState, trailState, scoringState } = {
+      waveState: makeWaveState(),
+      playerState: makePlayerState(),
+      trailState: makeTrailState(),
+      scoringState: makeScoringState(0),
+    };
+    const bm = new BiomeManager('wasteland');
+    const spec = SITUATIONS_BY_ID.get('biome-rupture-entry')!;
+    expect(spec).toBeDefined();
+    applySituation(waveState, playerState, bm, trailState, scoringState, spec);
+    expect(bm.active.id).toBe('rupture');
+  });
+
+  it('regenerateProps after applySituation produces props from the rupture pool', () => {
+    const { waveState, playerState, trailState, scoringState } = {
+      waveState: makeWaveState(),
+      playerState: makePlayerState(),
+      trailState: makeTrailState(),
+      scoringState: makeScoringState(0),
+    };
+    const bm = new BiomeManager('wasteland');
+    const spec = SITUATIONS_BY_ID.get('biome-rupture-entry')!;
+
+    // Default wasteland props
+    const wastelandState = makePropsState();
+    generateProps(wastelandState);
+    const wastelandTypes = new Set(wastelandState.allProps.map(p => p.type));
+
+    // Simulate the GameLoop fix: applySituation first, then regenerate
+    applySituation(waveState, playerState, bm, trailState, scoringState, spec);
+    expect(bm.active.id).toBe('rupture'); // precondition: biome swapped
+
+    const ruptureState = makePropsState();
+    generateProps(ruptureState);
+    regenerateProps(ruptureState, bm.active.propPool);
+    const ruptureTypes = new Set(ruptureState.allProps.map(p => p.type));
+
+    // Rupture biome has 'hazard' props (damage: 8); wasteland does not
+    expect(ruptureTypes.has('hazard')).toBe(true);
+    // Regenerate cleared and replaced — props are present
+    expect(ruptureState.allProps.length).toBeGreaterThan(0);
+    // Wasteland default pool does not contain 'hazard' type
+    expect(wastelandTypes.has('hazard')).toBe(false);
   });
 });

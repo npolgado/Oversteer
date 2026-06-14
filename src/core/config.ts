@@ -51,6 +51,14 @@ export interface BiomeHazardRules {
   dps?: number;
 }
 
+// NOTE: not in original — Phase 4.9 per-biome persistent geometry
+export interface BiomeStructureDef {
+  x: number;   // absolute world-space position
+  y: number;
+  radius: number;
+  type: 'solid' | 'slow' | 'slip';
+}
+
 export interface BiomeDescriptor {
   id: string;
   name: string;
@@ -59,6 +67,7 @@ export interface BiomeDescriptor {
   fogColor: number;
   fogDensity: number;      // 0–1 alpha of fog overlay
   propPool: PropDef[];
+  structures: BiomeStructureDef[];  // NOTE: not in original — persistent landmark structures per biome
   enemyWeightMult: Partial<Record<EnemyType, number>>;  // >1 = more of this type
   musicPackId: string;     // key into MUSIC_PACKS (future asset set)
   upgradeBias: Record<string, number>;  // upgrade id → weight multiplier
@@ -66,6 +75,7 @@ export interface BiomeDescriptor {
 }
 
 // Neon Wasteland — onboarding biome, waves 1-7
+// Geometry: open arena with a few large landmark boulders (minimal obstruction for onboarding)
 const _WASTELAND: BiomeDescriptor = {
   id: 'wasteland',
   name: 'Neon Wasteland',
@@ -80,6 +90,12 @@ const _WASTELAND: BiomeDescriptor = {
     { image: 'props/mud_1.png',   radius: 55, weight: 2, type: 'slip', duration: 1.5, strength: 0.6 },
     { image: 'props/bush_1.png',  radius: 25, weight: 5, type: 'decoration' },
   ],
+  structures: [
+    // 3 large landmark boulders off-center — visible reference points, not blockades
+    { x: 900,  y: 800,  radius: 90, type: 'solid' },
+    { x: 2100, y: 900,  radius: 80, type: 'solid' },
+    { x: 1500, y: 2300, radius: 85, type: 'solid' },
+  ],
   enemyWeightMult: {},
   musicPackId: 'wasteland',
   upgradeBias: { turbo: 2, nitro_drift: 2, speed_demon: 1.5, drift_king: 1.5 },
@@ -87,6 +103,7 @@ const _WASTELAND: BiomeDescriptor = {
 };
 
 // Frozen Rupture — handling variation, waves 8-14
+// Geometry: central pillar + 4 flanking columns — drift around the pillar; pairs with flanker bias + heavy slip
 const _RUPTURE: BiomeDescriptor = {
   id: 'rupture',
   name: 'Frozen Rupture',
@@ -100,6 +117,18 @@ const _RUPTURE: BiomeDescriptor = {
     { image: 'props/mud_1.png',   radius: 55, weight: 6, type: 'slip', duration: 2.5, strength: 0.7 },
     { image: 'props/bush_1.png',  radius: 25, weight: 2, type: 'decoration' },
   ],
+  structures: [
+    // Central ice spire — primary loop anchor
+    { x: 1500, y: 1500, radius: 110, type: 'solid' },
+    // 4 flanking columns at diagonals — narrows the arena into corridors
+    { x: 900,  y: 900,  radius: 55, type: 'solid' },
+    { x: 2100, y: 900,  radius: 55, type: 'solid' },
+    { x: 900,  y: 2100, radius: 55, type: 'solid' },
+    { x: 2100, y: 2100, radius: 55, type: 'solid' },
+    // Slip patches around the central spire — falling off a drift arc stings
+    { x: 1300, y: 1500, radius: 80, type: 'slip' },
+    { x: 1700, y: 1500, radius: 80, type: 'slip' },
+  ],
   enemyWeightMult: { flanker: 1.8 },
   musicPackId: 'rupture',
   upgradeBias: { tight_turns: 2, drift_king: 2, drift_shield: 1.5 },
@@ -107,6 +136,7 @@ const _RUPTURE: BiomeDescriptor = {
 };
 
 // Corruption Jungle — density stress test, waves 15+
+// Geometry: dense chokepoint clusters in 4 quadrants — claustrophobic lanes; pairs with bomber/blocker/splitter
 const _JUNGLE: BiomeDescriptor = {
   id: 'jungle',
   name: 'Corruption Jungle',
@@ -118,6 +148,26 @@ const _JUNGLE: BiomeDescriptor = {
     { image: 'props/tree_1.png',  radius: 50, weight: 6, type: 'solid' },
     { image: 'props/bush_1.png',  radius: 25, weight: 6, type: 'decoration' },
     { image: 'props/mud_1.png',   radius: 62, weight: 3, type: 'slow', duration: 2.0, strength: 0.5 },
+  ],
+  structures: [
+    // NW cluster
+    { x: 700,  y: 700,  radius: 70, type: 'solid' },
+    { x: 900,  y: 600,  radius: 50, type: 'solid' },
+    { x: 650,  y: 950,  radius: 45, type: 'solid' },
+    // NE cluster
+    { x: 2300, y: 700,  radius: 70, type: 'solid' },
+    { x: 2100, y: 600,  radius: 50, type: 'solid' },
+    { x: 2350, y: 950,  radius: 45, type: 'solid' },
+    // SW cluster
+    { x: 700,  y: 2300, radius: 70, type: 'solid' },
+    { x: 900,  y: 2400, radius: 50, type: 'solid' },
+    { x: 650,  y: 2050, radius: 45, type: 'solid' },
+    // SE cluster
+    { x: 2300, y: 2300, radius: 70, type: 'solid' },
+    { x: 2100, y: 2400, radius: 50, type: 'solid' },
+    { x: 2350, y: 2050, radius: 45, type: 'solid' },
+    // Central slow patch — the eye of the storm
+    { x: 1500, y: 1500, radius: 120, type: 'slow' },
   ],
   enemyWeightMult: { bomber: 1.6, blocker: 1.4, splitter: 1.5 },
   musicPackId: 'jungle',
@@ -190,6 +240,8 @@ export interface CfgShape {
   DRIFT_COMBO_INTERVAL: number;
   DRIFT_COMBO_BASE: number;
   MAX_COMBO: number;
+  DRIFT_COMBO_ENGAGE_R: number;    // NOTE: not in original — proximity gate radius
+  DRIFT_COMBO_ENGAGE_T: number;    // NOTE: not in original — engagement grace period (s)
   // Waves
   WAVE_COMBAT: number;
   WAVE_BREAK: number;
@@ -394,6 +446,8 @@ export const CFG: CfgShape = {
   DRIFT_COMBO_INTERVAL: 1.0,
   DRIFT_COMBO_BASE: 5,
   MAX_COMBO: 16,
+  DRIFT_COMBO_ENGAGE_R: 500,  // NOTE: not in original — must have enemy within 500px OR recent engagement
+  DRIFT_COMBO_ENGAGE_T: 3.0,  // NOTE: not in original — grace period after kill/near-miss (s)
   // Waves
   WAVE_COMBAT: 25,
   WAVE_BREAK: 8,
@@ -437,7 +491,7 @@ export const CFG: CfgShape = {
   HP_REGEN: 0,
   HIT_INVULN: 0.5,
   HIT_KNOCKBACK: 120,
-  HP_REGEN_DELAY: 2.0,
+  HP_REGEN_DELAY: 1.0,    // §7 balance: 2.0→1.0 — regen kicks in faster after a hit
   DMG_CHASER: 15,
   DMG_INTERCEPTOR: 18,
   DMG_DRIFTER: 15,
@@ -446,7 +500,7 @@ export const CFG: CfgShape = {
   DMG_FLANKER: 20,
   DMG_BOMBER: 14,
   DMG_BOSS: 25,
-  DMG_SCALE_PER_WAVE: 0.12,
+  DMG_SCALE_PER_WAVE: 0.08,   // §7 balance: 0.12→0.08 — reduce late-wave damage scaling
   DMG_SCALE_MAX: 3.0,
   // Boss
   BOSS_SPEED: 320,
@@ -462,7 +516,12 @@ export const CFG: CfgShape = {
   BOSS_MINION_RADIUS: 120,
   BOSS_MINION_MAX: 12,
   BOSS_VULNERABLE_DUR: 3.0,
-  BOSS_INVULN_DUR: 5.0,
+  BOSS_INVULN_DUR: 3.5,           // shortened from 5.0 — Core armored phase is shorter now
+  BOSS_INVULN_WARN_T: 1.0,        // NOTE: not in original — Core pre-vulnerable gold-flicker window
+  BOSS_RECOVER_DUR: 1.2,          // NOTE: not in original — Pursuer stagger/punish window after charge
+  BOSS_REFLECTOR_PAUSE_DUR: 2.5,  // NOTE: not in original — Reflector center-pause vulnerable window
+  BOSS_REFLECTOR_VULN_R: 180,     // NOTE: not in original — proximity to center that triggers pause
+  BOSS_CHIP_KNOCKBACK: 80,        // NOTE: not in original — impulse applied on successful encirclement chip
   BOSS_SPAWN_DIST_MIN: 600,    // NOTE: not in original
   BOSS_SPAWN_DIST_RANGE: 200,  // NOTE: not in original
   BOSS_WAVE_INTERVAL: 5,
@@ -515,7 +574,7 @@ export const CFG: CfgShape = {
   FIRST_SPAWN_INITIAL: 2.5,
   SPAWN_INTERVAL_INITIAL: 4.0,
   FIRST_SPAWN_MIN: 0.6,
-  SPAWN_INTERVAL_MIN: 1.5,
+  SPAWN_INTERVAL_MIN: 1.8,   // §7 balance: 1.5→1.8 — ease wave 7+ enemy density
   WAVE_COMBAT_WAVE1: 30,
   WAVE_TIME_GROWTH: 10,
   WAVE_COMBAT_MAX: 120,

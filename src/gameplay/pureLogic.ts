@@ -383,13 +383,15 @@ export function driftComboScoreTick(
   driftTime: number,
   lastDriftComboTick: number,
   comboLevel: number,
+  enemyEngaged: boolean,  // NOTE: not in original — proximity/engagement gate
 ): DriftComboResult {
   const ticks = Math.floor(driftTime / CFG.DRIFT_COMBO_INTERVAL);
-  if (ticks > lastDriftComboTick) {
+  if (ticks > lastDriftComboTick && enemyEngaged) {
     const pts = CFG.DRIFT_COMBO_BASE * Math.floor(comboLevel + 1);
     return { scoreDelta: pts, nextTick: ticks };
   }
-  return { scoreDelta: 0, nextTick: lastDriftComboTick };
+  // If not engaged: still advance tick pointer to avoid burst when engagement resumes
+  return { scoreDelta: 0, nextTick: ticks > lastDriftComboTick ? ticks : lastDriftComboTick };
 }
 
 export function computeCollisionDamage(baseDmg: number, waveIndex: number): number {

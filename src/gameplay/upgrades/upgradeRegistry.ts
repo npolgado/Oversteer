@@ -79,8 +79,8 @@ export const UPGRADE_REGISTRY: UpgradeDef[] = [
     apply(p) { p.encircleScoreBonus = (p.encircleScoreBonus || 1) * 1.5; },
   },
   {
-    id: 'hp_regen', name: 'Auto Repair', desc: 'Regenerate 3 HP/sec after 2s', icon: '✚', stackable: true,
-    apply(p) { p.hpRegen += 3; },
+    id: 'hp_regen', name: 'Auto Repair', desc: 'Regenerate 5 HP/sec after 1s (max 3 stacks)', icon: '✚', stackable: true,
+    apply(p) { p.hpRegen += 5; },  // §7 balance: +3→+5 per stack; delay tuned in CFG.HP_REGEN_DELAY
   },
   {
     id: 'max_hp', name: 'Reinforced Frame', desc: '+30 max HP (heals +30)', icon: '♥', stackable: true,

@@ -8,6 +8,12 @@ export interface ChainResult {
   midX: number;
   /** Midpoint y between killer and target (for spark FX). */
   midY: number;
+  /** Source (killed enemy) position — for arc rendering. NOTE: not in original */
+  srcX: number;
+  srcY: number;
+  /** Target (chained enemy) position — for arc rendering. NOTE: not in original */
+  dstX: number;
+  dstY: number;
   targetDied: boolean;
 }
 
@@ -45,14 +51,15 @@ export function applyChainLightning(
     closest.health--;
     const midX = (dead.x + closest.x) / 2;
     const midY = (dead.y + closest.y) / 2;
+    const base = { midX, midY, srcX: dead.x, srcY: dead.y, dstX: closest.x, dstY: closest.y };
 
     if (closest.health <= 0) {
       closest.alive = false;
       scoreGained += 50 * scoreMult;
-      chains.push({ midX, midY, targetDied: true });
+      chains.push({ ...base, targetDied: true });
     } else {
       closest.armored = false;
-      chains.push({ midX, midY, targetDied: false });
+      chains.push({ ...base, targetDied: false });
     }
   }
 

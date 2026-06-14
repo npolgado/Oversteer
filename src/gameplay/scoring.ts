@@ -15,6 +15,7 @@ export interface ScoringState {
   newBest: boolean;
   comboLevel: number;          // canonical combo — synced to/from PlayerState
   lastDriftComboTick: number;
+  lastEngagementTimer: number; // NOTE: not in original — seconds since last kill or near-miss (drift gate)
   runStats: RunStats;
 }
 
@@ -25,6 +26,7 @@ export function makeScoringState(highScore: number): ScoringState {
     newBest: false,
     comboLevel: 0,
     lastDriftComboTick: 0,
+    lastEngagementTimer: 0,
     runStats: makeRunStats(),
   };
 }
@@ -40,13 +42,15 @@ export function updateScoring(
   scoreMult: number,
   comboMaster: boolean,
   dt: number,
+  enemyEngaged: boolean = true,  // NOTE: not in original — drift exploit gate; defaults true for backwards compat
 ): void {
   // Base passive score — matches game.js:931 (score += SCORE_PER_SEC * dt * scoreMult)
   state.score += CFG.SCORE_PER_SEC * dt * scoreMult;
+  state.lastEngagementTimer += dt;
 
   if (drifting) {
     // Drift combo tick — intentionally multiplied by scoreMult for consistency
-    const driftResult = driftComboScoreTick(driftTime, state.lastDriftComboTick, state.comboLevel);
+    const driftResult = driftComboScoreTick(driftTime, state.lastDriftComboTick, state.comboLevel, enemyEngaged);
     if (driftResult.scoreDelta > 0) state.score += driftResult.scoreDelta * scoreMult;
     state.lastDriftComboTick = driftResult.nextTick;
   } else {
