@@ -560,14 +560,17 @@ export class GameLoop {
       this._paused = !this._paused;
       if (this._paused) {
         this._preMuteMusicVol = this._ctx.audioManager.musicVolume;
-        this._ctx.audioManager.setVolume('music', this._preMuteMusicVol * 0.3);
+        // NOTE: not in original — removed * 0.3 duck factor; music plays at full stored volume during pause
+        // so the displayed % matches the actual playing volume.
         this._ctx.audioManager.stopEngine();
         this._ctx.audioManager.stopDrift();
         pauseUITweens();
+        eventBus.emit('gamePaused', {});
       } else {
         this._ctx.audioManager.setVolume('music', this._preMuteMusicVol);
         this._ctx.audioManager.startEngine();
         resumeUITweens();
+        eventBus.emit('gameResumed', {});
       }
     }
     if (input.perfToggle) this._perf.toggle();
@@ -577,12 +580,12 @@ export class GameLoop {
       if (input.sfxDown)   this._ctx.audioManager.setVolume('sfx',   this._ctx.audioManager.sfxVolume   - 0.1);
       if (input.sfxUp)     this._ctx.audioManager.setVolume('sfx',   this._ctx.audioManager.sfxVolume   + 0.1);
       if (input.musicDown) {
-        this._preMuteMusicVol = Math.max(0.1, this._preMuteMusicVol - 0.1);
-        this._ctx.audioManager.setVolume('music', this._preMuteMusicVol * 0.3);
+        this._preMuteMusicVol = Math.max(0, this._preMuteMusicVol - 0.1);
+        this._ctx.audioManager.setVolume('music', this._preMuteMusicVol);
       }
       if (input.musicUp) {
         this._preMuteMusicVol = Math.min(1, this._preMuteMusicVol + 0.1);
-        this._ctx.audioManager.setVolume('music', this._preMuteMusicVol * 0.3);
+        this._ctx.audioManager.setVolume('music', this._preMuteMusicVol);
       }
       this._renderPauseOverlay();
       this._renderPausePerfText();
@@ -1468,17 +1471,18 @@ export class GameLoop {
     this._pauseOverlay.rect(0, 0, CFG.W, CFG.H).fill({ color: 0x000000, alpha: 0.5 });
   }
 
-  /** Trigger combo milestone FX + audio when combo crosses 3, 5, or 8. (game.js:1032-1051) */
+  /** Trigger combo milestone FX + audio when combo crosses 3, 5, 8, 12, or 16. (game.js:1032-1051) */
   private _checkComboMilestone(oldLevel: number, newLevel: number): void {
-    const milestones = [3, 5, 8];
+    // NOTE: not in original — extended milestones beyond 8; original only had [3, 5, 8]
+    const milestones = [3, 5, 8, 12, 16];
     for (const m of milestones) {
       if (Math.floor(oldLevel) < m && Math.floor(newLevel) >= m) {
         this._ctx.audioManager.play('combo_sting');
         this._screenFx.flash(0x35F2D0, 0.12, 0.1);
         this._screenFx.zoom(1.05, 0.15);
-        const color = m >= 8 ? 0xFFD700 : m >= 5 ? 0x7C5CFF : 0x35F2D0;
+        const color = m >= 16 ? 0xFF2D55 : m >= 12 ? 0xFF6B35 : m >= 8 ? 0xFFD700 : m >= 5 ? 0x7C5CFF : 0x35F2D0;
         this._particles.addRing(this._playerState.x, this._playerState.y, color);
-        const label = m >= 8 ? '#FFD700' : m >= 5 ? '#7C5CFF' : '#35F2D0';
+        const label = m >= 16 ? '#FF2D55' : m >= 12 ? '#FF6B35' : m >= 8 ? '#FFD700' : m >= 5 ? '#7C5CFF' : '#35F2D0';
         eventBus.emit('eventLog', { text: `x${m} COMBO!`, color: label });
         this._hudManager.showMilestoneBanner(`x${m} COMBO!`, label);
         break;

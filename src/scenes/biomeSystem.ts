@@ -21,6 +21,7 @@ import type { ScreenFX } from '@render/screenFx';
 import type { audioManager as AudioManagerType } from '@audio/audioManager';
 import { CFG } from '@core/config';
 import { eventBus } from '@core/eventBus';
+import { logError } from '@debug/logger';
 
 export interface BiomeSystemDeps {
   biomeManager: BiomeManager;
@@ -56,7 +57,12 @@ export class BiomeSystem {
     const newBiomeId = runProgression.biomeForWave(startedWave);
     biomeManager.setBiome(newBiomeId);
     const biome = biomeManager.active;
-    audioManager.loadMusicPack(biome.musicPackId);
+    // NOTE: not in original — guard so an audio exception cannot stall the wave count-in
+    try {
+      audioManager.loadMusicPack(biome.musicPackId);
+    } catch (e) {
+      logError('audio', 'loadMusicPack failed during biome transition', e);
+    }
     // Regenerate props from the new biome's pool, then apply persistent biome structures
     clearBiomeStructures(propsState);
     regenerateProps(propsState, biome.propPool);

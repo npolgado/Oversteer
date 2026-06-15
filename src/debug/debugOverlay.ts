@@ -18,6 +18,7 @@ import { probeCoveringOverlays } from './domOverlayProbe';
 import { getWatchdogState } from './watchdog';
 import { layerSnapshot, checkAncestorTransforms } from './layerInspect';
 import { probeRenderOutput, formatRenderProbe } from './renderProbe';
+import { eventBus } from '@core/eventBus';
 
 const IS_DEV = import.meta.env.DEV;
 
@@ -28,6 +29,10 @@ let _dumpIntervalId = 0;
 let _blankReadCount = 0;
 let _tlPausedConsecutive = 0;
 let _pausePredicate: (() => boolean) | null = null;
+// NOTE: not in original — suppress blank-screen false positive while the pause overlay is visible
+let _gamePaused = false;
+eventBus.on('gamePaused',  () => { _gamePaused = true; });
+eventBus.on('gameResumed', () => { _gamePaused = false; });
 
 /**
  * Register a predicate that returns true when the game is intentionally paused.
@@ -144,7 +149,7 @@ function _dumpState(): void {
       // frames with preserveDrawingBuffer=false — scratch-canvas pixels are stale zeros.
       // That's not a real blank screen; skip the error to avoid false positives.
       const allTransparent = r.samples.length > 0 && r.samples.every(p => p.a === 0);
-      if (r.uniqueColors === 1 && !allTransparent && currentSceneName !== '(none)' && currentSceneName !== 'BootScene') {
+      if (r.uniqueColors === 1 && !allTransparent && currentSceneName !== '(none)' && currentSceneName !== 'BootScene' && !_gamePaused) {
         _blankReadCount++;
         if (_blankReadCount === 2) {
           // logError is dynamic-imported here to avoid a circular dep on this file.

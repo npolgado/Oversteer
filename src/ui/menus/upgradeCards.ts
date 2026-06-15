@@ -134,7 +134,7 @@ export class UpgradeCardsUI {
     const rbY = CFG.H - S(35) - rbH / 2;
     this._rerollBounds = { x: rbX, y: rbY, w: rbW, h: rbH };
 
-    // Owned upgrades summary
+    // Owned upgrades summary — NOTE: not in original — vertical column left of cards (was horizontal dot-joined string)
     if (ownedUpgrades.length > 0) {
       const counts = new Map<string, { name: string; count: number }>();
       for (const id of ownedUpgrades) {
@@ -144,26 +144,29 @@ export class UpgradeCardsUI {
         if (entry) entry.count++;
         else counts.set(id, { name: def.name, count: 1 });
       }
-      const itemStr = Array.from(counts.values())
-        .map(({ count, name }) => `${count}x ${name}`)
-        .join('  ·  ');
 
-      const labelY = cardY + CARD_H + S(24);
+      const labelY = cardY;
       const label = new Text({
         text: 'OWNED UPGRADES',
         style: makeUIStyle({ size: S(11), color: '#555566', letterSpacing: 1 }),
       });
-      label.anchor.set(0.5, 0);
-      label.position.set(CFG.W / 2, labelY);
+      label.anchor.set(0, 0);
+      label.position.set(S(20), labelY);
       this._layer.addChild(label);
 
-      const itemsTxt = new Text({
-        text: itemStr,
-        style: makeUIStyle({ size: S(13), color: '#99aabb', wordWrap: true, wordWrapWidth: CFG.W - S(120), align: 'center' }),
-      });
-      itemsTxt.anchor.set(0.5, 0);
-      itemsTxt.position.set(CFG.W / 2, labelY + S(18));
-      this._layer.addChild(itemsTxt);
+      const items = Array.from(counts.values());
+      const MAX_DISPLAY = 8;
+      const displayItems = items.slice(0, MAX_DISPLAY);
+      for (let idx = 0; idx < displayItems.length; idx++) {
+        const { count, name } = displayItems[idx];
+        const rowTxt = new Text({
+          text: `${count}x  ${name}`,
+          style: makeUIStyle({ size: S(13), color: '#99aabb' }),
+        });
+        rowTxt.anchor.set(0, 0);
+        rowTxt.position.set(S(20), labelY + S(18) + idx * S(18));
+        this._layer.addChild(rowTxt);
+      }
     }
   }
 

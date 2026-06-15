@@ -281,3 +281,43 @@ describe('volume floor — loaded prefs clamped to 0.1', () => {
     expect(am.musicVolume).toBeCloseTo(0.4);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bug 1.1 regression — loadMusicPack crossfade: _musicPlaying and _currentBg
+// must be set after the deferred startBgMusic fires (no interleaved state race).
+// ---------------------------------------------------------------------------
+
+describe('Bug 1.1 regression — loadMusicPack crossfade defers startBgMusic', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('after loadMusicPack with music playing, _musicPlaying===true and _currentBg is non-null after fade timeout', async () => {
+    const am = await resetAudio();
+
+    // Set up 4 tracks matching the MUSIC_PACKS layout
+    const tracks = [makeMockHowl(), makeMockHowl(), makeMockHowl(), makeMockHowl()];
+    (am as any)._bgTracks = tracks;
+    (am as any)._activePackIds = [0, 1, 2, 3]; // 'default' pack
+    (am as any)._shuffleOrder = [0, 1, 2, 3];
+    (am as any)._shuffleIdx = 0;
+    (am as any)._currentBg = tracks[0] as any;
+    (am as any)._musicPlaying = true;
+
+    // Switch to a different pack (e.g. 'wasteland' uses tracks 1 and 0)
+    (am as any).loadMusicPack('wasteland');
+
+    // Immediately after call: _musicPlaying re-flagged true (intent preserved)
+    expect((am as any)._musicPlaying).toBe(true);
+
+    // After fade timeout fires (650ms), startBgMusic should have run
+    vi.advanceTimersByTime(700);
+
+    expect((am as any)._musicPlaying).toBe(true);
+    expect((am as any)._currentBg).not.toBeNull();
+  });
+});
