@@ -60,9 +60,14 @@ function update(
   state.x = lerp(state.x, state.targetX, t);
   state.y = lerp(state.y, state.targetY, t);
 
-  // Clamp so viewport stays inside world
-  state.x = clamp(state.x, CFG.W / 2, CFG.WORLD_W - CFG.W / 2);
-  state.y = clamp(state.y, CFG.H / 2, CFG.WORLD_H - CFG.H / 2);
+  // Clamp so viewport stays inside world.
+  // NOTE: not in original — skip clamp in headingUp mode; the rotated viewport makes the
+  // rectangular clamp under-bound the view, and losing the player off-screen is worse than
+  // briefly showing void past the world edge.
+  if (!_headingUp) {
+    state.x = clamp(state.x, CFG.W / 2, CFG.WORLD_W - CFG.W / 2);
+    state.y = clamp(state.y, CFG.H / 2, CFG.WORLD_H - CFG.H / 2);
+  }
 
   // Dynamic zoom: slight zoom-out at high speed (up to 4%)
   const targetZoom = 1 - leadFrac * 0.04;

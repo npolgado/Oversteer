@@ -299,6 +299,7 @@ export interface CfgShape {
   // Boss
   BOSS_SPEED: number;
   BOSS_HP: number;
+  BOSS_HP_GROWTH: number;  // NOTE: not in original — HP added per 5 waves above wave 5
   BOSS_RADIUS: number;
   BOSS_SPRITE_S: number;
   BOSS_TELEGRAPH_DUR: number;
@@ -323,6 +324,8 @@ export interface CfgShape {
   HORDE_MAX_COUNT: number;
   HORDE_SPAWN_DIST: number;
   HORDE_ARC_RAD: number;    // angular spread of horde spawn arc (radians)
+  HORDE_BATCH_WAVE_2: number;  // NOTE: not in original — wave threshold for 2 horde batches
+  HORDE_BATCH_WAVE_3: number;  // NOTE: not in original — wave threshold for 3 horde batches
   // World
   WORLD_W: number;
   WORLD_H: number;
@@ -364,9 +367,13 @@ export interface CfgShape {
   SPAWN_INTERVAL_INITIAL: number;
   FIRST_SPAWN_MIN: number;
   SPAWN_INTERVAL_MIN: number;
+  SPAWN_INTERVAL_FLOOR: number;  // NOTE: not in original — second ramp floor for waves 5→15
   WAVE_COMBAT_WAVE1: number;
   WAVE_TIME_GROWTH: number;
   WAVE_COMBAT_MAX: number;
+  // Trail anti-AFK
+  TRAIL_MAX_AGE: number;              // NOTE: not in original — trail point expires after this many ms
+  TRAIL_IDLE_SPEED_THRESHOLD: number; // NOTE: not in original — min px/s to record trail points
   // Props
   PROP_CHUNK_SIZE: number;
   PROP_DENSITY: number;
@@ -500,11 +507,12 @@ export const CFG: CfgShape = {
   DMG_FLANKER: 20,
   DMG_BOMBER: 14,
   DMG_BOSS: 25,
-  DMG_SCALE_PER_WAVE: 0.08,   // §7 balance: 0.12→0.08 — reduce late-wave damage scaling
-  DMG_SCALE_MAX: 3.0,
+  DMG_SCALE_PER_WAVE: 0.12,   // §4.9 balance: raised 0.08→0.12 — late waves hurt more
+  DMG_SCALE_MAX: 4.0,         // §4.9 balance: raised 3.0→4.0 — allow higher late-wave damage
   // Boss
   BOSS_SPEED: 320,
   BOSS_HP: 8,
+  BOSS_HP_GROWTH: 4,  // NOTE: not in original — +4 HP per 5 waves above wave 5
   BOSS_RADIUS: 20,
   BOSS_SPRITE_S: 80,
   BOSS_TELEGRAPH_DUR: 2.0,
@@ -512,9 +520,9 @@ export const CFG: CfgShape = {
   BOSS_HIT_FLASH_S: 0.15,
   BOSS_CHARGE_DUR: 1.0,
   BOSS_CHARGE_SPEED: 700,
-  BOSS_MINION_INTERVAL: 4.0,
+  BOSS_MINION_INTERVAL: 3.5,  // §4.9 balance: raised from 4.0 — minions spawn faster
   BOSS_MINION_RADIUS: 120,
-  BOSS_MINION_MAX: 12,
+  BOSS_MINION_MAX: 16,        // §4.9 balance: raised from 12 — more total minions per fight
   BOSS_VULNERABLE_DUR: 3.0,
   BOSS_INVULN_DUR: 3.5,           // shortened from 5.0 — Core armored phase is shorter now
   BOSS_INVULN_WARN_T: 1.0,        // NOTE: not in original — Core pre-vulnerable gold-flicker window
@@ -529,11 +537,13 @@ export const CFG: CfgShape = {
   HORDE_TRIGGER_MIN: 0.60,
   HORDE_TRIGGER_MAX: 0.85,
   HORDE_DELAY: 1.5,
-  HORDE_BASE_COUNT: 5,
-  HORDE_WAVE_GROWTH: 0.5,
-  HORDE_MAX_COUNT: 40,
+  HORDE_BASE_COUNT: 8,        // §4.9 balance: raised from 5 — late hordes feel overwhelming
+  HORDE_WAVE_GROWTH: 1.0,     // §4.9 balance: raised from 0.5 — faster scaling per wave
+  HORDE_MAX_COUNT: 60,        // §4.9 balance: raised from 40 — more enemies in late hordes
   HORDE_SPAWN_DIST: 950,
   HORDE_ARC_RAD: Math.PI / 3,
+  HORDE_BATCH_WAVE_2: 11,     // NOTE: not in original — waves 11+ fire 2 horde batches
+  HORDE_BATCH_WAVE_3: 21,     // NOTE: not in original — waves 21+ fire 3 horde batches
   // World
   WORLD_W: 3000,
   WORLD_H: 3000,
@@ -574,10 +584,14 @@ export const CFG: CfgShape = {
   FIRST_SPAWN_INITIAL: 2.5,
   SPAWN_INTERVAL_INITIAL: 4.0,
   FIRST_SPAWN_MIN: 0.6,
-  SPAWN_INTERVAL_MIN: 1.8,   // §7 balance: 1.5→1.8 — ease wave 7+ enemy density
+  SPAWN_INTERVAL_MIN: 1.8,   // §7 balance: 1.5→1.8 — ease wave 7+ enemy density (first ramp floor)
+  SPAWN_INTERVAL_FLOOR: 1.2, // NOTE: not in original — second ramp floor for waves 5→15
   WAVE_COMBAT_WAVE1: 30,
   WAVE_TIME_GROWTH: 10,
   WAVE_COMBAT_MAX: 120,
+  // Trail anti-AFK
+  TRAIL_MAX_AGE: 8000,              // NOTE: not in original — trail point expires after 8s (ms)
+  TRAIL_IDLE_SPEED_THRESHOLD: 60,   // NOTE: not in original — min px/s to record trail points
   // Props
   PROP_CHUNK_SIZE: 500,
   PROP_DENSITY: 0.00001,
@@ -602,7 +616,8 @@ export const CFG: CfgShape = {
   VIGNETTE_OUTER: 0.7,
   VIGNETTE_ALPHA: 0.5,
   // Speed lines — port of arena-drifter/game.js:1270-1294
-  SPEED_LINES_THRESHOLD: 0.7,
+  // NOTE: not in original — lowered from 0.7 so wind appears at moderate speed
+  SPEED_LINES_THRESHOLD: 0.45,
   // Chromatic aberration — port of arena-drifter/game.js:1297-1314
   ABERRATION_SPEED_THRESHOLD: 0.8,
   ABERRATION_DYING_INTENSITY: 0.4,

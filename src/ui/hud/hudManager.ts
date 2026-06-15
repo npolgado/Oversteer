@@ -338,8 +338,10 @@ export class HudManager {
       const cby = CFG.H - S(30);
       const cbw = S(120);
       const cbh = S(8);
-      const comboFrac = CFG.DRIFT_COMBO_INTERVAL > 0
-        ? (data.driftTime % CFG.DRIFT_COMBO_INTERVAL) / CFG.DRIFT_COMBO_INTERVAL
+      // NOTE: not in original — show actual combo level fill (0..MAX_COMBO) instead of
+      // 1-second tick progress, so the bar reflects where you are in the combo ladder.
+      const comboFrac = CFG.MAX_COMBO > 0
+        ? Math.min(1, data.comboLevel / CFG.MAX_COMBO)
         : 0;
 
       this._comboBg.clear();

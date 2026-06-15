@@ -34,6 +34,8 @@ export interface TrailPoint {
   y: number;
   // NOTE: not in original — speed at emission time for per-segment width variation (arena-drifter/world.js:500).
   speed?: number;
+  // NOTE: not in original — timestamp in ms (Date.now()) for age-based expiry.
+  timestamp?: number;
 }
 
 export interface WaveTiming {
@@ -281,15 +283,41 @@ export function updateBoostZones(
 // ── Wave timing ────────────────────────────────────────────────
 
 export function computeWaveTiming(waveIndex: number): WaveTiming {
+  // First ramp: waves 1→5 (interval 4.0→1.8)
   const ramp = Math.min(1, (waveIndex - 1) / 4);
   const firstSpawn = lerp(CFG.FIRST_SPAWN_INITIAL, CFG.FIRST_SPAWN_MIN, ramp);
-  const spawnInterval = lerp(CFG.SPAWN_INTERVAL_INITIAL, CFG.SPAWN_INTERVAL_MIN, ramp);
+  // Second ramp: waves 5→15 push interval from SPAWN_INTERVAL_MIN (1.8) down to SPAWN_INTERVAL_FLOOR (1.2)
+  // NOTE: not in original — extends density scaling past wave 5
+  const ramp2 = Math.min(1, Math.max(0, (waveIndex - 5) / 10));
+  const spawnInterval = lerp(
+    lerp(CFG.SPAWN_INTERVAL_INITIAL, CFG.SPAWN_INTERVAL_MIN, ramp),
+    CFG.SPAWN_INTERVAL_FLOOR,
+    ramp2,
+  );
   const combatDuration = Math.min(
     CFG.WAVE_COMBAT_MAX,
     CFG.WAVE_COMBAT_WAVE1 + CFG.WAVE_TIME_GROWTH * (waveIndex - 1),
   );
   const noBursts = waveIndex === 1;
   return { firstSpawn, spawnInterval, combatDuration, noBursts };
+}
+
+/**
+ * Returns how many enemies to spawn per regular spawn tick, scaling from wave 5+.
+ * Capped at 4 so spawn bursts don't overwhelm the frame budget.
+ * NOTE: not in original — adds concurrent enemy count scaling past wave 5.
+ */
+export function computeWaveSpawnBatch(wave: number): number {
+  return Math.min(4, 1 + Math.floor(Math.max(0, wave - 5) / 4));
+}
+
+/**
+ * Returns boss HP scaled by wave index.
+ * Base 8 HP, grows by BOSS_HP_GROWTH every 5 waves above wave 5.
+ * NOTE: not in original — flat CFG.BOSS_HP regardless of wave was the original.
+ */
+export function computeBossHp(waveIndex: number): number {
+  return CFG.BOSS_HP + Math.floor(Math.max(0, waveIndex / 5 - 1)) * CFG.BOSS_HP_GROWTH;
 }
 
 export function computeHordeCount(waveIndex: number): number {

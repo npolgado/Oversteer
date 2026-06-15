@@ -406,8 +406,20 @@ const audioManager = {
             [this._shuffleOrder[leadPos], this._shuffleOrder[nextIdx]];
         }
       }
-      this.fadeBgMusic(0.6);
-      this.startBgMusic();
+      // NOTE: not in original — defer startBgMusic until AFTER the fade completes to avoid
+      // interleaved state mutations (_currentBg=null from fadeBgMusic racing startBgMusic).
+      // fadeBgMusic clears _currentBg and _musicPlaying synchronously; we restore them via
+      // a deferred callback that fires after the fade duration (0.6s + 50ms margin).
+      const FADE_DUR = 0.6;
+      this.fadeBgMusic(FADE_DUR);
+      // _musicPlaying is now false (set by fadeBgMusic). Re-mark intent so the gesture-resume
+      // listener can restart if the AudioContext is suspended during the delay.
+      this._musicPlaying = true;
+      setTimeout(() => {
+        if (!this._currentBg) {
+          this.startBgMusic();
+        }
+      }, (FADE_DUR + 0.05) * 1000);
     }
   },
 

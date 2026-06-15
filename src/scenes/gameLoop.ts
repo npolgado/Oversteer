@@ -560,14 +560,17 @@ export class GameLoop {
       this._paused = !this._paused;
       if (this._paused) {
         this._preMuteMusicVol = this._ctx.audioManager.musicVolume;
-        this._ctx.audioManager.setVolume('music', this._preMuteMusicVol * 0.3);
+        // NOTE: not in original — removed * 0.3 duck factor; music plays at full stored volume during pause
+        // so the displayed % matches the actual playing volume.
         this._ctx.audioManager.stopEngine();
         this._ctx.audioManager.stopDrift();
         pauseUITweens();
+        eventBus.emit('gamePaused', {});
       } else {
         this._ctx.audioManager.setVolume('music', this._preMuteMusicVol);
         this._ctx.audioManager.startEngine();
         resumeUITweens();
+        eventBus.emit('gameResumed', {});
       }
     }
     if (input.perfToggle) this._perf.toggle();
@@ -577,12 +580,12 @@ export class GameLoop {
       if (input.sfxDown)   this._ctx.audioManager.setVolume('sfx',   this._ctx.audioManager.sfxVolume   - 0.1);
       if (input.sfxUp)     this._ctx.audioManager.setVolume('sfx',   this._ctx.audioManager.sfxVolume   + 0.1);
       if (input.musicDown) {
-        this._preMuteMusicVol = Math.max(0.1, this._preMuteMusicVol - 0.1);
-        this._ctx.audioManager.setVolume('music', this._preMuteMusicVol * 0.3);
+        this._preMuteMusicVol = Math.max(0, this._preMuteMusicVol - 0.1);
+        this._ctx.audioManager.setVolume('music', this._preMuteMusicVol);
       }
       if (input.musicUp) {
         this._preMuteMusicVol = Math.min(1, this._preMuteMusicVol + 0.1);
-        this._ctx.audioManager.setVolume('music', this._preMuteMusicVol * 0.3);
+        this._ctx.audioManager.setVolume('music', this._preMuteMusicVol);
       }
       this._renderPauseOverlay();
       this._renderPausePerfText();
@@ -856,7 +859,7 @@ export class GameLoop {
         const bossPad = CFG.BOSS_RADIUS;
         const bossX = clamp(this._playerState.x + Math.cos(bossAngle) * bossDist, bossPad, CFG.WORLD_W - bossPad);
         const bossY = clamp(this._playerState.y + Math.sin(bossAngle) * bossDist, bossPad, CFG.WORLD_H - bossPad);
-        const boss = makeBoss(ev.pattern, bossX, bossY);
+        const boss = makeBoss(ev.pattern, bossX, bossY, this._waveState.waveIndex);
         this._enemies.push(boss);
         // Spawn structural loop-anchors for this boss pattern
         spawnBossArena(this._propsState, ev.pattern);
@@ -926,6 +929,7 @@ export class GameLoop {
       dilatedDt,
       this._playerState.x,
       this._playerState.y,
+      this._propsState.allProps, // NOTE: not in original — obstacle avoidance (Bug 1.5)
     );
     if (scrapPos) {
       const _forcedPickup = import.meta.env.DEV ? consumeDevPickup() : null;
@@ -936,7 +940,7 @@ export class GameLoop {
     }
 
     // --- Boost zone spawning ---
-    tickBoostZoneSpawn(this._waveState, dilatedDt, this._playerState.x, this._playerState.y);
+    tickBoostZoneSpawn(this._waveState, dilatedDt, this._playerState.x, this._playerState.y, this._propsState.allProps); // NOTE: not in original — obstacle avoidance (Bug 1.5)
 
     // --- Collection ---
     // Repopulate scratch arrays in place — avoids per-frame allocation on this hot path
@@ -966,32 +970,40 @@ export class GameLoop {
       this._playerState.scrapBank += grant; // NOTE: not in original — scrap economy currency
       this._scoringState.runStats.scrapCollected += grant; // NOTE: not in original — run stats tracking
       eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: scoreDelta });
-      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 8 });
+      // NOTE: not in original — gold sparks match scrap glyph color for instant visual readback (Bug 1.9)
+      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 8, color: 0xFFB000 });
       eventBus.emit('eventLog', { text: '+SCRAP', color: '#35f2d0' });
       this._ctx.audioManager.play('scrap_pickup');
     } else if (ev === 'speed_pickup' || ev === 'boost') {
       this._playerState.speedBoostTimer = CFG.BOOST_ZONE_DURATION;
-      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 10 });
+      // NOTE: not in original — cyan burst + audio on collect matches speed glyph (Bug 1.9)
+      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 14, color: 0x35F2D0 });
       eventBus.emit('eventLog', { text: ev === 'boost' ? 'SPEED BOOST!' : 'SPEED!', color: '#35f2d0' });
+      this._ctx.audioManager.play('scrap_pickup');
     } else if (ev === 'trail_boost') {
       this._trailState.maxPoints = Math.min(600, this._trailState.maxPoints + 200);
-      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 10 });
+      // NOTE: not in original — purple sparks match trail_boost arrow glyph (Bug 1.9)
+      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 12, color: 0xAA88FF });
       eventBus.emit('eventLog', { text: 'TRAIL+', color: '#cc66ff' });
+      this._ctx.audioManager.play('scrap_pickup');
     } else if (ev === 'bomb') {
       this._applyBombPickup();
     } else if (ev === 'time_slow') {
       this._screenFx.slowmo(0.3, 3.0);
-      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 12 });
+      // NOTE: not in original — blue sparks match time_slow clock glyph (Bug 1.9)
+      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 12, color: 0x44AAFF });
       eventBus.emit('eventLog', { text: 'TIME SLOW!', color: '#44aaff' });
       this._ctx.audioManager.play('scrap_pickup');
     } else if (ev === 'trail_token') {
       this._trailState.maxPoints = Math.min(800, this._trailState.maxPoints + 200);
-      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 10 });
+      // NOTE: not in original — magenta sparks match trail_token diamond glyph (Bug 1.9)
+      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 14, color: 0xFF44CC });
       eventBus.emit('eventLog', { text: 'TRAIL++', color: '#ff44cc' });
       this._ctx.audioManager.play('scrap_pickup');
     } else if (ev === 'shield_pickup') {
       this._playerState.shield = true;
-      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 14 });
+      // NOTE: not in original — green sparks match shield pentagon glyph (Bug 1.9)
+      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 16, color: 0x44FF88 });
       eventBus.emit('eventLog', { text: 'SHIELD!', color: '#44ff88' });
       this._ctx.audioManager.play('scrap_pickup');
     }
@@ -1024,7 +1036,13 @@ export class GameLoop {
       addScore(this._scoringState, bonus);
       eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: bonus });
       updateRunStats(this._scoringState.runStats, { type: 'bomb', killCount: kills });
-      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'shard', count: 20 });
+      // NOTE: not in original — radial shard burst at player position + shockwave zoom-out
+      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'shard', count: 30 });
+      // NOTE: not in original — red full-screen flash + camera shake for bomb detonation feedback (Bug 1.6)
+      this._screenFx.flash(0xFF2200, 0.55, 0.35);
+      this._screenFx.shake(10, 0.45);
+      // Brief zoom-out pulse so the shockwave reads spatially
+      this._screenFx.zoom(0.92, 0.3);
       eventBus.emit('eventLog', { text: `BOMB! x${kills}`, color: '#FF4444' });
     }
     // Sweep bomb-killed enemies out immediately (swap-and-pop)
@@ -1468,17 +1486,18 @@ export class GameLoop {
     this._pauseOverlay.rect(0, 0, CFG.W, CFG.H).fill({ color: 0x000000, alpha: 0.5 });
   }
 
-  /** Trigger combo milestone FX + audio when combo crosses 3, 5, or 8. (game.js:1032-1051) */
+  /** Trigger combo milestone FX + audio when combo crosses 3, 5, 8, 12, or 16. (game.js:1032-1051) */
   private _checkComboMilestone(oldLevel: number, newLevel: number): void {
-    const milestones = [3, 5, 8];
+    // NOTE: not in original — extended milestones beyond 8; original only had [3, 5, 8]
+    const milestones = [3, 5, 8, 12, 16];
     for (const m of milestones) {
       if (Math.floor(oldLevel) < m && Math.floor(newLevel) >= m) {
         this._ctx.audioManager.play('combo_sting');
         this._screenFx.flash(0x35F2D0, 0.12, 0.1);
         this._screenFx.zoom(1.05, 0.15);
-        const color = m >= 8 ? 0xFFD700 : m >= 5 ? 0x7C5CFF : 0x35F2D0;
+        const color = m >= 16 ? 0xFF2D55 : m >= 12 ? 0xFF6B35 : m >= 8 ? 0xFFD700 : m >= 5 ? 0x7C5CFF : 0x35F2D0;
         this._particles.addRing(this._playerState.x, this._playerState.y, color);
-        const label = m >= 8 ? '#FFD700' : m >= 5 ? '#7C5CFF' : '#35F2D0';
+        const label = m >= 16 ? '#FF2D55' : m >= 12 ? '#FF6B35' : m >= 8 ? '#FFD700' : m >= 5 ? '#7C5CFF' : '#35F2D0';
         eventBus.emit('eventLog', { text: `x${m} COMBO!`, color: label });
         this._hudManager.showMilestoneBanner(`x${m} COMBO!`, label);
         break;

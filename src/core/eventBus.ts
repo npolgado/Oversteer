@@ -41,6 +41,13 @@ export type GameEvents = {
 
   /** Active biome changed (fired by BiomeManager.setBiome) */
   biomeChanged: { id: string };
+
+  // NOTE: not in original — emitted by GameLoop on pause/resume to suppress false blank-screen errors
+  /** Game paused (full-screen overlay visible, blank-screen check should be suppressed) */
+  gamePaused: Record<string, never>;
+
+  /** Game unpaused (overlay dismissed, blank-screen check can resume) */
+  gameResumed: Record<string, never>;
 };
 
 // Handler map: event key → set of typed callbacks

@@ -2,6 +2,7 @@
 
 import { CFG } from '@core/config';
 import type { EnemyType } from '@core/config';
+import { computeBossHp } from '@gameplay/pureLogic';
 import { randChoice } from '@core/utils';
 import type { PhysicsEntity } from '@gameplay/physics';
 
@@ -560,11 +561,14 @@ export function makeBoss(
   pattern: 'pursuer' | 'core' | 'reflector',
   x: number,
   y: number,
+  waveIndex = 0,  // NOTE: not in original — used to scale boss HP by wave
 ): EnemyState {
   const boss = makeEnemyState('boss', x, y, 0);
   boss.bossPattern = pattern;
   boss.bossPhase = pattern === 'core' ? 'invuln' : 'telegraph';
   boss.bossPhaseTimer = pattern === 'core' ? CFG.BOSS_INVULN_DUR : CFG.BOSS_TELEGRAPH_DUR;
+  // Scale HP by wave — NOTE: not in original
+  boss.health = computeBossHp(waveIndex);
   return boss;
 }
 

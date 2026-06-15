@@ -12,6 +12,8 @@ import {
   computeHordeCount,
   rollHordeTrigger,
   shouldTriggerHorde,
+  computeWaveSpawnBatch,
+  computeBossHp,
   // Enemy pool
   getEnemyPool,
   shouldSpawnElite,
@@ -178,13 +180,14 @@ describe('computeWaveTiming', () => {
 });
 
 describe('computeHordeCount', () => {
+  // §4.9 balance: HORDE_BASE_COUNT=8, HORDE_WAVE_GROWTH=1.0, HORDE_MAX_COUNT=60
   it('scales with wave index', () => {
-    expect(computeHordeCount(1)).toBe(5);
-    expect(computeHordeCount(5)).toBe(7);
+    expect(computeHordeCount(1)).toBe(Math.min(CFG.HORDE_MAX_COUNT, CFG.HORDE_BASE_COUNT + Math.floor(1 * CFG.HORDE_WAVE_GROWTH)));
+    expect(computeHordeCount(5)).toBe(Math.min(CFG.HORDE_MAX_COUNT, CFG.HORDE_BASE_COUNT + Math.floor(5 * CFG.HORDE_WAVE_GROWTH)));
   });
 
   it('caps at maximum', () => {
-    expect(computeHordeCount(200)).toBe(40);
+    expect(computeHordeCount(200)).toBe(CFG.HORDE_MAX_COUNT);
   });
 });
 
@@ -379,9 +382,10 @@ describe('driftComboScoreTick', () => {
 describe('computeCollisionDamage', () => {
   it('scales damage after wave 5 and caps', () => {
     expect(computeCollisionDamage(15, 3)).toBe(15);
-    // wave 6: scale = 1 + DMG_SCALE_PER_WAVE(0.08) * 1 = 1.08 → 15*1.08=16.2 → 16
-    expect(computeCollisionDamage(15, 6)).toBe(16);
-    expect(computeCollisionDamage(15, 50)).toBe(45);
+    // wave 6: scale = 1 + DMG_SCALE_PER_WAVE(0.12) * 1 = 1.12 → 15*1.12=16.8 → 17
+    expect(computeCollisionDamage(15, 6)).toBe(17);
+    // wave 50: scale capped at DMG_SCALE_MAX(4.0) → 15*4=60
+    expect(computeCollisionDamage(15, 50)).toBe(Math.round(15 * CFG.DMG_SCALE_MAX));
   });
 });
 
@@ -846,9 +850,9 @@ describe('computeCollisionDamage — boundary inputs', () => {
 
   it('cap boundary: wave just below and just above threshold produce correct values', () => {
     // threshold wave = 5 + (DMG_SCALE_MAX - 1) / DMG_SCALE_PER_WAVE
-    // With DMG_SCALE_MAX=3, DMG_SCALE_PER_WAVE=0.08: threshold = 5 + 25 = wave 30
-    const belowCap = computeCollisionDamage(15, 28); // scale = 1 + 0.08*23 = 2.84x < cap
-    const aboveCap = computeCollisionDamage(15, 32); // scale would be 3.16x → clamped to 3.0x
+    // With DMG_SCALE_MAX=4.0, DMG_SCALE_PER_WAVE=0.12: threshold = 5 + 25 = wave 30
+    const belowCap = computeCollisionDamage(15, 28); // scale = 1 + 0.12*23 = 3.76x < cap
+    const aboveCap = computeCollisionDamage(15, 32); // scale would be 1+0.12*27=4.24x → clamped to 4.0x
     expect(belowCap).toBeLessThan(Math.round(15 * CFG.DMG_SCALE_MAX));
     expect(aboveCap).toBe(Math.round(15 * CFG.DMG_SCALE_MAX));
   });
@@ -896,5 +900,66 @@ describe('computeModifierScoreMult — boundary', () => {
     const v = computeModifierScoreMult({ hardMode: true, speedRush: true, fragile: true, doubleEnemies: true });
     const expected = 1.5 * 1.3 * 1.4 * 1.6;
     expect(Math.abs(v - expected)).toBeLessThan(0.001);
+  });
+});
+
+// ── computeWaveSpawnBatch (2.1 — enemy COUNT scaling) ────────────
+// NOTE: not in original — anti-AFK: emits multiple enemies per spawn tick past wave 5
+
+describe('computeWaveSpawnBatch', () => {
+  it('wave 1 emits 1 enemy per tick', () => {
+    expect(computeWaveSpawnBatch(1)).toBe(1);
+  });
+
+  it('wave 5 still emits 1 enemy per tick (first ramp not yet started)', () => {
+    expect(computeWaveSpawnBatch(5)).toBe(1);
+  });
+
+  it('wave 9 emits 2 enemies per tick (wave 5 + 4)', () => {
+    expect(computeWaveSpawnBatch(9)).toBe(2);
+  });
+
+  it('wave 13 emits 3 enemies per tick', () => {
+    expect(computeWaveSpawnBatch(13)).toBe(3);
+  });
+
+  it('wave 17 emits 4 enemies per tick', () => {
+    expect(computeWaveSpawnBatch(17)).toBe(4);
+  });
+
+  it('wave 21 is capped at 4 (does not grow past cap)', () => {
+    expect(computeWaveSpawnBatch(21)).toBe(4);
+  });
+
+  it('very high wave is always capped at 4', () => {
+    expect(computeWaveSpawnBatch(100)).toBe(4);
+  });
+});
+
+// ── computeBossHp (2.3 — boss tankiness scaling) ─────────────────
+// NOTE: not in original — flat CFG.BOSS_HP was the original
+
+describe('computeBossHp', () => {
+  it('wave 0 boss has base HP (CFG.BOSS_HP=8)', () => {
+    expect(computeBossHp(0)).toBe(8);
+  });
+
+  it('wave 5 boss has base HP (floor(5/5-1)=0 growth periods)', () => {
+    expect(computeBossHp(5)).toBe(8);
+  });
+
+  it('wave 10 boss has 12 HP (floor(10/5-1)=1 growth period, +4)', () => {
+    expect(computeBossHp(10)).toBe(12);
+  });
+
+  it('wave 30 boss has 28 HP (floor(30/5-1)=5 growth periods, +20)', () => {
+    expect(computeBossHp(30)).toBe(28);
+  });
+
+  it('grows monotonically with wave', () => {
+    const values = [0, 5, 10, 15, 20, 25, 30].map(computeBossHp);
+    for (let i = 1; i < values.length; i++) {
+      expect(values[i]).toBeGreaterThanOrEqual(values[i - 1]);
+    }
   });
 });
