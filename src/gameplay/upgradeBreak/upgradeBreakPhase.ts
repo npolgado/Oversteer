@@ -31,6 +31,11 @@ export class UpgradeBreakPhase {
   private _biomeChoiceShown = false;
   private _biomeChosen = false;
 
+  // NOTE: not in original — shop focus flag separates gamepad input domains (Bug 1.3).
+  // Shop only receives D-pad/A input when explicitly focused; upgrade cards keep A/X/Y by default.
+  // D-pad up/down activates shop focus; card selection (select1/2/3) clears it.
+  private _shopFocused = false;
+
   get upgradeChosen(): boolean { return this._upgradeChosen; }
   get upgradeConfirmTimer(): number { return this._upgradeConfirmTimer; }
   get chosenUpgrade(): UpgradeDef | null { return this._chosenUpgrade; }
@@ -67,6 +72,8 @@ export class UpgradeBreakPhase {
     // Reset biome choice state
     this._biomeChoiceShown = false;
     this._biomeChosen = false;
+    // Reset shop focus so cards are the default input target on each new break
+    this._shopFocused = false;
     // Freeze player (from game.js:911-928)
     playerState.vx = 0;
     playerState.vy = 0;
@@ -100,10 +107,21 @@ export class UpgradeBreakPhase {
     this._shopPanel?.update(dt);
 
     if (!this._upgradeChosen) {
-      // NOTE: not in original — shop takes priority on 'enter' so D-pad + A buys before cards.
-      // Gamepad D-pad + A: navigate/buy from shop before card input sees 'enter'.
-      // 'blocked' means enter was pressed on a disabled item — consume it so it doesn't reach cards.
-      const gpResult = this._shopPanel?.handleGamepadInput(input, playerState) ?? null;
+      // NOTE: not in original — D-pad activates shop focus; cards hold focus by default (Bug 1.3 fix).
+      // Shop focus: D-pad up/down navigates shop; A button buys from shop.
+      // Card focus (default): A/X/Y select upgrade cards; select1/2/3 clear shop focus if set.
+      if ((input.menuDown || input.menuUp) && this._shopPanel) {
+        this._shopFocused = true;
+      }
+      // If a card key is pressed while shop was focused, return focus to cards
+      if (this._shopFocused && (input.select1 || input.select2 || input.select3)) {
+        this._shopFocused = false;
+      }
+
+      // Only route D-pad/A into shop when shop has explicit focus
+      const gpResult = (this._shopFocused && this._shopPanel)
+        ? this._shopPanel.handleGamepadInput(input, playerState)
+        : null;
       const gpBought = (gpResult !== null && gpResult !== 'blocked') ? gpResult : null;
       const gpConsumed = gpResult !== null; // true for successful purchase OR blocked press
 
@@ -119,7 +137,7 @@ export class UpgradeBreakPhase {
         this._audio.play('ui_click');
         eventBus.emit('eventLog', { text: `BOUGHT: ${getShopItemLabel(shopBought) ?? '?'}`, color: '#ffb000' });
       }
-      // If shop consumed 'enter' (D-pad buy or blocked press), mask all menu inputs so cards don't double-act
+      // If shop consumed 'enter' (D-pad buy or blocked press), mask menu inputs so cards don't double-act
       const maskedInput = gpConsumed
         ? { ...input, enter: false, select1: false, menuDown: false, menuUp: false, menuLaunch: false }
         : input;

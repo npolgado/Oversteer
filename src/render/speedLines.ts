@@ -18,7 +18,9 @@ export class SpeedLines {
     const speedFrac = speed / (maxSpeed || CFG.MAX_SPEED);
     if (!isAlive || speedFrac <= CFG.SPEED_LINES_THRESHOLD) return;
 
-    const intensity = (speedFrac - CFG.SPEED_LINES_THRESHOLD) / (1 - CFG.SPEED_LINES_THRESHOLD);
+    // NOTE: not in original — squared curve steepens ramp so lines scale aggressively toward top speed
+    const rawIntensity = (speedFrac - CFG.SPEED_LINES_THRESHOLD) / (1 - CFG.SPEED_LINES_THRESHOLD);
+    const intensity = rawIntensity * rawIntensity;
     const lineCount = Math.floor(6 + intensity * 8);
 
     for (let i = 0; i < lineCount; i++) {

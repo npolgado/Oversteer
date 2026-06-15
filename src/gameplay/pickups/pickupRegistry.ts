@@ -27,10 +27,16 @@ export const PICKUP_REGISTRY: PickupDef[] = [
   },
   {
     id: 'trail_boost',
+    // NOTE: not in original — changed from diamond to upward-arrow so it reads differently from trail_token (Bug 1.9)
     draw(g, x, y) {
-      g.moveTo(x, y - 8).lineTo(x + 6, y).lineTo(x, y + 8).lineTo(x - 6, y).closePath()
+      // Outer glow circle
+      g.circle(x, y, 11).fill({ color: 0x7C5CFF, alpha: 0.20 });
+      // Upward arrow: distinguishes it from trail_token's nested diamonds
+      g.moveTo(x, y - 9).lineTo(x + 6, y).lineTo(x + 2, y).lineTo(x + 2, y + 7)
+        .lineTo(x - 2, y + 7).lineTo(x - 2, y).lineTo(x - 6, y).closePath()
         .fill({ color: 0x7C5CFF, alpha: 0.25 });
-      g.moveTo(x, y - 8).lineTo(x + 6, y).lineTo(x, y + 8).lineTo(x - 6, y).closePath()
+      g.moveTo(x, y - 9).lineTo(x + 6, y).lineTo(x + 2, y).lineTo(x + 2, y + 7)
+        .lineTo(x - 2, y + 7).lineTo(x - 2, y).lineTo(x - 6, y).closePath()
         .stroke({ color: 0xAA88FF, width: 1.5, alpha: 0.9 });
     },
   },
@@ -47,11 +53,18 @@ export const PICKUP_REGISTRY: PickupDef[] = [
   },
   {
     id: 'bomb',
+    // NOTE: not in original — bomb pulses alpha and radius to telegraph danger at a glance (Bug 1.6)
     draw(g, x, y) {
-      g.circle(x, y, 13).fill({ color: 0xFF3333, alpha: 0.25 });
-      g.circle(x, y, 7).fill({ color: 0xFF3333, alpha: 0.85 });
-      g.moveTo(x - 4, y - 4).lineTo(x + 4, y + 4).stroke({ color: 0xFFFFFF, width: 1.5 });
-      g.moveTo(x + 4, y - 4).lineTo(x - 4, y + 4).stroke({ color: 0xFFFFFF, width: 1.5 });
+      const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 220); // 0–1 oscillating
+      const outerR = 11 + pulse * 4;  // 11-15 px outer glow radius
+      const innerR = 6 + pulse * 2;   // 6-8 px core radius
+      g.circle(x, y, outerR + 4).fill({ color: 0xFF2200, alpha: 0.15 + pulse * 0.2 });
+      g.circle(x, y, outerR).fill({ color: 0xFF3333, alpha: 0.25 + pulse * 0.15 });
+      g.circle(x, y, innerR).fill({ color: 0xFF3333, alpha: 0.75 + pulse * 0.25 });
+      // X cross — danger glyph
+      const hs = 4 + pulse;
+      g.moveTo(x - hs, y - hs).lineTo(x + hs, y + hs).stroke({ color: 0xFFFFFF, width: 1.5 });
+      g.moveTo(x + hs, y - hs).lineTo(x - hs, y + hs).stroke({ color: 0xFFFFFF, width: 1.5 });
     },
   },
   {

@@ -82,3 +82,33 @@ describe('camera rotation lerp — headingUp=true', () => {
     expect(Math.abs(camera.state.rotation - wrongExpected)).toBeGreaterThan(0.1);
   });
 });
+
+describe('camera clamp — headingUp at world edge', () => {
+  it('headingUp=true: camera stays centered on player at world edge (no clamp away from player)', () => {
+    // NOTE: not in original — tests Bug 1.4 fix: skip clamp in headingUp mode.
+    // Player is at the far-left edge of the world (x = 10).
+    // With clamp active, camera would be pushed to CFG.W/2 (~800).
+    // With clamp skipped in headingUp mode, camera lerps toward the player position.
+    camera.setHeadingMode(true);
+    const edgeX = 10;
+    const centerY = CFG.WORLD_H / 2;
+    // Run many frames so the camera fully converges on the player
+    for (let i = 0; i < 200; i++) {
+      camera.update(0.016, edgeX, centerY, 0, 0, 0, 0);
+    }
+    // Camera should be close to the player, NOT pushed to CFG.W/2 by the clamp
+    expect(camera.state.x).toBeLessThan(CFG.W / 2);
+  });
+
+  it('headingUp=false: clamp is still active at world edge', () => {
+    // Sanity check that the clamp still applies when headingUp is off.
+    camera.setHeadingMode(false);
+    const edgeX = 10;
+    const centerY = CFG.WORLD_H / 2;
+    for (let i = 0; i < 200; i++) {
+      camera.update(0.016, edgeX, centerY, 0, 0, 0, 0);
+    }
+    // Camera should be clamped to at least CFG.W/2
+    expect(camera.state.x).toBeGreaterThanOrEqual(CFG.W / 2);
+  });
+});
