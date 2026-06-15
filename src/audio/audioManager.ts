@@ -46,11 +46,13 @@ const audioManager = {
       this.masterGain.connect(this.ctx.destination);
 
       try {
-        const saved = JSON.parse(localStorage.getItem('oversteer_audio_v2') ?? 'null');
-        if (saved) {
-          this.sfxVolume = Math.max(0.1, saved.sfx ?? 0.5);
-          this.musicVolume = Math.max(0.1, saved.music ?? 0.5);
-          this.muted = saved.muted ?? false;
+        if (typeof localStorage !== 'undefined') {
+          const saved = JSON.parse(localStorage.getItem('oversteer_audio_v2') ?? 'null');
+          if (saved) {
+            this.sfxVolume = Math.max(0.1, saved.sfx ?? 0.5);
+            this.musicVolume = Math.max(0.1, saved.music ?? 0.5);
+            this.muted = saved.muted ?? false;
+          }
         }
       } catch (_) {
         // ignore corrupt prefs
@@ -69,13 +71,17 @@ const audioManager = {
             }
           }).catch(() => {});
         }
-        window.removeEventListener('pointerdown', _resumeOnGesture);
-        window.removeEventListener('keydown', _resumeOnGesture);
-        window.removeEventListener('touchstart', _resumeOnGesture);
+        if (typeof window !== 'undefined') {
+          window.removeEventListener('pointerdown', _resumeOnGesture);
+          window.removeEventListener('keydown', _resumeOnGesture);
+          window.removeEventListener('touchstart', _resumeOnGesture);
+        }
       };
-      window.addEventListener('pointerdown', _resumeOnGesture);
-      window.addEventListener('keydown', _resumeOnGesture);
-      window.addEventListener('touchstart', _resumeOnGesture);
+      if (typeof window !== 'undefined') {
+        window.addEventListener('pointerdown', _resumeOnGesture);
+        window.addEventListener('keydown', _resumeOnGesture);
+        window.addEventListener('touchstart', _resumeOnGesture);
+      }
       const base = import.meta.env.BASE_URL ?? '/';
       this._bgTracks = _TRACK_NAMES.map(name =>
         new Howl({
@@ -108,11 +114,13 @@ const audioManager = {
   },
 
   _savePrefs(): void {
-    localStorage.setItem('oversteer_audio_v2', JSON.stringify({
-      sfx: this.sfxVolume,
-      music: this.musicVolume,
-      muted: this.muted,
-    }));
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('oversteer_audio_v2', JSON.stringify({
+        sfx: this.sfxVolume,
+        music: this.musicVolume,
+        muted: this.muted,
+      }));
+    }
   },
 
   _generateWav(fn: (buf: Float32Array, sr: number, len: number) => void, dur: number, sampleRate = 44100): string {
