@@ -26,7 +26,7 @@ export interface TrailState {
 }
 
 export function makeTrailState(): TrailState {
-  const points: TrailPoint[] = Array.from({ length: MAX_POINTS_CAP }, () => ({ x: 0, y: 0 }));
+  const points: TrailPoint[] = Array.from({ length: MAX_POINTS_CAP }, () => ({ x: 0, y: 0, timestamp: 0 }));
   return {
     points,
     head: 0,
@@ -50,7 +50,7 @@ export function getTrailPoint(state: TrailState, i: number): TrailPoint {
 
 /** Push a new position into the ring buffer. Overwrites oldest when full. */
 export function pushTrailPoint(state: TrailState, x: number, y: number, speed = 0): void {
-  state.points[state.head] = { x, y, speed };
+  state.points[state.head] = { x, y, speed, timestamp: Date.now() };  // NOTE: not in original — timestamp for age-based expiry
   state.head = (state.head + 1) % state.points.length;
   if (state.count < state.maxPoints) state.count++;
 }

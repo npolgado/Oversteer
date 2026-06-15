@@ -524,3 +524,91 @@ describe('boss HP encirclement', () => {
     expect(boss.hitFlashTimer).toBe(CFG.BOSS_HIT_FLASH_S);
   });
 });
+
+// ── Trail anti-AFK: expiry and idle-speed guard (2.4) ────────────
+
+describe('trail expiry — points older than TRAIL_MAX_AGE are removed', () => {
+  it('fresh points are not expired', () => {
+    const state = makeTrailState();
+    pushTrailPoint(state, 100, 100, 200);
+    pushTrailPoint(state, 110, 100, 200);
+    expect(state.count).toBe(2);
+
+    // Run updateTrail with a player that has speed=0 (idle, so no new point)
+    const player = makeTestPlayer(100, 100); // vx=0, vy=0
+    updateTrail(state, player, [], 0.016);
+
+    // Fresh points should not be expired
+    expect(state.count).toBe(2);
+  });
+
+  it('points older than TRAIL_MAX_AGE are removed on update', () => {
+    const state = makeTrailState();
+
+    // Push some points and backdate their timestamps beyond TRAIL_MAX_AGE
+    pushTrailPoint(state, 100, 100, 200);
+    pushTrailPoint(state, 110, 100, 200);
+    const staleTs = Date.now() - CFG.TRAIL_MAX_AGE - 1000; // 1s past expiry
+    // Manually backdate oldest points
+    for (let i = 0; i < state.count; i++) {
+      const pt = getTrailPoint(state, i);
+      pt.timestamp = staleTs;
+    }
+
+    // Push a fresh point after backdating so we have something to keep
+    pushTrailPoint(state, 120, 100, 200);
+    expect(state.count).toBe(3);
+
+    const player = makeTestPlayer(200, 200); // far from trail, no loop triggered
+    updateTrail(state, player, [], 0.016);
+
+    // The two stale points should be evicted, leaving only the fresh one
+    expect(state.count).toBe(1);
+    const remaining = getTrailPoint(state, 0);
+    expect(remaining.x).toBe(120);
+  });
+
+  it('all points expired leaves count at 0', () => {
+    const state = makeTrailState();
+    pushTrailPoint(state, 100, 100, 200);
+    const staleTs = Date.now() - CFG.TRAIL_MAX_AGE - 1000;
+    getTrailPoint(state, 0).timestamp = staleTs;
+
+    const player = makeTestPlayer(200, 200);
+    updateTrail(state, player, [], 0.016);
+
+    expect(state.count).toBe(0);
+  });
+});
+
+describe('trail idle-speed guard — no point added when speed < threshold', () => {
+  it('does not record a point when player speed is 0 (idle)', () => {
+    const state = makeTrailState();
+    const player = makeTestPlayer(100, 100); // vx=0, vy=0 → speed=0 < TRAIL_IDLE_SPEED_THRESHOLD
+
+    // Force the record timer to fire
+    state.recordTimer = 0.05;
+    updateTrail(state, player, [], 0.05);
+
+    // Speed is 0, below threshold — should not record any point
+    expect(state.count).toBe(0);
+  });
+
+  it('records a point when player speed meets threshold', () => {
+    const state = makeTrailState();
+    // Give player enough velocity to exceed TRAIL_IDLE_SPEED_THRESHOLD (60 px/s)
+    const player: ReturnType<typeof makeTestPlayer> = {
+      ...makeTestPlayer(100, 100),
+      vx: 100,
+      vy: 0,
+    };
+
+    // Force the record timer to fire
+    state.recordTimer = 0.05;
+    updateTrail(state, player, [], 0.05);
+
+    // Speed is 100 >= 60 threshold — should record one point
+    expect(state.count).toBe(1);
+    expect(getTrailPoint(state, 0).x).toBe(100);
+  });
+});

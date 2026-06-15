@@ -43,7 +43,7 @@ export function applyTrailBurn(
       const pt = getTrailPoint(trail, ti);
       const dx = e.x - pt.x;
       const dy = e.y - pt.y;
-      if (dx * dx + dy * dy < (15 + e.radius) * (15 + e.radius)) {
+      if (dx * dx + dy * dy < (8 + e.radius) * (8 + e.radius)) {  // §4.9: reduced from 15+r to 8+r
         hit = true;
       }
     }

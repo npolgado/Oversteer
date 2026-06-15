@@ -57,10 +57,28 @@ export function updateTrail(
     state.maxPoints = Math.min(state.points.length, 400 + Math.floor(getPlayerSpeed(player) / 100));
   }
 
-  // Record position
+  // NOTE: not in original — expire trail points older than TRAIL_MAX_AGE (swap-from-front via count decrement)
+  if (CFG.TRAIL_MAX_AGE > 0 && state.count > 0) {
+    const now = Date.now();
+    // Oldest point is at logical index 0; keep decrementing count (from old end) while stale
+    while (state.count > 0) {
+      const oldest = getTrailPoint(state, 0);
+      if (oldest.timestamp !== undefined && (now - oldest.timestamp) > CFG.TRAIL_MAX_AGE) {
+        // Drop oldest: advance the logical start (decrement count, old end moves forward)
+        state.count--;
+      } else {
+        break;
+      }
+    }
+  }
+
+  // Record position — NOTE: not in original: skip recording while player is nearly stationary
   state.recordTimer += dt;
   if (state.recordTimer >= RECORD_INTERVAL) {
-    pushTrailPoint(state, player.x, player.y, Math.hypot(player.vx, player.vy));
+    const speed = Math.hypot(player.vx, player.vy);
+    if (speed >= CFG.TRAIL_IDLE_SPEED_THRESHOLD) {
+      pushTrailPoint(state, player.x, player.y, speed);
+    }
     state.recordTimer = 0;
   }
 
