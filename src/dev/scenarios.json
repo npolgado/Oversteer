@@ -438,7 +438,7 @@
     {
       "id": "boss-pursuer-recover",
       "name": "Phase 4.9 — Boss: Pursuer Recover Window",
-      "description": "Phase 4.9. Pursuer boss, wasteland biome, hp=999. Observe the full cycle: telegraph (orbit, wind-up tint) → charge (dodge) → recover (stagger, cyan/vulnerable tint, ~1.2 s — this is the loop window). Boss arena pillars should be present.",
+      "description": "Phase 4.9. Pursuer boss, wasteland biome, hp=999. Observe the full cycle: telegraph (orbit, wind-up tint) → charge (dodge) → recover (stagger, cyan/vulnerable tint, ~1.2 s — this is the loop window). Arena shrinks to 1200×1200 on spawn.",
       "goal": "Dodge the charge, then loop during the recover phase (cyan tint)",
       "wave": 5,
       "biome": "wasteland",
@@ -449,7 +449,7 @@
     {
       "id": "boss-core-window",
       "name": "Phase 4.9 — Boss: Core Invuln → Vulnerable",
-      "description": "Phase 4.9. Core boss, rupture biome, hp=999. Armored phase now 3.5s (was 5s); gold flicker in the last 1s telegraphs the flip. Vulnerable window (cyan): loop then. Pillar ring provides the loop track.",
+      "description": "Phase 4.9. Core boss, rupture biome, hp=999. Armored phase now 3.5s (was 5s); gold flicker in the last 1s telegraphs the flip. Vulnerable window (cyan): loop then. Arena shrinks to 1200×1200 on spawn.",
       "goal": "Wait for gold flicker → cyan flip; loop during vulnerable window",
       "wave": 10,
       "biome": "rupture",
@@ -469,33 +469,15 @@
       "hp": 999
     },
     {
-      "id": "arena-boss-pillars",
-      "name": "Phase 4.9 — Geometry: Boss Arena Pillars",
-      "description": "Phase 4.9. Wave 5 pursuer boss with no upgrades. Confirms 6 pillar ring + 4 corner cover blocks spawn on boss_spawn and enemies flow around them. Watch PerfMon (bottom-left) for frame spikes.",
-      "goal": "Pillars present? Enemies flow around them? PerfMon stable?",
+      "id": "arena-boss-walls",
+      "name": "Phase 4.9 — Geometry: Boss Arena Walls",
+      "description": "Phase 4.9 response. Wave 5 pursuer boss. On boss_spawn the world shrinks to a 1200×1200 red-walled arena over ~1s. On boss defeat the walls restore to full 3000×3000. No grey-circle pillars.",
+      "goal": "Arena shrinks on spawn; red walls visible; restore after kill",
       "wave": 5,
       "biome": "wasteland",
       "boss": "pursuer",
       "hp": 999,
       "maxHp": 999
-    },
-    {
-      "id": "biome-rupture-pillar",
-      "name": "Phase 4.9 — Geometry: Rupture Central Pillar",
-      "description": "Phase 4.9. Rupture biome, wave 10, no enemies. Verify central pillar + flanking columns spawned by biome geometry and persist across the wave. Drive into them — solid collision expected.",
-      "goal": "Central pillar present and solid; columns flank it",
-      "wave": 10,
-      "biome": "rupture",
-      "disableSpawns": true
-    },
-    {
-      "id": "biome-jungle-chokepoints",
-      "name": "Phase 4.9 — Geometry: Jungle Chokepoint Clusters",
-      "description": "Phase 4.9. Jungle biome, wave 15, no enemies. Verify 4 corner chokepoint clusters create narrow lanes between them. Drive through the lanes; each cluster should be solid.",
-      "goal": "Four corner clusters present; lanes navigable; solid collision",
-      "wave": 15,
-      "biome": "jungle",
-      "disableSpawns": true
     },
     {
       "id": "drift-exploit-empty",

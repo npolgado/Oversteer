@@ -4,6 +4,7 @@
 import type { Container } from 'pixi.js';
 import { CFG } from '@core/config';
 import { lerp, clamp } from '@core/utils';
+import { getArenaBounds } from '@gameplay/world/arenaBounds';
 
 export interface CameraState {
   x: number;
@@ -60,13 +61,18 @@ function update(
   state.x = lerp(state.x, state.targetX, t);
   state.y = lerp(state.y, state.targetY, t);
 
-  // Clamp so viewport stays inside world.
-  // NOTE: not in original — skip clamp in headingUp mode; the rotated viewport makes the
-  // rectangular clamp under-bound the view, and losing the player off-screen is worse than
-  // briefly showing void past the world edge.
+  // Clamp so viewport stays inside the active arena bounds.
+  // NOTE: not in original — skip clamp in headingUp mode (rotated viewport makes rectangular
+  // clamp unreliable); also use active arena bounds so boss-wave shrink is respected.
+  // If the arena is narrower than the viewport, pin the camera to the arena center.
   if (!_headingUp) {
-    state.x = clamp(state.x, CFG.W / 2, CFG.WORLD_W - CFG.W / 2);
-    state.y = clamp(state.y, CFG.H / 2, CFG.WORLD_H - CFG.H / 2);
+    const ab = getArenaBounds();
+    const xLo = ab.cx - ab.halfW + CFG.W / 2;
+    const xHi = ab.cx + ab.halfW - CFG.W / 2;
+    state.x = xLo < xHi ? clamp(state.x, xLo, xHi) : ab.cx;
+    const yLo = ab.cy - ab.halfH + CFG.H / 2;
+    const yHi = ab.cy + ab.halfH - CFG.H / 2;
+    state.y = yLo < yHi ? clamp(state.y, yLo, yHi) : ab.cy;
   }
 
   // Dynamic zoom: slight zoom-out at high speed (up to 4%)

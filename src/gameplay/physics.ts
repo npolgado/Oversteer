@@ -3,6 +3,7 @@
 
 import { CFG } from '@core/config';
 import { clamp, normalizeAngle, vec2FromAngle } from '@core/utils';
+import { getArenaBounds } from '@gameplay/world/arenaBounds';
 
 export interface PhysicsEntity {
   x: number;
@@ -133,10 +134,15 @@ export function updatePhysics(
   ent.y += ent.vy * dt;
 
   const pad = CFG.ARENA_PAD;
-  if (ent.x < pad) { ent.x = pad; ent.vx = Math.abs(ent.vx) * CFG.BOUNCE_RETAIN; ent.wallHit = true; }
-  if (ent.x > CFG.WORLD_W - pad) { ent.x = CFG.WORLD_W - pad; ent.vx = -Math.abs(ent.vx) * CFG.BOUNCE_RETAIN; ent.wallHit = true; }
-  if (ent.y < pad) { ent.y = pad; ent.vy = Math.abs(ent.vy) * CFG.BOUNCE_RETAIN; ent.wallHit = true; }
-  if (ent.y > CFG.WORLD_H - pad) { ent.y = CFG.WORLD_H - pad; ent.vy = -Math.abs(ent.vy) * CFG.BOUNCE_RETAIN; ent.wallHit = true; }
+  const ab = getArenaBounds();
+  const xMin = ab.cx - ab.halfW + pad;
+  const xMax = ab.cx + ab.halfW - pad;
+  const yMin = ab.cy - ab.halfH + pad;
+  const yMax = ab.cy + ab.halfH - pad;
+  if (ent.x < xMin) { ent.x = xMin; ent.vx = Math.abs(ent.vx) * CFG.BOUNCE_RETAIN; ent.wallHit = true; }
+  if (ent.x > xMax) { ent.x = xMax; ent.vx = -Math.abs(ent.vx) * CFG.BOUNCE_RETAIN; ent.wallHit = true; }
+  if (ent.y < yMin) { ent.y = yMin; ent.vy = Math.abs(ent.vy) * CFG.BOUNCE_RETAIN; ent.wallHit = true; }
+  if (ent.y > yMax) { ent.y = yMax; ent.vy = -Math.abs(ent.vy) * CFG.BOUNCE_RETAIN; ent.wallHit = true; }
 
   if (ent.slipTimer > 0) ent.slipTimer -= dt;
 }

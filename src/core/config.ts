@@ -90,12 +90,7 @@ const _WASTELAND: BiomeDescriptor = {
     { image: 'props/mud_1.png',   radius: 55, weight: 2, type: 'slip', duration: 1.5, strength: 0.6 },
     { image: 'props/bush_1.png',  radius: 25, weight: 5, type: 'decoration' },
   ],
-  structures: [
-    // 3 large landmark boulders off-center — visible reference points, not blockades
-    { x: 900,  y: 800,  radius: 90, type: 'solid' },
-    { x: 2100, y: 900,  radius: 80, type: 'solid' },
-    { x: 1500, y: 2300, radius: 85, type: 'solid' },
-  ],
+  structures: [],
   enemyWeightMult: {},
   musicPackId: 'wasteland',
   upgradeBias: { turbo: 2, nitro_drift: 2, speed_demon: 1.5, drift_king: 1.5 },
@@ -117,18 +112,7 @@ const _RUPTURE: BiomeDescriptor = {
     { image: 'props/mud_1.png',   radius: 55, weight: 6, type: 'slip', duration: 2.5, strength: 0.7 },
     { image: 'props/bush_1.png',  radius: 25, weight: 2, type: 'decoration' },
   ],
-  structures: [
-    // Central ice spire — primary loop anchor
-    { x: 1500, y: 1500, radius: 110, type: 'solid' },
-    // 4 flanking columns at diagonals — narrows the arena into corridors
-    { x: 900,  y: 900,  radius: 55, type: 'solid' },
-    { x: 2100, y: 900,  radius: 55, type: 'solid' },
-    { x: 900,  y: 2100, radius: 55, type: 'solid' },
-    { x: 2100, y: 2100, radius: 55, type: 'solid' },
-    // Slip patches around the central spire — falling off a drift arc stings
-    { x: 1300, y: 1500, radius: 80, type: 'slip' },
-    { x: 1700, y: 1500, radius: 80, type: 'slip' },
-  ],
+  structures: [],
   enemyWeightMult: { flanker: 1.8 },
   musicPackId: 'rupture',
   upgradeBias: { tight_turns: 2, drift_king: 2, drift_shield: 1.5 },
@@ -149,26 +133,7 @@ const _JUNGLE: BiomeDescriptor = {
     { image: 'props/bush_1.png',  radius: 25, weight: 6, type: 'decoration' },
     { image: 'props/mud_1.png',   radius: 62, weight: 3, type: 'slow', duration: 2.0, strength: 0.5 },
   ],
-  structures: [
-    // NW cluster
-    { x: 700,  y: 700,  radius: 70, type: 'solid' },
-    { x: 900,  y: 600,  radius: 50, type: 'solid' },
-    { x: 650,  y: 950,  radius: 45, type: 'solid' },
-    // NE cluster
-    { x: 2300, y: 700,  radius: 70, type: 'solid' },
-    { x: 2100, y: 600,  radius: 50, type: 'solid' },
-    { x: 2350, y: 950,  radius: 45, type: 'solid' },
-    // SW cluster
-    { x: 700,  y: 2300, radius: 70, type: 'solid' },
-    { x: 900,  y: 2400, radius: 50, type: 'solid' },
-    { x: 650,  y: 2050, radius: 45, type: 'solid' },
-    // SE cluster
-    { x: 2300, y: 2300, radius: 70, type: 'solid' },
-    { x: 2100, y: 2400, radius: 50, type: 'solid' },
-    { x: 2350, y: 2050, radius: 45, type: 'solid' },
-    // Central slow patch — the eye of the storm
-    { x: 1500, y: 1500, radius: 120, type: 'slow' },
-  ],
+  structures: [],
   enemyWeightMult: { bomber: 1.6, blocker: 1.4, splitter: 1.5 },
   musicPackId: 'jungle',
   upgradeBias: { max_hp: 2, hp_regen: 2, damage_resist: 1.5 },

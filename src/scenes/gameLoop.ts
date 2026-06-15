@@ -24,7 +24,15 @@ import {
   type PropsState,
 } from '@gameplay/world/propsSystem';
 import { PropsRenderer } from '@gameplay/world/propsRenderer';
-import { spawnBossArena, clearBossArena, spawnBiomeStructures } from '@gameplay/world/bossArena';
+import { clearBossArena } from '@gameplay/world/bossArena';
+import {
+  resetArenaBounds,
+  shrinkArena,
+  restoreArena,
+  tickArenaBounds,
+  isArenaShrunk,
+  getArenaBounds,
+} from '@gameplay/world/arenaBounds';
 import { BiomeManager } from '@gameplay/world/biomeManager';
 import { RunProgression, accrueScrap } from '@gameplay/world/runProgression';
 import { makeBiomeHazardState, type BiomeHazardState } from '@gameplay/world/biomeHazards';
@@ -121,6 +129,7 @@ export class GameLoop {
   private _speedLines: SpeedLines;
   private _particles: ParticleSystem;
   private _arenaGlow: Graphics;
+  private _arenaWallGfx: Graphics | null = null;
   private _bgSprite: Sprite | null = null;
   private _fogOverlay: Graphics | null = null;
   private _accentColor = 0x35F2D0;
@@ -223,8 +232,6 @@ export class GameLoop {
     this._trailRenderer = new TrailRenderer({ trailLayer, trailBloomLayer });
     this._propsState = makePropsState();
     generateProps(this._propsState);
-    // Spawn initial biome (Wasteland) persistent structures
-    spawnBiomeStructures(this._propsState, BIOMES_BY_ID['wasteland'].structures);
     this._propsRenderer = new PropsRenderer({ propsLayer });
     this._propsRenderer.setProps(this._propsState.allProps);
 
@@ -512,6 +519,13 @@ export class GameLoop {
     this._arenaGlow = arenaGlow;
     backgroundLayer.addChild(arenaGlow);
 
+    // Boss arena walls — rendered in world-space, drawn when arena is shrunk
+    const arenaWallGfx = new Graphics();
+    this._arenaWallGfx = arenaWallGfx;
+    backgroundLayer.addChild(arenaWallGfx);
+
+    resetArenaBounds();
+
     // NOTE: not in original — BiomeSystem must be wired after _bgSprite/_fogOverlay exist
     this._biomeSystem = new BiomeSystem({
       biomeManager:  this._biomeManager,
@@ -673,6 +687,7 @@ export class GameLoop {
     this._tickPlayer(dilatedDt, input);
     this._tickAudio();
     this._tickScoring(rawDt, dilatedDt);
+    tickArenaBounds(dilatedDt);
     let enemiesChanged = this._tickWave(dilatedDt);
     this._tickScraps(dilatedDt);
     this._tickProps(dilatedDt);
@@ -809,11 +824,12 @@ export class GameLoop {
     );
     for (const ev of waveEvents) {
       if (ev.type === 'spawn') {
+        const ab = getArenaBounds();
         for (const req of ev.requests) {
           const rawX = this._playerState.x + Math.cos(req.angle) * req.distance;
           const rawY = this._playerState.y + Math.sin(req.angle) * req.distance;
-          const x = clamp(rawX, 10, CFG.WORLD_W - 10);
-          const y = clamp(rawY, 10, CFG.WORLD_H - 10);
+          const x = clamp(rawX, ab.cx - ab.halfW + 10, ab.cx + ab.halfW - 10);
+          const y = clamp(rawY, ab.cy - ab.halfH + 10, ab.cy + ab.halfH - 10);
           this._enemies.push(makeEnemyState(req.type, x, y, this._waveState.speedBonus));
           changed = true;
         }
@@ -821,7 +837,8 @@ export class GameLoop {
         // Clear enemies (scraps persist into break)
         for (const e of this._enemies) e.alive = false;
         this._enemies.length = 0;
-        // Remove boss-arena pillars so normal waves stay open
+        // Restore full world bounds after boss wave
+        restoreArena(1.0);
         clearBossArena(this._propsState);
         this._propsRenderer.setProps(this._propsState.allProps);
         changed = true;
@@ -839,11 +856,12 @@ export class GameLoop {
         // Enter upgrade break phase (from game.js:911-928)
         this._upgradeBreak.enter(this._playerState, this._waveState, _bossKilled);
       } else if (ev.type === 'horde') {
+        const abH = getArenaBounds();
         for (const req of ev.spawnRequests) {
           const rawX = this._playerState.x + Math.cos(req.angle) * req.distance;
           const rawY = this._playerState.y + Math.sin(req.angle) * req.distance;
-          const x = clamp(rawX, 10, CFG.WORLD_W - 10);
-          const y = clamp(rawY, 10, CFG.WORLD_H - 10);
+          const x = clamp(rawX, abH.cx - abH.halfW + 10, abH.cx + abH.halfW - 10);
+          const y = clamp(rawY, abH.cy - abH.halfH + 10, abH.cy + abH.halfH - 10);
           this._enemies.push(makeEnemyState(req.type, x, y, this._waveState.speedBonus));
           changed = true;
         }
@@ -857,13 +875,13 @@ export class GameLoop {
         const bossAngle = Math.random() * Math.PI * 2;
         const bossDist = CFG.BOSS_SPAWN_DIST_MIN + Math.random() * CFG.BOSS_SPAWN_DIST_RANGE;
         const bossPad = CFG.BOSS_RADIUS;
-        const bossX = clamp(this._playerState.x + Math.cos(bossAngle) * bossDist, bossPad, CFG.WORLD_W - bossPad);
-        const bossY = clamp(this._playerState.y + Math.sin(bossAngle) * bossDist, bossPad, CFG.WORLD_H - bossPad);
+        const abB = getArenaBounds();
+        const bossX = clamp(this._playerState.x + Math.cos(bossAngle) * bossDist, abB.cx - abB.halfW + bossPad, abB.cx + abB.halfW - bossPad);
+        const bossY = clamp(this._playerState.y + Math.sin(bossAngle) * bossDist, abB.cy - abB.halfH + bossPad, abB.cy + abB.halfH - bossPad);
         const boss = makeBoss(ev.pattern, bossX, bossY, this._waveState.waveIndex);
         this._enemies.push(boss);
-        // Spawn structural loop-anchors for this boss pattern
-        spawnBossArena(this._propsState, ev.pattern);
-        this._propsRenderer.setProps(this._propsState.allProps);
+        // Shrink world to boss arena — lerp over 1s
+        shrinkArena(1.0);
         changed = true;
         this._screenFx.flash(0xFF4040, 0.5, 0.6);
         this._screenFx.shake(8, 0.5);
@@ -1443,6 +1461,7 @@ export class GameLoop {
     this._particles.update(dilatedDt);
     this._mobileControls?.update(inputManager, dilatedDt);
     this._drawArenaGlow();
+    this._drawArenaWalls();
   }
 
   // ---------------------------------------------------------------------------
@@ -1517,6 +1536,29 @@ export class GameLoop {
         .rect(0, 0, CFG.WORLD_W, CFG.WORLD_H)
         .stroke({ color: 0x35F2D0, width: widths[i], alpha: alphas[i] });
     }
+  }
+
+  /** Draw visible boss-arena walls when the arena is shrunk. NOTE: not in original. */
+  private _drawArenaWalls(): void {
+    if (!this._arenaWallGfx) return;
+    this._arenaWallGfx.clear();
+    if (!isArenaShrunk()) return;
+    const ab = getArenaBounds();
+    const pulse = Math.sin(this._gameClock * 3) * 0.15;
+    const baseAlpha = 0.65 + pulse;
+    const x = ab.cx - ab.halfW;
+    const y = ab.cy - ab.halfH;
+    const w = ab.halfW * 2;
+    const h = ab.halfH * 2;
+    this._arenaWallGfx
+      .rect(x, y, w, h)
+      .stroke({ color: 0xFF4040, width: 12, alpha: baseAlpha * 0.4 });
+    this._arenaWallGfx
+      .rect(x, y, w, h)
+      .stroke({ color: 0xFF6060, width: 6, alpha: baseAlpha * 0.7 });
+    this._arenaWallGfx
+      .rect(x, y, w, h)
+      .stroke({ color: 0xFF9090, width: 2, alpha: baseAlpha });
   }
 
   private _transitionToGameOver(): void {
@@ -1707,6 +1749,7 @@ export class GameLoop {
   }
 
   destroy(): void {
+    resetArenaBounds();
     resumeUITweens(); // always restore global timeline on scene exit (safe — idempotent)
     unregisterPausePredicate();
     inputManager.overrideState = null;
