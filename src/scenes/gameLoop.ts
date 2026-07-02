@@ -38,6 +38,7 @@ import { processPlayerHit } from '@gameplay/combat/damage';
 import { processNearMiss, processHazardNearMiss } from '@gameplay/combat/nearMiss';
 import { applyTrailBurn } from '@gameplay/combat/trailBurn';
 import { applyChainLightning } from '@gameplay/combat/chainLightning';
+import { resolveBombImpact } from '@gameplay/combat/bombImpact';
 import {
   updateNearMissStreak,
   applyHpRegen,
@@ -984,20 +985,16 @@ export class GameLoop {
     const isVisible = this._ctx.camera.isVisible;
     let kills = 0;
     for (const e of this._enemies) {
-      if (!e.alive) continue;
-      if (!isVisible(e.x, e.y, 50)) continue;
-
-      if (e.type === 'boss') {
-        // Bomb respects boss armor — same rule as encirclement (trailUpdate.ts:141)
-        if (e.armored || e.bossVulnerable === false) {
-          e.hitFlashTimer = CFG.BOSS_HIT_FLASH_S;  // deflect: flash but no damage
-          continue;
-        }
-        e.health = (e.health ?? 1) - 1;
-        e.hitFlashTimer = CFG.BOSS_HIT_FLASH_S;
-        if (e.health > 0) continue;  // chip damage only — boss survives
+      const result = resolveBombImpact(e, isVisible(e.x, e.y, 50));
+      if (result.outcome === 'skip') continue;
+      if (result.hitFlashTimer !== undefined) e.hitFlashTimer = result.hitFlashTimer;
+      if (result.outcome === 'deflect') continue;
+      if (result.outcome === 'chip') {
+        e.health = result.newHealth!;
+        continue;
       }
-
+      // 'kill'
+      if (result.newHealth !== undefined) e.health = result.newHealth;
       e.alive = false;
       kills++;
       eventBus.emit('enemyKilled', { x: e.x, y: e.y, type: e.type, isElite: e.armored });
