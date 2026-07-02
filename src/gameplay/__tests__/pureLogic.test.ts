@@ -18,6 +18,8 @@ import {
   shouldSpawnElite,
   computeFlankTarget,
   computeBlockerTarget,
+  computeSplitChaserSpawns,
+  computeMinionRingSpawns,
   // Scoring / combat
   applyNearMiss,
   updateNearMissStreak,
@@ -322,6 +324,61 @@ describe('computeBlockerTarget', () => {
   it('returns null for empty trail', () => {
     expect(computeBlockerTarget([])).toBeNull();
     expect(computeBlockerTarget(null)).toBeNull();
+  });
+});
+
+describe('computeSplitChaserSpawns', () => {
+  it('returns two points, each 22px from the source', () => {
+    const points = computeSplitChaserSpawns(1500, 1500, 0);
+    expect(points).toHaveLength(2);
+    for (const p of points) {
+      expect(Math.hypot(p.x - 1500, p.y - 1500)).toBeCloseTo(22, 5);
+    }
+  });
+
+  it('the two points are 90 degrees apart (+/-45deg from base angle)', () => {
+    const [a, b] = computeSplitChaserSpawns(1500, 1500, 0);
+    const angleA = Math.atan2(a.y - 1500, a.x - 1500);
+    const angleB = Math.atan2(b.y - 1500, b.x - 1500);
+    expect(Math.abs(angleA - angleB)).toBeCloseTo(Math.PI / 2, 5);
+  });
+
+  it('clamps spawn points inside the world bounds near an edge', () => {
+    const points = computeSplitChaserSpawns(5, 5, 0);
+    for (const p of points) {
+      expect(p.x).toBeGreaterThanOrEqual(10);
+      expect(p.y).toBeGreaterThanOrEqual(10);
+    }
+  });
+});
+
+describe('computeMinionRingSpawns', () => {
+  it('spawns the full requested count when under the chaser cap', () => {
+    const points = computeMinionRingSpawns(1500, 1500, 6, 0);
+    expect(points).toHaveLength(6);
+  });
+
+  it('caps the spawn count so total chasers never exceed CFG.BOSS_MINION_MAX', () => {
+    const currentChasers = CFG.BOSS_MINION_MAX - 2;
+    const points = computeMinionRingSpawns(1500, 1500, 6, currentChasers);
+    expect(points).toHaveLength(2);
+  });
+
+  it('returns an empty ring once the chaser cap is already reached', () => {
+    const points = computeMinionRingSpawns(1500, 1500, 6, CFG.BOSS_MINION_MAX);
+    expect(points).toHaveLength(0);
+  });
+
+  it('never returns a negative-length ring when currentChaserCount exceeds the cap', () => {
+    const points = computeMinionRingSpawns(1500, 1500, 6, CFG.BOSS_MINION_MAX + 5);
+    expect(points).toHaveLength(0);
+  });
+
+  it('places points at CFG.BOSS_MINION_RADIUS from the source, evenly spread', () => {
+    const points = computeMinionRingSpawns(1500, 1500, 4, 0);
+    for (const p of points) {
+      expect(Math.hypot(p.x - 1500, p.y - 1500)).toBeCloseTo(CFG.BOSS_MINION_RADIUS, 5);
+    }
   });
 });
 

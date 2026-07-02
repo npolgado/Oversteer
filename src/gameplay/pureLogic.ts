@@ -2,7 +2,7 @@
 // All remaining pure game logic functions.
 
 import { CFG } from '@core/config';
-import { dist, lerp } from '@core/utils';
+import { dist, lerp, clamp } from '@core/utils';
 import { type Rng, randFloat } from '@core/rng';
 import type { EnemyType } from '@core/config';
 
@@ -352,6 +352,51 @@ export function computeBlockerTarget(trailPoints: TrailPoint[] | null): Vec2 | n
     count++;
   }
   return { x: sx / count, y: sy / count };
+}
+
+// ── Enemy spawn placement ─────────────────────────────────────────
+// NOTE: not in original — Splitter (Phase 4 M9) and Core boss minion ring (Phase 4 M3).
+
+/**
+ * Splitter death: two chaser spawn points at +/-45deg from a base angle, 22px out,
+ * clamped inside the world bounds.
+ */
+export function computeSplitChaserSpawns(x: number, y: number, baseAngle: number): Vec2[] {
+  const points: Vec2[] = [];
+  for (const offset of [Math.PI / 4, -Math.PI / 4]) {
+    const a = baseAngle + offset;
+    points.push({
+      x: clamp(x + Math.cos(a) * 22, 10, CFG.WORLD_W - 10),
+      y: clamp(y + Math.sin(a) * 22, 10, CFG.WORLD_H - 10),
+    });
+  }
+  return points;
+}
+
+/**
+ * Core boss minion ring: evenly-spaced chaser spawn points around (sourceX, sourceY),
+ * capped so the boss fight never has more than CFG.BOSS_MINION_MAX live chasers at once.
+ * Returns fewer points than `requestedCount` (possibly zero) once the cap is reached.
+ */
+export function computeMinionRingSpawns(
+  sourceX: number,
+  sourceY: number,
+  requestedCount: number,
+  currentChaserCount: number,
+): Vec2[] {
+  const allowed = Math.max(0, CFG.BOSS_MINION_MAX - currentChaserCount);
+  const toSpawn = Math.min(requestedCount, allowed);
+  if (toSpawn === 0) return [];
+  const points: Vec2[] = [];
+  for (let i = 0; i < toSpawn; i++) {
+    // divide by toSpawn (not requestedCount) so a partial ring stays evenly spread
+    const angle = (Math.PI * 2 * i) / toSpawn;
+    points.push({
+      x: clamp(sourceX + Math.cos(angle) * CFG.BOSS_MINION_RADIUS, 10, CFG.WORLD_W - 10),
+      y: clamp(sourceY + Math.sin(angle) * CFG.BOSS_MINION_RADIUS, 10, CFG.WORLD_H - 10),
+    });
+  }
+  return points;
 }
 
 // ── Scoring / combat ───────────────────────────────────────────

@@ -49,6 +49,8 @@ import {
   applyComboHeal,
   applyComboIncrement,
   applyTrailPointsBonus,
+  computeSplitChaserSpawns,
+  computeMinionRingSpawns,
   updateRunStats,
   applyHazardZoneDamage,
   type HazardZoneEffect,
@@ -881,11 +883,8 @@ export class GameLoop {
   // NOTE: not in original — Splitter death spawns two chasers (not triggered by bomb kills)
   private _spawnSplitChasers(x: number, y: number): void {
     const baseAngle = Math.random() * Math.PI * 2;
-    for (const offset of [Math.PI / 4, -Math.PI / 4]) {
-      const a = baseAngle + offset;
-      const cx = clamp(x + Math.cos(a) * 22, 10, CFG.WORLD_W - 10);
-      const cy = clamp(y + Math.sin(a) * 22, 10, CFG.WORLD_H - 10);
-      this._enemies.push(makeEnemyState('chaser', cx, cy, this._waveState.speedBonus));
+    for (const p of computeSplitChaserSpawns(x, y, baseAngle)) {
+      this._enemies.push(makeEnemyState('chaser', p.x, p.y, this._waveState.speedBonus));
     }
     eventBus.emit('spawnParticles', { x, y, type: 'spark', count: 8, color: 0xFF8800 });
   }
@@ -894,14 +893,8 @@ export class GameLoop {
   private _spawnMinionRing(sourceX: number, sourceY: number, count: number): void {
     let chaserCount = 0;
     for (const e of this._enemies) if (e.type === 'chaser') chaserCount++;
-    const allowed = Math.max(0, CFG.BOSS_MINION_MAX - chaserCount);
-    const toSpawn = Math.min(count, allowed);
-    if (toSpawn === 0) return;
-    for (let i = 0; i < toSpawn; i++) {
-      const angle = (Math.PI * 2 * i) / toSpawn; // divide by toSpawn so partial rings stay evenly spread
-      const x = clamp(sourceX + Math.cos(angle) * CFG.BOSS_MINION_RADIUS, 10, CFG.WORLD_W - 10);
-      const y = clamp(sourceY + Math.sin(angle) * CFG.BOSS_MINION_RADIUS, 10, CFG.WORLD_H - 10);
-      this._enemies.push(makeEnemyState('chaser', x, y, this._waveState.speedBonus));
+    for (const p of computeMinionRingSpawns(sourceX, sourceY, count, chaserCount)) {
+      this._enemies.push(makeEnemyState('chaser', p.x, p.y, this._waveState.speedBonus));
     }
   }
 
