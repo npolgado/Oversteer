@@ -47,6 +47,8 @@ import {
   selectPickupType,
   computeEncircleOutcome,
   applyComboHeal,
+  applyComboIncrement,
+  applyTrailPointsBonus,
   updateRunStats,
   applyHazardZoneDamage,
   type HazardZoneEffect,
@@ -958,7 +960,7 @@ export class GameLoop {
       eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 10 });
       eventBus.emit('eventLog', { text: ev === 'boost' ? 'SPEED BOOST!' : 'SPEED!', color: '#35f2d0' });
     } else if (ev === 'trail_boost') {
-      this._trailState.maxPoints = Math.min(600, this._trailState.maxPoints + 200);
+      this._trailState.maxPoints = applyTrailPointsBonus(this._trailState.maxPoints, 600, 200);
       eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 10 });
       eventBus.emit('eventLog', { text: 'TRAIL+', color: '#cc66ff' });
     } else if (ev === 'bomb') {
@@ -969,7 +971,7 @@ export class GameLoop {
       eventBus.emit('eventLog', { text: 'TIME SLOW!', color: '#44aaff' });
       this._ctx.audioManager.play('scrap_pickup');
     } else if (ev === 'trail_token') {
-      this._trailState.maxPoints = Math.min(800, this._trailState.maxPoints + 200);
+      this._trailState.maxPoints = applyTrailPointsBonus(this._trailState.maxPoints, 800, 200);
       eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 10 });
       eventBus.emit('eventLog', { text: 'TRAIL++', color: '#ff44cc' });
       this._ctx.audioManager.play('scrap_pickup');
@@ -1301,7 +1303,7 @@ export class GameLoop {
         addScore(this._scoringState, 50 * getEffectiveScoreMult(this._playerState));
         // Intentional improvement: burn kills increment combo by +1 (half of encircle's +2)
         const oldCombo = this._scoringState.comboLevel;
-        const newCombo = Math.min(CFG.MAX_COMBO, oldCombo + 1);
+        const newCombo = applyComboIncrement(oldCombo, 1);
         this._scoringState.comboLevel = newCombo;
         this._playerState.comboLevel  = newCombo;
         this._playerState.hp = applyComboHeal(oldCombo, newCombo, this._playerState.comboHeal, this._playerState.hp, this._playerState.maxHp);

@@ -7,6 +7,7 @@ import {
   collectPickupEvents,
   updateScraps,
   updateBoostZones,
+  applyTrailPointsBonus,
   // Wave timing
   computeWaveTiming,
   computeHordeCount,
@@ -28,6 +29,7 @@ import {
   applyHpRegen,
   applyGhostFrameNearMiss,
   computeEncircleOutcome,
+  applyComboIncrement,
   applyDriftShield,
   applyComboHeal,
   applyBombZoneDamage,
@@ -141,6 +143,24 @@ describe('updateBoostZones', () => {
 
     updateBoostZones(boostZones, player, 0.2);
     expect(boostZones.length).toBe(0);
+  });
+});
+
+describe('applyTrailPointsBonus', () => {
+  it('adds the bonus when below cap', () => {
+    expect(applyTrailPointsBonus(400, 600, 200)).toBe(600);
+  });
+
+  it('clamps at the cap (trail_boost caps at 600)', () => {
+    expect(applyTrailPointsBonus(500, 600, 200)).toBe(600);
+  });
+
+  it('clamps at the higher cap (trail_token caps at 800)', () => {
+    expect(applyTrailPointsBonus(700, 800, 200)).toBe(800);
+  });
+
+  it('is a no-op once already at cap', () => {
+    expect(applyTrailPointsBonus(600, 600, 200)).toBe(600);
   });
 });
 
@@ -421,6 +441,24 @@ describe('applyGhostFrameNearMiss', () => {
     const player = { ghostFrameTimer: 0 };
     applyGhostFrameNearMiss(player, true);
     expect(player.ghostFrameTimer).toBe(0.3);
+  });
+});
+
+describe('applyComboIncrement', () => {
+  it('adds the amount below the cap', () => {
+    expect(applyComboIncrement(3, 1)).toBe(4);
+  });
+
+  it('clamps at CFG.MAX_COMBO', () => {
+    expect(applyComboIncrement(CFG.MAX_COMBO, 1)).toBe(CFG.MAX_COMBO);
+  });
+
+  it('clamps even when the increment overshoots the cap', () => {
+    expect(applyComboIncrement(CFG.MAX_COMBO - 1, 10)).toBe(CFG.MAX_COMBO);
+  });
+
+  it('supports encirclement-sized increments (+2 per kill)', () => {
+    expect(applyComboIncrement(0, 2 * 3)).toBe(6);
   });
 });
 

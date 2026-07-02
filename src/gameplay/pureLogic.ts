@@ -278,6 +278,11 @@ export function updateBoostZones(
   return events;
 }
 
+/** Grants a flat trail-length bonus, capped at `cap` (trail_boost caps at 600, trail_token at 800). */
+export function applyTrailPointsBonus(currentMaxPoints: number, cap: number, bonus: number): number {
+  return Math.min(cap, currentMaxPoints + bonus);
+}
+
 // ── Wave timing ────────────────────────────────────────────────
 
 export function computeWaveTiming(waveIndex: number): WaveTiming {
@@ -465,6 +470,12 @@ export function applyGhostFrameNearMiss(player: PlayerForGhostFrame, hasGhostFra
   if (hasGhostFrame) player.ghostFrameTimer = 0.3;
 }
 
+/** Adds `amount` to comboLevel, clamped at CFG.MAX_COMBO. Shared by every kill source
+ *  (encirclement +2/kill, trail-burn +1/kill) so the cap is applied consistently. */
+export function applyComboIncrement(comboLevel: number, amount: number): number {
+  return Math.min(CFG.MAX_COMBO, comboLevel + amount);
+}
+
 export function computeEncircleOutcome(
   killCount: number,
   comboLevel: number,
@@ -476,7 +487,7 @@ export function computeEncircleOutcome(
   const bonus = killCount >= 2 ? 50 * killCount : 0;
   const encircleBonus = encircleScoreBonus || 1;
   const total = Math.floor((baseScore + bonus) * comboMult * encircleBonus);
-  const newCombo = Math.min(CFG.MAX_COMBO, comboLevel + 2 * killCount);
+  const newCombo = applyComboIncrement(comboLevel, 2 * killCount);
   return {
     scoreDelta: total * scoreMult,
     comboLevel: newCombo,
