@@ -131,9 +131,7 @@ export class ShopPanelUI {
     const itemsStartY = divY + S(8);
     SHOP_ITEMS.forEach((def, i) => {
       const iy = itemsStartY + i * (ITEM_H + ITEM_GAP);
-      const canAfford = player.scrapBank >= def.cost;
-      const isUsable = !def.canApply || def.canApply(player);
-      const enabled = canAfford && isUsable;
+      const enabled = this._canPurchase(def, player);
       const isFocused = (i === this._focusedIndex);
       const itemAlpha = enabled ? 1.0 : 0.4;
 
@@ -193,6 +191,14 @@ export class ShopPanelUI {
    *   doesn't leak into upgrade cards).
    * - Returns null if the tap missed all buttons.
    */
+  // Single source of truth for whether an item can be bought right now —
+  // used by rendering (dimming) and both purchase paths (pointer, gamepad).
+  private _canPurchase(def: ShopItemDef, player: PlayerState): boolean {
+    const canAfford = player.scrapBank >= def.cost;
+    const isUsable = !def.canApply || def.canApply(player);
+    return canAfford && isUsable;
+  }
+
   private _executePurchase(def: ShopItemDef, player: PlayerState): void {
     player.scrapBank -= def.cost;
     def.apply(player);
@@ -206,9 +212,7 @@ export class ShopPanelUI {
       const b = this._items[i].bounds;
       if (tap.x >= b.x && tap.x <= b.x + b.w && tap.y >= b.y && tap.y <= b.y + b.h) {
         const def = SHOP_ITEMS[i];
-        const canAfford = player.scrapBank >= def.cost;
-        const isUsable = !def.canApply || def.canApply(player);
-        if (canAfford && isUsable) {
+        if (this._canPurchase(def, player)) {
           this._executePurchase(def, player);
           return i;
         }
@@ -242,9 +246,7 @@ export class ShopPanelUI {
 
     if (input.enter) {
       const def = SHOP_ITEMS[this._focusedIndex];
-      const canAfford = player.scrapBank >= def.cost;
-      const isUsable = !def.canApply || def.canApply(player);
-      if (canAfford && isUsable) {
+      if (this._canPurchase(def, player)) {
         this._executePurchase(def, player);
         return this._focusedIndex;
       }

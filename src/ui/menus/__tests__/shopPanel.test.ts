@@ -259,3 +259,33 @@ describe('ShopPanelUI.handleGamepadInput', () => {
     expect(result).toBeNull();
   });
 });
+
+// ── B3: rendering, pointer, and gamepad paths must all agree on affordability ──
+// (all three now route through the single `_canPurchase` helper)
+
+describe('ShopPanelUI — affordability agrees across render, tryPurchase, and gamepad', () => {
+  it('an unaffordable item is dimmed in render AND blocked by both purchase paths', () => {
+    const player = makePlayer({ scrapBank: 0, hp: 50, maxHp: 100 }); // Field Repair (cost 8) unaffordable
+    const shop = makeShop();
+    shop.show(player);
+
+    const itemContainer = (shop as any)._items[0].container;
+    expect(itemContainer.alpha).toBeCloseTo(0.4); // dimmed per _canPurchase(...)===false
+
+    expect(shop.tryPurchase(tapOnItem(shop, 0), player)).toBe('blocked');
+    expect(shop.handleGamepadInput({ ...noInput, enter: true } as never, player)).toBe('blocked');
+    expect(player.scrapBank).toBe(0); // neither path deducted
+  });
+
+  it('an affordable, usable item is full-alpha in render AND purchasable via both paths', () => {
+    const player = makePlayer({ scrapBank: 99, hp: 50, maxHp: 100 }); // Field Repair affordable + usable
+    const shop = makeShop();
+    shop.show(player);
+
+    const itemContainer = (shop as any)._items[0].container;
+    expect(itemContainer.alpha).toBeCloseTo(1.0);
+
+    expect(shop.tryPurchase(tapOnItem(shop, 0), player)).toBe(0);
+    expect(player.scrapBank).toBe(91); // 99 - 8
+  });
+});
