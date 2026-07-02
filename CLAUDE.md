@@ -20,7 +20,7 @@ Top-down arena drift game: 3000×3000 world, waves, trail encirclement kills, ne
 | System | Key files |
 |--------|-----------|
 | **Scrap economy + shop** | `src/gameplay/pickups/pickupRegistry.ts`, `src/ui/menus/shopPanel.ts` |
-| **Boss waves** | `src/gameplay/enemies/bossPatterns.ts` (Pursuer / Core / Reflector / Bomb) |
+| **Boss waves** | `src/gameplay/enemies/bossPatterns.ts` (Pursuer / Core / Reflector — Reflector is a survival boss, un-killable by encirclement; surviving to the combat timer counts as defeated) |
 | **Biome framework** | `src/gameplay/world/biomeManager.ts`, `src/gameplay/world/runProgression.ts`; descriptors in `src/core/config.ts` |
 | **Splitter enemy** | Cases in `src/gameplay/enemies/enemyState.ts` + `enemyRenderer.ts` |
 | **DEV situation tester** | `src/dev/situationTester.ts` — invoke via `?situation=<preset>` URL param (DEV builds only, tree-shaken in production). Presets in `src/dev/scenarios.json`. |
