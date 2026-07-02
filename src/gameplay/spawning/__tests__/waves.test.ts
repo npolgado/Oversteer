@@ -9,6 +9,7 @@ import {
   tickBoostZoneSpawn,
   isBossWave,
   getBossPattern,
+  isSurvivalBoss,
   type WaveEvent,
 } from '../waveManager';
 import { HazardZone } from '../waveManager';
@@ -420,6 +421,53 @@ describe('boss wave combat phase', () => {
     const events = updateWave(state, 0.1, 0, 1, true);
     expect(events.find(e => e.type === 'wave_end')).toBeUndefined();
     expect(state.phase).toBe('combat');
+  });
+
+  // ── B1 regression: boss waves must not force-end on the plain combat timer ──
+
+  it('Pursuer (wave 5) does NOT end when the combat timer elapses while alive', () => {
+    const state = makeBossWave(5);
+    updateWave(state, 2.0, 0, 0, true); // spawn boss
+    expect(state.bossPattern).toBe('pursuer');
+    const events = updateWave(state, state.currentCombatDuration + 10, 0, 1, true);
+    expect(events.find(e => e.type === 'wave_end')).toBeUndefined();
+    expect(state.phase).toBe('combat');
+  });
+
+  it('Core (wave 10) does NOT end when the combat timer elapses while alive', () => {
+    const state = makeBossWave(10);
+    updateWave(state, 2.0, 0, 0, true); // spawn boss
+    expect(state.bossPattern).toBe('core');
+    const events = updateWave(state, state.currentCombatDuration + 10, 0, 1, true);
+    expect(events.find(e => e.type === 'wave_end')).toBeUndefined();
+    expect(state.phase).toBe('combat');
+  });
+
+  it('Reflector (wave 15) DOES end with bossKilled:true when the combat timer elapses while alive', () => {
+    const state = makeBossWave(15);
+    updateWave(state, 2.0, 0, 0, true); // spawn boss
+    expect(state.bossPattern).toBe('reflector');
+    const events = updateWave(state, state.currentCombatDuration + 10, 0, 1, true);
+    const endEv = events.find(e => e.type === 'wave_end') as { type: 'wave_end'; bossKilled?: boolean } | undefined;
+    expect(endEv).toBeDefined();
+    expect(endEv!.bossKilled).toBe(true);
+    expect(state.phase).toBe('break');
+  });
+
+  it('Reflector does not end early — only once the timer has actually elapsed', () => {
+    const state = makeBossWave(15);
+    updateWave(state, 2.0, 0, 0, true); // spawn boss
+    const events = updateWave(state, 0.1, 0, 1, true);
+    expect(events.find(e => e.type === 'wave_end')).toBeUndefined();
+    expect(state.phase).toBe('combat');
+  });
+});
+
+describe('isSurvivalBoss', () => {
+  it('is true only for reflector', () => {
+    expect(isSurvivalBoss('reflector')).toBe(true);
+    expect(isSurvivalBoss('pursuer')).toBe(false);
+    expect(isSurvivalBoss('core')).toBe(false);
   });
 });
 

@@ -73,6 +73,12 @@ export function getBossPattern(waveIndex: number): BossPattern {
   return patterns[Math.floor(waveIndex / CFG.BOSS_WAVE_INTERVAL - 1) % patterns.length];
 }
 
+// Reflector is permanently armored (trail encirclement can never kill it), so surviving
+// to the combat timer counts as defeating it. Pursuer/Core must be killed to end the wave.
+export function isSurvivalBoss(pattern: BossPattern): boolean {
+  return pattern === 'reflector';
+}
+
 // ── Factory ────┐───────┐─────────────┐───────┐─────────
 
 export function makeWaveState(): WaveState {
@@ -210,7 +216,7 @@ export function updateWave(
   if (state.phase === 'combat') {
     state.waveTimer += dt;
 
-    // Boss wave: telegraph countdown → spawn → wait for kill
+    // Boss wave: telegraph countdown → spawn → wait for kill (or timer, for survival bosses)
     if (state.bossActive) {
       if (!state.bossSpawned) {
         state.bossTelegraphTimer -= dt;
@@ -224,12 +230,20 @@ export function updateWave(
         state.breakTimer = CFG.WAVE_BREAK;
         events.push({ type: 'wave_end', bossKilled: true });
         return events;
+      } else if (isSurvivalBoss(state.bossPattern!) && state.waveTimer >= state.currentCombatDuration) {
+        // Reflector can't be killed by encirclement — surviving to the timer counts as defeated.
+        state.phase = 'break';
+        state.breakTimer = CFG.WAVE_BREAK;
+        events.push({ type: 'wave_end', bossKilled: true });
+        return events;
       }
-      // Boss waves allow regular spawning to continue alongside the boss
+      // Boss spawned, alive, and not a survival-timeout: the wave hangs here until killed.
+      // Regular spawning/horde logic below still runs alongside the boss.
     }
 
-    // Normal wave: end on timer
-    if (state.waveTimer >= state.currentCombatDuration) {
+    // Normal wave: end on timer. Boss waves only end via the boss-specific branches above
+    // (kill, or survival-boss timeout) — never via this plain timer check.
+    if (!state.bossActive && state.waveTimer >= state.currentCombatDuration) {
       state.phase = 'break';
       state.breakTimer = CFG.WAVE_BREAK;
       // wave_end does NOT clear scraps (they persist into break phase)
