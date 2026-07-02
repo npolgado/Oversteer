@@ -160,13 +160,15 @@ export function computeSpeedBonus(score: number): number {
 // ── Spawn type selection ──────┐────────
 
 // Weighted pool cache — rebuilt only when score bucket or biome changes.
-// Using reference equality on base (getEnemyPool returns stable array refs)
-// and on weightMult (biome objects are stable per active biome).
-let _cachedBase: readonly EnemyType[] | null = null;
+// getEnemyPool(score) allocates a fresh array every call, so we key the cache on
+// its length (a monotonic, deterministic surrogate for score-gate composition)
+// instead of array identity, plus weightMult reference (biome objects are stable
+// per active biome).
+let _cachedBaseLen = -1;
 let _cachedMult: Partial<Record<EnemyType, number>> | null = null;
 let _cachedPool: EnemyType[] = [];
 
-function _buildWeightedPool(
+export function _buildWeightedPool(
   base: readonly EnemyType[],
   weightMult: Partial<Record<EnemyType, number>>,
 ): EnemyType[] {
@@ -174,6 +176,18 @@ function _buildWeightedPool(
   for (const t of base) {
     // Math.max(1, ...) prevents a mult < 0.125 from silently dropping the type
     const copies = Math.max(1, Math.round((weightMult[t] ?? 1) * 4));
+    for (let k = 0; k < copies; k++) out.push(t);
+  }
+  // A biome can explicitly weight a type the score gate hasn't unlocked yet
+  // (e.g. Jungle boosts 'splitter' before its normal score >= 3500 gate) — without
+  // this, that bias silently no-ops until the gate opens on its own.
+  // NOTE: not in original
+  const baseSet = new Set(base);
+  for (const t of Object.keys(weightMult) as EnemyType[]) {
+    if (baseSet.has(t)) continue;
+    const mult = weightMult[t] ?? 1;
+    if (mult <= 1) continue;
+    const copies = Math.max(1, Math.round(mult * 4));
     for (let k = 0; k < copies; k++) out.push(t);
   }
   return out;
@@ -185,8 +199,8 @@ function pickEnemyType(
   weightMult: Partial<Record<EnemyType, number>> = {},
 ): EnemyType {
   const base = getEnemyPool(score);
-  if (base !== _cachedBase || weightMult !== _cachedMult) {
-    _cachedBase = base;
+  if (base.length !== _cachedBaseLen || weightMult !== _cachedMult) {
+    _cachedBaseLen = base.length;
     _cachedMult = weightMult;
     _cachedPool = _buildWeightedPool(base, weightMult);
   }

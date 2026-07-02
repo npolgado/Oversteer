@@ -10,6 +10,7 @@ import {
   isBossWave,
   getBossPattern,
   isSurvivalBoss,
+  _buildWeightedPool,
   type WaveEvent,
 } from '../waveManager';
 import { HazardZone } from '../waveManager';
@@ -555,5 +556,56 @@ describe('updateWave — horde arc direction', () => {
       const max = Math.max(...angles);
       expect(max - min).toBeLessThan(Math.PI); // must stay within half the circle
     }
+  });
+});
+
+// ── B2: biome weightMult can introduce a score-gated type early (Jungle splitter) ──
+
+describe('_buildWeightedPool — biome bias overrides score gate', () => {
+  it('does not add a type absent from base when its mult is <= 1', () => {
+    const pool = _buildWeightedPool(['chaser'], { splitter: 1 });
+    expect(pool).not.toContain('splitter');
+  });
+
+  it('adds a score-gated type when the biome mult is > 1 (Jungle splitter at low score)', () => {
+    // base mirrors getEnemyPool(score) below the splitter gate (score < 3500)
+    const base: ('chaser' | 'bomber' | 'blocker')[] = ['chaser', 'bomber', 'blocker'];
+    const pool = _buildWeightedPool(base, { bomber: 1.6, blocker: 1.4, splitter: 1.5 });
+    expect(pool).toContain('splitter');
+  });
+
+  it('does not duplicate a type that is already in base', () => {
+    const pool = _buildWeightedPool(['chaser', 'splitter'], { splitter: 1.5 });
+    const splitterCopies = pool.filter(t => t === 'splitter').length;
+    // Only the base-path weighting applies (round(1.5*4)=6), not an additional bias-path batch
+    expect(splitterCopies).toBe(6);
+  });
+
+  it('gives more weight to a higher-mult biome-introduced type', () => {
+    const low = _buildWeightedPool(['chaser'], { splitter: 1.25 }); // round(1.25*4)=5
+    const high = _buildWeightedPool(['chaser'], { splitter: 2 });   // round(2*4)=8
+    const lowCount = low.filter(t => t === 'splitter').length;
+    const highCount = high.filter(t => t === 'splitter').length;
+    expect(highCount).toBeGreaterThan(lowCount);
+  });
+});
+
+describe('updateWave — pickEnemyType cache reacts to score-bucket and biome changes', () => {
+  it('spawns the biome-boosted, score-gated type even below its normal score gate', () => {
+    const s = makeWaveState();
+    startWave(s);
+    s.spawnTimer = 0;
+    // score is 0 — well below splitter's normal 3500 gate — but Jungle-style bias should
+    // still be able to produce it via the weighted pool.
+    let sawSplitter = false;
+    for (let i = 0; i < 200; i++) {
+      s.spawnTimer = 0;
+      const events = updateWave(s, 0.001, 0, 0, false, { splitter: 3 });
+      for (const ev of events) {
+        if (ev.type === 'spawn' && ev.requests.some(r => r.type === 'splitter')) sawSplitter = true;
+      }
+      if (sawSplitter) break;
+    }
+    expect(sawSplitter).toBe(true);
   });
 });
