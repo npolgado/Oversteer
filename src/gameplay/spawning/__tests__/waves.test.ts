@@ -455,7 +455,7 @@ describe('boss wave combat phase', () => {
     expect(state.phase).toBe('break');
   });
 
-  it('Reflector does not end early — only once the timer has actually elapsed', () => {
+  it('Reflector does not end early - only once the timer has actually elapsed', () => {
     const state = makeBossWave(15);
     updateWave(state, 2.0, 0, 0, true); // spawn boss
     const events = updateWave(state, 0.1, 0, 1, true);
@@ -561,7 +561,7 @@ describe('updateWave — horde arc direction', () => {
 
 // ── B2: biome weightMult can introduce a score-gated type early (Jungle splitter) ──
 
-describe('_buildWeightedPool — biome bias overrides score gate', () => {
+describe('_buildWeightedPool - biome bias overrides score gate', () => {
   it('does not add a type absent from base when its mult is <= 1', () => {
     const pool = _buildWeightedPool(['chaser'], { splitter: 1 });
     expect(pool).not.toContain('splitter');
@@ -572,6 +572,14 @@ describe('_buildWeightedPool — biome bias overrides score gate', () => {
     const base: ('chaser' | 'bomber' | 'blocker')[] = ['chaser', 'bomber', 'blocker'];
     const pool = _buildWeightedPool(base, { bomber: 1.6, blocker: 1.4, splitter: 1.5 });
     expect(pool).toContain('splitter');
+  });
+
+  it('the override is general, not Jungle-specific: Rupture flanker (1.8) also early-unlocks below its 2500 gate', () => {
+    // Rupture (config.ts) sets enemyWeightMult: { flanker: 1.8 } and is reachable from wave 8,
+    // where score is commonly below flanker's normal 2500 gate -- same mechanism as Jungle/splitter.
+    const base: 'chaser'[] = ['chaser'];
+    const pool = _buildWeightedPool(base, { flanker: 1.8 });
+    expect(pool).toContain('flanker');
   });
 
   it('does not duplicate a type that is already in base', () => {
@@ -590,12 +598,12 @@ describe('_buildWeightedPool — biome bias overrides score gate', () => {
   });
 });
 
-describe('updateWave — pickEnemyType cache reacts to score-bucket and biome changes', () => {
+describe('updateWave - pickEnemyType cache reacts to score-bucket and biome changes', () => {
   it('spawns the biome-boosted, score-gated type even below its normal score gate', () => {
     const s = makeWaveState();
     startWave(s);
     s.spawnTimer = 0;
-    // score is 0 — well below splitter's normal 3500 gate — but Jungle-style bias should
+    // score is 0 - well below splitter's normal 3500 gate - but Jungle-style bias should
     // still be able to produce it via the weighted pool.
     let sawSplitter = false;
     for (let i = 0; i < 200; i++) {

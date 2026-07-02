@@ -2,7 +2,7 @@
 // No side-effect calls (audio, particles, eventBus) — caller reads the result.
 
 import { getPlayerSpeed, type PlayerState } from '@gameplay/player/playerState';
-import { pointInPoly } from '@gameplay/pureLogic';
+import { pointInPoly, isBossInvulnerable } from '@gameplay/pureLogic';
 import { CFG } from '@core/config';
 import {
   getTrailPoint,
@@ -137,8 +137,8 @@ function _detectLoop(
             pointInPoly(e.x - D, e.y - D, poly)
           ));
         if (!hit) continue;
-        // Armored or invulnerable boss deflects trail — show flash but don't deal damage
-        if (e.armored || e.bossVulnerable === false) {
+        // Invulnerable boss deflects trail - show flash but don't deal damage
+        if (isBossInvulnerable(e)) {
           e.hitFlashTimer = CFG.BOSS_HIT_FLASH_S;
           continue;
         }

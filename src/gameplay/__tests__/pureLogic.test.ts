@@ -32,6 +32,7 @@ import {
   applyGhostFrameNearMiss,
   computeEncircleOutcome,
   applyComboIncrement,
+  isBossInvulnerable,
   applyDriftShield,
   applyComboHeal,
   applyBombZoneDamage,
@@ -498,6 +499,21 @@ describe('applyGhostFrameNearMiss', () => {
     const player = { ghostFrameTimer: 0 };
     applyGhostFrameNearMiss(player, true);
     expect(player.ghostFrameTimer).toBe(0.3);
+  });
+});
+
+describe('isBossInvulnerable', () => {
+  it('is invulnerable when armored', () => {
+    expect(isBossInvulnerable({ armored: true })).toBe(true);
+  });
+
+  it('is invulnerable when bossVulnerable is explicitly false, even if not armored', () => {
+    expect(isBossInvulnerable({ armored: false, bossVulnerable: false })).toBe(true);
+  });
+
+  it('is vulnerable when not armored and bossVulnerable is true or omitted', () => {
+    expect(isBossInvulnerable({ armored: false, bossVulnerable: true })).toBe(false);
+    expect(isBossInvulnerable({ armored: false })).toBe(false);
   });
 });
 

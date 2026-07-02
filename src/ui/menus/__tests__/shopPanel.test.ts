@@ -263,7 +263,7 @@ describe('ShopPanelUI.handleGamepadInput', () => {
 // ── B3: rendering, pointer, and gamepad paths must all agree on affordability ──
 // (all three now route through the single `_canPurchase` helper)
 
-describe('ShopPanelUI — affordability agrees across render, tryPurchase, and gamepad', () => {
+describe('ShopPanelUI - affordability agrees across render, tryPurchase, and gamepad', () => {
   it('an unaffordable item is dimmed in render AND blocked by both purchase paths', () => {
     const player = makePlayer({ scrapBank: 0, hp: 50, maxHp: 100 }); // Field Repair (cost 8) unaffordable
     const shop = makeShop();

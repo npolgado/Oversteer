@@ -355,7 +355,7 @@ export function computeBlockerTarget(trailPoints: TrailPoint[] | null): Vec2 | n
 }
 
 // ── Enemy spawn placement ─────────────────────────────────────────
-// NOTE: not in original — Splitter (Phase 4 M9) and Core boss minion ring (Phase 4 M3).
+// NOTE: not in original - Splitter (Phase 4 M9) and Core boss minion ring (Phase 4 M3).
 
 /**
  * Splitter death: two chaser spawn points at +/-45deg from a base angle, 22px out,
@@ -404,7 +404,7 @@ export function computeMinionRingSpawns(
 export function applyNearMiss(score: number, player: PlayerForNearMiss, type: string): NearMissResult {
   const pts = type === 'enemy' ? CFG.NEAR_MISS_ENEMY_PTS : CFG.NEAR_MISS_HAZARD_PTS;
   let nextScore = score + pts * player.scoreMult;
-  const nextCombo = Math.min(CFG.MAX_COMBO, (player.comboLevel || 0) + 1);
+  const nextCombo = applyComboIncrement(player.comboLevel || 0, 1);
   const streak = (player.consecutiveNearMisses || 0) + 1;
   if (streak >= 3) {
     const streakBonus = 50 * streak;
@@ -521,6 +521,13 @@ export function applyComboIncrement(comboLevel: number, amount: number): number 
   return Math.min(CFG.MAX_COMBO, comboLevel + amount);
 }
 
+/** Whether a boss currently deflects damage (armored, or explicitly non-vulnerable).
+ *  Shared by every boss damage source (bomb pickup, trail encirclement) so the rule
+ *  for "can this boss be hurt right now" can't drift out of sync between them. */
+export function isBossInvulnerable(enemy: { armored: boolean; bossVulnerable?: boolean }): boolean {
+  return enemy.armored || enemy.bossVulnerable === false;
+}
+
 export function computeEncircleOutcome(
   killCount: number,
   comboLevel: number,
@@ -579,14 +586,14 @@ export function updateRunStats(stats: RunStats, event: RunStatEvent): { comboLev
   switch (event.type) {
     case 'near_miss': {
       stats.nearMissTotal++;
-      const newCombo = Math.min(CFG.MAX_COMBO, (event.comboLevel || 0) + 1);
+      const newCombo = applyComboIncrement(event.comboLevel || 0, 1);
       stats.peakCombo = Math.max(stats.peakCombo, Math.floor(newCombo));
       return { comboLevel: newCombo };
     }
     case 'encircle': {
       const killCount = event.killCount || 0;
       stats.enemiesKilled += killCount;
-      const newCombo = Math.min(CFG.MAX_COMBO, (event.comboLevel || 0) + 2 * killCount);
+      const newCombo = applyComboIncrement(event.comboLevel || 0, 2 * killCount);
       stats.peakCombo = Math.max(stats.peakCombo, Math.floor(newCombo));
       return { comboLevel: newCombo };
     }

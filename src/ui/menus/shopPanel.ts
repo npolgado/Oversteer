@@ -191,7 +191,7 @@ export class ShopPanelUI {
    *   doesn't leak into upgrade cards).
    * - Returns null if the tap missed all buttons.
    */
-  // Single source of truth for whether an item can be bought right now —
+  // Single source of truth for whether an item can be bought right now -
   // used by rendering (dimming) and both purchase paths (pointer, gamepad).
   private _canPurchase(def: ShopItemDef, player: PlayerState): boolean {
     const canAfford = player.scrapBank >= def.cost;

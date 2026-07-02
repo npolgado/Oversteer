@@ -106,7 +106,7 @@ const _RUPTURE: BiomeDescriptor = {
   hazardRules: { kind: 'none', spawnInterval: 0, maxZones: 0, radius: 0 },
 };
 
-// Corruption Jungle — density stress test. Selectable from wave 8 via route branching
+// Corruption Jungle - density stress test. Selectable from wave 8 via route branching
 // (runProgression.pendingChoice); splitter's enemyWeightMult below overrides its normal
 // score gate (score >= 3500) so choosing Jungle early is meaningfully harder.
 const _JUNGLE: BiomeDescriptor = {

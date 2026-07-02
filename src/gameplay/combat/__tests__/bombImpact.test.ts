@@ -1,4 +1,4 @@
-// bombImpact.test.ts — resolveBombImpact: bomb pickup per-enemy decision tree.
+// bombImpact.test.ts - resolveBombImpact: bomb pickup per-enemy decision tree.
 // Extracted from GameLoop._applyBombPickup (was previously untested inline branching).
 
 import { describe, it, expect } from 'vitest';
@@ -6,7 +6,7 @@ import { CFG } from '@core/config';
 import { makeEnemyState, makeBoss } from '@gameplay/enemies/enemyState';
 import { resolveBombImpact } from '../bombImpact';
 
-describe('resolveBombImpact — non-boss enemies', () => {
+describe('resolveBombImpact - non-boss enemies', () => {
   it('kills a regular enemy outright when alive and visible', () => {
     const e = makeEnemyState('chaser', 0, 0, 0);
     const result = resolveBombImpact(e, true);
@@ -28,7 +28,7 @@ describe('resolveBombImpact — non-boss enemies', () => {
   });
 });
 
-describe('resolveBombImpact — boss armor deflection', () => {
+describe('resolveBombImpact - boss armor deflection', () => {
   it('deflects (no damage) when boss is armored', () => {
     const boss = makeBoss('core', 0, 0);
     boss.armored = true;
@@ -45,7 +45,7 @@ describe('resolveBombImpact — boss armor deflection', () => {
     expect(result.outcome).toBe('deflect');
   });
 
-  it('Reflector (always armored) always deflects — bomb cannot one-shot it', () => {
+  it('Reflector (always armored) always deflects - bomb cannot one-shot it', () => {
     const boss = makeBoss('reflector', 0, 0);
     boss.armored = true; // Reflector re-arms every tick (bossPatterns.ts updateReflector)
     const result = resolveBombImpact(boss, true);
@@ -53,7 +53,7 @@ describe('resolveBombImpact — boss armor deflection', () => {
   });
 });
 
-describe('resolveBombImpact — boss chip damage vs. kill', () => {
+describe('resolveBombImpact - boss chip damage vs. kill', () => {
   it('chips a non-armored boss above 1 health, boss survives', () => {
     const boss = makeBoss('pursuer', 0, 0);
     boss.armored = false;
@@ -65,7 +65,7 @@ describe('resolveBombImpact — boss chip damage vs. kill', () => {
     expect(result.hitFlashTimer).toBe(CFG.BOSS_HIT_FLASH_S);
   });
 
-  it('kills a non-armored boss at 1 health', () => {
+  it('kills a non-armored boss at 1 health, and still flashes on the killing hit', () => {
     const boss = makeBoss('pursuer', 0, 0);
     boss.armored = false;
     boss.bossVulnerable = true;
@@ -73,6 +73,9 @@ describe('resolveBombImpact — boss chip damage vs. kill', () => {
     const result = resolveBombImpact(boss, true);
     expect(result.outcome).toBe('kill');
     expect(result.newHealth).toBe(0);
+    // Matches the original inline logic, which always set hitFlashTimer before
+    // checking whether the hit was lethal (gameLoop.ts pre-extraction).
+    expect(result.hitFlashTimer).toBe(CFG.BOSS_HIT_FLASH_S);
   });
 
   it('a fully-armored boss can never be one-shot by a single bomb regardless of health', () => {

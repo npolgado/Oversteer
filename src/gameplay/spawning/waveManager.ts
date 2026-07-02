@@ -179,7 +179,7 @@ export function _buildWeightedPool(
     for (let k = 0; k < copies; k++) out.push(t);
   }
   // A biome can explicitly weight a type the score gate hasn't unlocked yet
-  // (e.g. Jungle boosts 'splitter' before its normal score >= 3500 gate) — without
+  // (e.g. Jungle boosts 'splitter' before its normal score >= 3500 gate) - without
   // this, that bias silently no-ops until the gate opens on its own.
   // NOTE: not in original
   const baseSet = new Set(base);
@@ -213,6 +213,17 @@ function pickEnemyType(
 
 // ── Update ────┐───────────┐───────────────┐──────────
 
+// Ends the combat phase and queues the wave_end event. Shared by every ending path
+// (boss killed, survival-boss timeout, plain timer) so break-phase setup can't drift
+// out of sync between them.
+function _endWave(state: WaveState, events: WaveEvent[], bossKilled?: true): WaveEvent[] {
+  state.phase = 'break';
+  state.breakTimer = CFG.WAVE_BREAK;
+  // wave_end does NOT clear scraps (they persist into break phase)
+  events.push(bossKilled ? { type: 'wave_end', bossKilled } : { type: 'wave_end' });
+  return events;
+}
+
 export function updateWave(
   state: WaveState,
   dt: number,
@@ -230,7 +241,7 @@ export function updateWave(
   if (state.phase === 'combat') {
     state.waveTimer += dt;
 
-    // Boss wave: telegraph countdown → spawn → wait for kill (or timer, for survival bosses)
+    // Boss wave: telegraph countdown -> spawn -> wait for kill (or timer, for survival bosses)
     if (state.bossActive) {
       if (!state.bossSpawned) {
         state.bossTelegraphTimer -= dt;
@@ -239,30 +250,20 @@ export function updateWave(
           events.push({ type: 'boss_spawn', pattern: state.bossPattern! });
         }
       } else if (!bossAlive) {
-        // Boss is dead — end combat phase (minions may still be alive; use bossAlive not enemyCount)
-        state.phase = 'break';
-        state.breakTimer = CFG.WAVE_BREAK;
-        events.push({ type: 'wave_end', bossKilled: true });
-        return events;
+        // Boss is dead - end combat phase (minions may still be alive; use bossAlive not enemyCount)
+        return _endWave(state, events, true);
       } else if (isSurvivalBoss(state.bossPattern!) && state.waveTimer >= state.currentCombatDuration) {
-        // Reflector can't be killed by encirclement — surviving to the timer counts as defeated.
-        state.phase = 'break';
-        state.breakTimer = CFG.WAVE_BREAK;
-        events.push({ type: 'wave_end', bossKilled: true });
-        return events;
+        // Reflector can't be killed by encirclement - surviving to the timer counts as defeated.
+        return _endWave(state, events, true);
       }
       // Boss spawned, alive, and not a survival-timeout: the wave hangs here until killed.
       // Regular spawning/horde logic below still runs alongside the boss.
     }
 
     // Normal wave: end on timer. Boss waves only end via the boss-specific branches above
-    // (kill, or survival-boss timeout) — never via this plain timer check.
+    // (kill, or survival-boss timeout) - never via this plain timer check.
     if (!state.bossActive && state.waveTimer >= state.currentCombatDuration) {
-      state.phase = 'break';
-      state.breakTimer = CFG.WAVE_BREAK;
-      // wave_end does NOT clear scraps (they persist into break phase)
-      events.push({ type: 'wave_end' });
-      return events;
+      return _endWave(state, events);
     }
 
     // Horde event logic (fires once per wave after trigger fraction of combat time)
