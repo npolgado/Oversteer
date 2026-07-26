@@ -63,6 +63,7 @@ export function makeEnemyState(
   x: number,
   y: number,
   speedBonus: number,
+  rng: () => number = Math.random,
 ): EnemyState {
   const spritePool = CFG.ENEMY_SPRITES_BY_TYPE[type] ?? CFG.ENEMY_SPRITES_BY_TYPE['chaser'];
   const sprite = randChoice(spritePool);
@@ -99,7 +100,7 @@ export function makeEnemyState(
         age: 0,
         lifespan:
           CFG.ENEMY_LIFESPAN_MIN +
-          Math.random() * (CFG.ENEMY_LIFESPAN_MAX - CFG.ENEMY_LIFESPAN_MIN),
+          rng() * (CFG.ENEMY_LIFESPAN_MAX - CFG.ENEMY_LIFESPAN_MIN),
         offscreenTimer: 0,
         fadeAlpha: 1,
         nearMissCooldown: 0,
@@ -147,7 +148,7 @@ export function makeEnemyState(
         age: 0,
         lifespan:
           CFG.ENEMY_LIFESPAN_MIN +
-          Math.random() * (CFG.ENEMY_LIFESPAN_MAX - CFG.ENEMY_LIFESPAN_MIN),
+          rng() * (CFG.ENEMY_LIFESPAN_MAX - CFG.ENEMY_LIFESPAN_MIN),
         offscreenTimer: 0,
         fadeAlpha: 1,
         nearMissCooldown: 0,
@@ -195,14 +196,14 @@ export function makeEnemyState(
         age: 0,
         lifespan:
           CFG.ENEMY_LIFESPAN_MIN +
-          Math.random() * (CFG.ENEMY_LIFESPAN_MAX - CFG.ENEMY_LIFESPAN_MIN),
+          rng() * (CFG.ENEMY_LIFESPAN_MAX - CFG.ENEMY_LIFESPAN_MIN),
         offscreenTimer: 0,
         fadeAlpha: 1,
         nearMissCooldown: 0,
         _trailBurnCooldown: 0,
         glowExtra: 0,
         sprite,
-        driftToggleTimer: 2 + Math.random() * 3,
+        driftToggleTimer: 2 + rng() * 3,
         driftDuration: 0,
         holdingTrail: false,
         flankSide: undefined,
@@ -243,7 +244,7 @@ export function makeEnemyState(
         age: 0,
         lifespan:
           CFG.ENEMY_LIFESPAN_MIN +
-          Math.random() * (CFG.ENEMY_LIFESPAN_MAX - CFG.ENEMY_LIFESPAN_MIN),
+          rng() * (CFG.ENEMY_LIFESPAN_MAX - CFG.ENEMY_LIFESPAN_MIN),
         offscreenTimer: 0,
         fadeAlpha: 1,
         nearMissCooldown: 0,
@@ -291,7 +292,7 @@ export function makeEnemyState(
         age: 0,
         lifespan:
           CFG.ENEMY_LIFESPAN_MIN +
-          Math.random() * (CFG.ENEMY_LIFESPAN_MAX - CFG.ENEMY_LIFESPAN_MIN),
+          rng() * (CFG.ENEMY_LIFESPAN_MAX - CFG.ENEMY_LIFESPAN_MIN),
         offscreenTimer: 0,
         fadeAlpha: 1,
         nearMissCooldown: 0,
@@ -301,8 +302,8 @@ export function makeEnemyState(
         driftToggleTimer: undefined,
         driftDuration: undefined,
         holdingTrail: false,
-        flankSide: Math.random() < 0.5 ? 1 : -1,
-        flankSwitchTimer: 3 + Math.random() * 2,
+        flankSide: rng() < 0.5 ? 1 : -1,
+        flankSwitchTimer: 3 + rng() * 2,
         striking: false,
         strikeTimer: 0,
         bombTimer: undefined,
@@ -339,7 +340,7 @@ export function makeEnemyState(
         age: 0,
         lifespan:
           CFG.ENEMY_LIFESPAN_MIN +
-          Math.random() * (CFG.ENEMY_LIFESPAN_MAX - CFG.ENEMY_LIFESPAN_MIN),
+          rng() * (CFG.ENEMY_LIFESPAN_MAX - CFG.ENEMY_LIFESPAN_MIN),
         offscreenTimer: 0,
         fadeAlpha: 1,
         nearMissCooldown: 0,
@@ -387,7 +388,7 @@ export function makeEnemyState(
         age: 0,
         lifespan:
           CFG.ENEMY_LIFESPAN_MIN +
-          Math.random() * (CFG.ENEMY_LIFESPAN_MAX - CFG.ENEMY_LIFESPAN_MIN),
+          rng() * (CFG.ENEMY_LIFESPAN_MAX - CFG.ENEMY_LIFESPAN_MIN),
         offscreenTimer: 0,
         fadeAlpha: 1,
         nearMissCooldown: 0,
@@ -434,7 +435,7 @@ export function makeEnemyState(
         baseMaxSpeed: CFG.CHASER_SPEED * 0.9 + speedBonus,
         age: 0,
         lifespan:
-          (CFG.ENEMY_LIFESPAN_MIN + Math.random() * (CFG.ENEMY_LIFESPAN_MAX - CFG.ENEMY_LIFESPAN_MIN)) * 1.5,
+          (CFG.ENEMY_LIFESPAN_MIN + rng() * (CFG.ENEMY_LIFESPAN_MAX - CFG.ENEMY_LIFESPAN_MIN)) * 1.5,
         offscreenTimer: 0,
         fadeAlpha: 1,
         nearMissCooldown: 0,
@@ -533,7 +534,7 @@ export function makeEnemyState(
         age: 0,
         lifespan:
           CFG.ENEMY_LIFESPAN_MIN +
-          Math.random() * (CFG.ENEMY_LIFESPAN_MAX - CFG.ENEMY_LIFESPAN_MIN),
+          rng() * (CFG.ENEMY_LIFESPAN_MAX - CFG.ENEMY_LIFESPAN_MIN),
         offscreenTimer: 0,
         fadeAlpha: 1,
         nearMissCooldown: 0,
@@ -562,8 +563,9 @@ export function makeBoss(
   x: number,
   y: number,
   waveIndex = 0,  // NOTE: not in original — used to scale boss HP by wave
+  rng: () => number = Math.random,
 ): EnemyState {
-  const boss = makeEnemyState('boss', x, y, 0);
+  const boss = makeEnemyState('boss', x, y, 0, rng);
   boss.bossPattern = pattern;
   boss.bossPhase = pattern === 'core' ? 'invuln' : 'telegraph';
   boss.bossPhaseTimer = pattern === 'core' ? CFG.BOSS_INVULN_DUR : CFG.BOSS_TELEGRAPH_DUR;

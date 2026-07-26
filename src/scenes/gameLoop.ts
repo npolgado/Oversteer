@@ -1,69 +1,29 @@
 // gameLoop.ts — Game loop orchestrator: owns all mutable game state and dispatches per-frame systems.
 // gameplayScene.ts is now a thin Pixi adapter that creates and delegates to this class.
-
 import { Sprite, Assets, Graphics, Text, TextStyle } from 'pixi.js';
 import { makeUIStyle } from '@ui/textStyles';
 import type { GameContext } from './sceneManager';
 import { MobileControls } from '@ui/mobileControls';
 import { CFG, S, applyMap, BIOMES_BY_ID, type EnemyType } from '@core/config';
-import { makePlayerState, getPlayerSpeed, getPlayerRadius, getEffectiveScoreMult, type PlayerState } from '@gameplay/player/playerState';
-import { updatePlayer } from '@gameplay/player/playerUpdate';
+import { makePlayerState, getPlayerSpeed, type PlayerState } from '@gameplay/player/playerState';
 import { PlayerRenderer } from '@gameplay/player/playerRenderer';
-import { makeTrailState, getTrailPoint, type TrailState } from '@gameplay/trail/trailState';
-import { updateTrail } from '@gameplay/trail/trailUpdate';
+import { makeTrailState, type TrailState } from '@gameplay/trail/trailState';
 import { TrailRenderer } from '@gameplay/trail/trailRenderer';
-import {
-  makePropsState,
-  generateProps,
-  regenerateProps,
-  checkPlayerCollision as checkPlayerPropCollision,
-  handlePropCollisions,
-  checkEnemyPropCollision,
-  updatePropCooldowns,
-  checkNearMissProp,
-  type PropsState,
-} from '@gameplay/world/propsSystem';
+import { makePropsState, generateProps, regenerateProps, type PropsState } from '@gameplay/world/propsSystem';
 import { PropsRenderer } from '@gameplay/world/propsRenderer';
-import { spawnBossArena, clearBossArena, spawnBiomeStructures } from '@gameplay/world/bossArena';
+import { spawnBiomeStructures } from '@gameplay/world/bossArena';
 import { BiomeManager } from '@gameplay/world/biomeManager';
-import { RunProgression, accrueScrap } from '@gameplay/world/runProgression';
+import { RunProgression } from '@gameplay/world/runProgression';
 import { makeBiomeHazardState, type BiomeHazardState } from '@gameplay/world/biomeHazards';
 import { BiomeChoicePanel } from '@ui/menus/biomeChoicePanel';
-import { makeEnemyState, makeBoss, type EnemyState } from '@gameplay/enemies/enemyState';
-import { updateEnemy } from '@gameplay/enemies/enemyUpdate';
+import { makeEnemyState, type EnemyState } from '@gameplay/enemies/enemyState';
 import { EnemyRenderer } from '@gameplay/enemies/enemyRenderer';
 import { PickupRenderer } from '@render/pickupRenderer';
-import { getDeathParticles, type EnemyDeathEvent } from '@gameplay/enemies/enemyDeathFx';
-import { checkPlayerEnemyCollision, checkNearMiss } from '@gameplay/combat/collision';
-import { processPlayerHit } from '@gameplay/combat/damage';
-import { processNearMiss, processHazardNearMiss } from '@gameplay/combat/nearMiss';
-import { applyTrailBurn } from '@gameplay/combat/trailBurn';
-import { applyChainLightning } from '@gameplay/combat/chainLightning';
-import {
-  updateNearMissStreak,
-  applyHpRegen,
-  updateScraps,
-  updateBoostZones,
-  selectPickupType,
-  computeEncircleOutcome,
-  applyComboHeal,
-  updateRunStats,
-  applyHazardZoneDamage,
-  type HazardZoneEffect,
-  type TrailPoint,
-  type PlayerForPickup,
-} from '@gameplay/pureLogic';
-import { makeScoringState, updateScoring, addScore, type ScoringState } from '@gameplay/scoring';
+import { getDeathParticles } from '@gameplay/enemies/enemyDeathFx';
+import { type TrailPoint, type PlayerForPickup } from '@gameplay/pureLogic';
+import { makeScoringState, type ScoringState } from '@gameplay/scoring';
 import { saveManager } from '@core/saveManager';
-import {
-  makeWaveState,
-  startWave,
-  updateWave,
-  tickScrapSpawn,
-  tickBoostZoneSpawn,
-  type WaveState,
-  type HazardZone,
-} from '@gameplay/spawning/waveManager';
+import { makeWaveState, startWave, type WaveState } from '@gameplay/spawning/waveManager';
 import { clamp } from '@core/utils';
 import { eventBus } from '@core/eventBus';
 import { HudManager, type HudData } from '@ui/hud/hudManager';
@@ -76,7 +36,7 @@ import { PerfOverlay } from '@ui/PerfOverlay';
 import { ScreenFX } from '@render/screenFx';
 import { SpeedLines } from '@render/speedLines';
 import { ParticleSystem } from '@render/particles';
-import { uiTween, pauseUITweens, resumeUITweens } from '@render/tween';
+import { pauseUITweens, resumeUITweens } from '@render/tween';
 import { registerPausePredicate, unregisterPausePredicate } from '@debug/debugOverlay';
 import { DIFFICULTY_MODIFIERS, computeModifierScoreMult } from '@content/maps';
 import { sceneManager } from './sceneManager';
@@ -84,9 +44,9 @@ import { GameOverScene, type GameOverData } from './gameOverScene';
 import { DeathSequence } from '@gameplay/death/deathSequence';
 import { UpgradeBreakPhase } from '@gameplay/upgradeBreak/upgradeBreakPhase';
 import { BiomeSystem } from './biomeSystem';
+import { stepWorld, type WorldState, type WorldEffects } from '@gameplay/stepWorld';
 import type { GameplayOptions } from './gameplayScene';
 import { applySituation, SITUATIONS_BY_ID, consumeDevPickup, consumeDevBossKilled, type SituationSpec } from '@dev/situationTester';
-
 const EMPTY_INPUT: InputState = {
   up: false, down: false, left: false, right: false,
   drift: false, pause: false, enter: false, reroll: false,
@@ -168,6 +128,8 @@ export class GameLoop {
   private _biomeHazardState: BiomeHazardState;
   private _runProgression: RunProgression;
   private _biomeSystem!: BiomeSystem; // NOTE: not in original — initialized in constructor after bg/fog refs exist
+  private _world!: WorldState;  // NOTE: not in original — shared state view for the durable stepWorld tick
+  private _fx!: WorldEffects;   // NOTE: not in original — Pixi/audio adapter passed to stepWorld
   private _scrapCarry = 0; // NOTE: not in original — fractional carry for Jungle rewardMult scrap grants
   // Reusable scratch objects for hot-path tick methods — avoids per-frame allocation
   private _trailScratch: TrailPoint[] = [];
@@ -525,6 +487,55 @@ export class GameLoop {
       getBgSprite:   () => this._bgSprite ?? null,
       getFogOverlay: () => this._fogOverlay ?? null,
     });
+
+    // NOTE: not in original — shared world view + effects adapter for the durable stepWorld tick.
+    // stepWorld() owns the renderer-free per-frame logic; the sim harness drives it with a no-op fx.
+    this._world = {
+      playerState: this._playerState,
+      enemies: this._enemies,
+      trailState: this._trailState,
+      propsState: this._propsState,
+      waveState: this._waveState,
+      scoringState: this._scoringState,
+      biomeHazardState: this._biomeHazardState,
+      biomeManager: this._biomeManager,
+      runProgression: this._runProgression,
+      gameClock: 0,
+      scrapCarry: this._scrapCarry,
+      wasHandbraking: this._wasHandbraking,
+      wasInBoostZone: this._wasInBoostZone,
+      trailScratch: this._trailScratch,
+      pickupPlayerScratch: this._pickupPlayerScratch,
+    };
+    this._fx = {
+      rng: Math.random,
+      isVisible: (x, y, pad) => this._ctx.camera.isVisible(x, y, pad),
+      spawn: (x, y, color, count, opts) => this._particles.spawn(x, y, color, count, opts as never),
+      addSkid: (x, y, color, alpha, heading, size) => this._particles.addSkid(x, y, color, alpha, heading, size),
+      addRing: (x, y, color) => this._particles.addRing(x, y, color),
+      flash: (c, a, d) => this._screenFx.flash(c, a, d),
+      shake: (m, d) => this._screenFx.shake(m, d),
+      slowmo: (s, d) => this._screenFx.slowmo(s, d),
+      zoom: (s, d) => this._screenFx.zoom(s, d),
+      play: (id) => this._ctx.audioManager.play(id),
+      stopEngine: () => this._ctx.audioManager.stopEngine(),
+      stopDrift: () => this._ctx.audioManager.stopDrift(),
+      setEngineSpeed: (v) => this._ctx.audioManager.setEngineSpeed(v),
+      setDriftIntensity: (v) => this._ctx.audioManager.setDriftIntensity(v),
+      showMilestoneBanner: (t, c) => this._hudManager.showMilestoneBanner(t, c),
+      showWaveBanner: (wv) => this._hudManager.showWaveBanner(wv),
+      eventLogAdd: (t, c) => this._eventLog.add(t, c),
+      setHeadingMode: (on) => this._ctx.camera.setHeadingMode(on),
+      setProps: (props) => this._propsRenderer.setProps(props),
+      isDeathActive: () => this._death.active,
+      triggerDeath: () => this._death.trigger(),
+      enterUpgradeBreak: (player, wave, bossKilled) => this._upgradeBreak.enter(player, wave, bossKilled),
+      applyBiomeTransition: (startedWave) => this._applyBiomeTransition(startedWave),
+      tickBiomeHazards: (dt, player) => this._biomeSystem.tick(dt, player, this._death),
+      comboMilestone: (oldL, newL) => this._checkComboMilestone(oldL, newL),
+      forcedPickupType: () => (import.meta.env.DEV ? consumeDevPickup() : null),
+      consumeBossKilled: () => (import.meta.env.DEV ? consumeDevBossKilled() : false),
+    };
   }
 
   update(dt: number): void {
@@ -670,720 +681,23 @@ export class GameLoop {
     dilatedDt: number,
     input: ReturnType<GameContext['getInput']>,
   ): void {
-    this._tickPlayer(dilatedDt, input);
-    this._tickAudio();
-    this._tickScoring(rawDt, dilatedDt);
-    let enemiesChanged = this._tickWave(dilatedDt);
-    this._tickScraps(dilatedDt);
-    this._tickProps(dilatedDt);
-    this._tickHazardZones(dilatedDt);
-    this._tickBiomeHazards(dilatedDt);
-    enemiesChanged = this._tickEnemies(dilatedDt) || enemiesChanged;
-    enemiesChanged = this._tickCombat(rawDt, dilatedDt) || enemiesChanged;
-    enemiesChanged = this._tickTrail(dilatedDt) || enemiesChanged;
+    // Sync mutable primitives into the shared world view, run the durable tick, read back.
+    // The renderer-free logic pipeline lives in stepWorld.ts and is shared with the sim harness.
+    this._world.gameClock = this._gameClock;
+    this._world.scrapCarry = this._scrapCarry;
+    const { enemiesChanged } = stepWorld(this._world, this._fx, input, rawDt, dilatedDt);
+    this._scrapCarry = this._world.scrapCarry;
     if (enemiesChanged) this._enemyRenderer.sync(this._enemies);
     this._tickRenderers(dilatedDt);
   }
 
-  private _tickPlayer(dilatedDt: number, input: ReturnType<GameContext['getInput']>): void {
-    updatePlayer(this._playerState, {
-      dt: dilatedDt,
-      gameClock: this._gameClock,
-      up:    input.up,
-      down:  input.down,
-      left:  input.left,
-      right: input.right,
-      drift: input.drift,
-    });
-
-    // Skid marks when drifting
-    if (this._playerState.drifting) {
-      this._particles.addSkid(
-        this._playerState.x, this._playerState.y,
-        0x222233, 0.5,
-        this._playerState.heading,
-        14,
-      );
-    }
-
-    // Handbrake smoke burst on press edge. NOTE: not in original (canvas had inline smoke in physics.js).
-    const isHandbraking = this._playerState.handbrakeTimer > 0;
-    if (isHandbraking && !this._wasHandbraking) {
-      const bx = this._playerState.x - Math.cos(this._playerState.heading) * 20;
-      const by = this._playerState.y - Math.sin(this._playerState.heading) * 20;
-      this._particles.spawn(bx, by, 0x888888, 8, {
-        type: 'smoke',
-        vxMin: -60, vxMax: 60,
-        vyMin: -60, vyMax: 60,
-        lifeMin: 0.4, lifeMax: 0.7,
-      });
-    }
-    this._wasHandbraking = isHandbraking;
-
-    // Wall-riding sparks along arena boundary (game.js parity).
-    if (this._playerState.wallRiding) {
-      this._particles.spawn(
-        this._playerState.x,
-        this._playerState.y,
-        this._accentColor,
-        1,
-        {
-          type: 'spark',
-          vxMin: -20, vxMax: 20,
-          vyMin: -20, vyMax: 20,
-          lifeMin: 0.35, lifeMax: 0.7,
-          sizeMin: 10, sizeMax: 18,
-        },
-      );
-    }
-
-    // Boost zone entry FX — cyan burst when player enters a speed zone. NOTE: not in original.
-    const isInBoostZone = this._playerState.speedBoostTimer > 0;
-    if (isInBoostZone && !this._wasInBoostZone) {
-      this._particles.spawn(
-        this._playerState.x, this._playerState.y,
-        0x35F2D0, 8,
-        {
-          type: 'spark',
-          vxMin: -180, vxMax: 180,
-          vyMin: -180, vyMax: 180,
-          lifeMin: 0.2, lifeMax: 0.3,
-        },
-      );
-    }
-    this._wasInBoostZone = isInBoostZone;
-  }
-
-  private _tickAudio(): void {
-    // Per-frame engine pitch + drift squeal modulation (game.js update loop)
-    const spd   = getPlayerSpeed(this._playerState);
-    this._ctx.audioManager.setEngineSpeed(spd / this._playerState.maxSpeed);
-    const fwdX  = Math.cos(this._playerState.heading);
-    const fwdY  = Math.sin(this._playerState.heading);
-    const dot   = this._playerState.vx * fwdX + this._playerState.vy * fwdY;
-    const latSpd = Math.hypot(
-      this._playerState.vx - fwdX * dot,
-      this._playerState.vy - fwdY * dot,
-    );
-    const driftSlip = this._playerState.drifting ? latSpd / this._playerState.maxSpeed : 0;
-    this._ctx.audioManager.setDriftIntensity(driftSlip);
-  }
-
-  private _tickScoring(rawDt: number, dilatedDt: number): void {
-    // --- Per-frame scoring: base score, drift combo, combo decay ---
-    // Score-surge timer drains in real time (rawDt) so time_slow doesn't extend the buff duration
-    if (this._playerState.scoreMultBoostTimer > 0) {
-      this._playerState.scoreMultBoostTimer = Math.max(0, this._playerState.scoreMultBoostTimer - rawDt);
-    }
-    const effectiveScoreMult = getEffectiveScoreMult(this._playerState);
-    // Sync combo from player into scoring state first (near-miss may have changed it last frame)
-    this._scoringState.comboLevel = this._playerState.comboLevel;
-    // Drift exploit gate: combo only grows when an enemy is nearby OR a kill/near-miss just happened
-    const px = this._playerState.x, py = this._playerState.y;
-    const enemyNear = this._enemies.some(e => {
-      const dx = e.x - px, dy = e.y - py;
-      return dx * dx + dy * dy < CFG.DRIFT_COMBO_ENGAGE_R * CFG.DRIFT_COMBO_ENGAGE_R;
-    });
-    const recentEngagement = this._scoringState.lastEngagementTimer < CFG.DRIFT_COMBO_ENGAGE_T;
-    updateScoring(
-      this._scoringState,
-      this._playerState.drifting,
-      this._playerState.driftTime,
-      effectiveScoreMult,
-      this._playerState.comboMaster,
-      dilatedDt,
-      enemyNear || recentEngagement,
-    );
-    // Sync combo back to player (decay may have reduced it)
-    this._playerState.comboLevel = this._scoringState.comboLevel;
-  }
-
-  /** Returns true if enemies array was modified. */
-  private _tickWave(dilatedDt: number): boolean {
-    let changed = false;
-    const bossAlive = this._enemies.some(e => e.type === 'boss');
-    const waveEvents = updateWave(
-      this._waveState, dilatedDt, this._scoringState.score, this._enemies.length,
-      bossAlive,
-      this._biomeManager.effectiveWeightMult,
-    );
-    for (const ev of waveEvents) {
-      if (ev.type === 'spawn') {
-        for (const req of ev.requests) {
-          const rawX = this._playerState.x + Math.cos(req.angle) * req.distance;
-          const rawY = this._playerState.y + Math.sin(req.angle) * req.distance;
-          const x = clamp(rawX, 10, CFG.WORLD_W - 10);
-          const y = clamp(rawY, 10, CFG.WORLD_H - 10);
-          this._enemies.push(makeEnemyState(req.type, x, y, this._waveState.speedBonus));
-          changed = true;
-        }
-      } else if (ev.type === 'wave_end') {
-        // Clear enemies (scraps persist into break)
-        for (const e of this._enemies) e.alive = false;
-        this._enemies.length = 0;
-        // Remove boss-arena pillars so normal waves stay open
-        clearBossArena(this._propsState);
-        this._propsRenderer.setProps(this._propsState.allProps);
-        changed = true;
-        this._ctx.camera.setHeadingMode(false);
-        this._ctx.audioManager.stopEngine();
-        this._ctx.audioManager.stopDrift();
-        eventBus.emit('waveEnded', { wave: this._waveState.waveIndex });
-        const _bossKilled = (ev.bossKilled ?? false) || (import.meta.env.DEV ? consumeDevBossKilled() : false);
-        if (_bossKilled) {
-          this._screenFx.flash(0xFFCC00, 0.6, 0.9);
-          this._screenFx.shake(6, 0.4);
-          this._hudManager.showMilestoneBanner('BOSS DEFEATED!', '#FFCC00');
-          eventBus.emit('eventLog', { text: 'BOSS DEFEATED! +REROLL', color: '#ffcc00' });
-        }
-        // Enter upgrade break phase (from game.js:911-928)
-        this._upgradeBreak.enter(this._playerState, this._waveState, _bossKilled);
-      } else if (ev.type === 'horde') {
-        for (const req of ev.spawnRequests) {
-          const rawX = this._playerState.x + Math.cos(req.angle) * req.distance;
-          const rawY = this._playerState.y + Math.sin(req.angle) * req.distance;
-          const x = clamp(rawX, 10, CFG.WORLD_W - 10);
-          const y = clamp(rawY, 10, CFG.WORLD_H - 10);
-          this._enemies.push(makeEnemyState(req.type, x, y, this._waveState.speedBonus));
-          changed = true;
-        }
-        this._eventLog.add('HORDE' + '!'.repeat(ev.count), 0xFF4444);
-        this._hudManager.showMilestoneBanner('HORDE' + '!'.repeat(ev.count), '#FF4444');
-        this._screenFx.shake(5, 0.3);
-        this._ctx.camera.setHeadingMode(true);
-      } else if (ev.type === 'boss_spawn') {
-        // Spawn boss at a set distance from player (makes wave 5 immediately engaging)
-        // NOTE: not in original
-        const bossAngle = Math.random() * Math.PI * 2;
-        const bossDist = CFG.BOSS_SPAWN_DIST_MIN + Math.random() * CFG.BOSS_SPAWN_DIST_RANGE;
-        const bossPad = CFG.BOSS_RADIUS;
-        const bossX = clamp(this._playerState.x + Math.cos(bossAngle) * bossDist, bossPad, CFG.WORLD_W - bossPad);
-        const bossY = clamp(this._playerState.y + Math.sin(bossAngle) * bossDist, bossPad, CFG.WORLD_H - bossPad);
-        const boss = makeBoss(ev.pattern, bossX, bossY, this._waveState.waveIndex);
-        this._enemies.push(boss);
-        // Spawn structural loop-anchors for this boss pattern
-        spawnBossArena(this._propsState, ev.pattern);
-        this._propsRenderer.setProps(this._propsState.allProps);
-        changed = true;
-        this._screenFx.flash(0xFF4040, 0.5, 0.6);
-        this._screenFx.shake(8, 0.5);
-        this._hudManager.showMilestoneBanner(
-          `WAVE ${this._waveState.waveIndex} — BOSS`,
-          '#FF4040',
-        );
-        this._ctx.audioManager.play('boss_sting');
-        eventBus.emit('eventLog', { text: 'BOSS WAVE!', color: '#FF4040' });
-      } else if (ev.type === 'break_end') {
-        // NOTE: In normal gameplay the live path is UpgradeBreakPhase calling startWave()
-        // then the _onWaveStart callback (which calls _applyBiomeTransition). This branch
-        // only fires in dev/sandbox scenarios where waveManager runs freely without an upgrade break.
-        startWave(this._waveState);
-        this._applyBiomeTransition(this._waveState.waveIndex);
-        eventBus.emit('waveStarted', { wave: this._waveState.waveIndex });
-        this._hudManager.showWaveBanner(this._waveState.waveIndex);
-      }
-    }
-    return changed;
-  }
-
   // NOTE: not in original — Delegates biome swap effects to BiomeSystem.
-  // Called from the UpgradeBreakPhase _onWaveStart callback (live gameplay path) and from
-  // the break_end wave event handler (dev/sandbox path). Idempotent when not a transition wave.
+  // Called from the UpgradeBreakPhase _onWaveStart callback (live gameplay path) and from the
+  // WorldEffects.applyBiomeTransition hook (dev/sandbox break_end path). Idempotent off-transition.
   private _applyBiomeTransition(startedWave: number): void {
     this._biomeSystem.applyTransition(startedWave, this._playerState);
     // Reset scrap carry after rewardMult is reset inside BiomeSystem (wave 15 only)
     if (startedWave === 15) this._scrapCarry = 0;
-  }
-
-  // NOTE: not in original — Splitter death spawns two chasers (not triggered by bomb kills)
-  private _spawnSplitChasers(x: number, y: number): void {
-    const baseAngle = Math.random() * Math.PI * 2;
-    for (const offset of [Math.PI / 4, -Math.PI / 4]) {
-      const a = baseAngle + offset;
-      const cx = clamp(x + Math.cos(a) * 22, 10, CFG.WORLD_W - 10);
-      const cy = clamp(y + Math.sin(a) * 22, 10, CFG.WORLD_H - 10);
-      this._enemies.push(makeEnemyState('chaser', cx, cy, this._waveState.speedBonus));
-    }
-    eventBus.emit('spawnParticles', { x, y, type: 'spark', count: 8, color: 0xFF8800 });
-  }
-
-  // NOTE: not in original — Core boss minion mechanic
-  private _spawnMinionRing(sourceX: number, sourceY: number, count: number): void {
-    let chaserCount = 0;
-    for (const e of this._enemies) if (e.type === 'chaser') chaserCount++;
-    const allowed = Math.max(0, CFG.BOSS_MINION_MAX - chaserCount);
-    const toSpawn = Math.min(count, allowed);
-    if (toSpawn === 0) return;
-    for (let i = 0; i < toSpawn; i++) {
-      const angle = (Math.PI * 2 * i) / toSpawn; // divide by toSpawn so partial rings stay evenly spread
-      const x = clamp(sourceX + Math.cos(angle) * CFG.BOSS_MINION_RADIUS, 10, CFG.WORLD_W - 10);
-      const y = clamp(sourceY + Math.sin(angle) * CFG.BOSS_MINION_RADIUS, 10, CFG.WORLD_H - 10);
-      this._enemies.push(makeEnemyState('chaser', x, y, this._waveState.speedBonus));
-    }
-  }
-
-  private _tickScraps(dilatedDt: number): void {
-    // --- Scrap spawning (type selected per wave) ---
-    const scrapPos = tickScrapSpawn(
-      this._waveState,
-      dilatedDt,
-      this._playerState.x,
-      this._playerState.y,
-      this._propsState.allProps, // NOTE: not in original — obstacle avoidance (Bug 1.5)
-    );
-    if (scrapPos) {
-      const _forcedPickup = import.meta.env.DEV ? consumeDevPickup() : null;
-      this._waveState.scraps.push({
-        x: scrapPos.x, y: scrapPos.y, life: 15,
-        type: _forcedPickup ?? selectPickupType(this._waveState.waveIndex, Math.random()),
-      });
-    }
-
-    // --- Boost zone spawning ---
-    tickBoostZoneSpawn(this._waveState, dilatedDt, this._playerState.x, this._playerState.y, this._propsState.allProps); // NOTE: not in original — obstacle avoidance (Bug 1.5)
-
-    // --- Collection ---
-    // Repopulate scratch arrays in place — avoids per-frame allocation on this hot path
-    this._trailScratch.length = this._trailState.count;
-    for (let i = 0; i < this._trailState.count; i++) {
-      this._trailScratch[i] = getTrailPoint(this._trailState, i);
-    }
-    this._pickupPlayerScratch.x           = this._playerState.x;
-    this._pickupPlayerScratch.y           = this._playerState.y;
-    this._pickupPlayerScratch.radius      = getPlayerRadius(this._playerState);
-    this._pickupPlayerScratch.magnetRange = this._playerState.magnetRange;
-    this._pickupPlayerScratch.trailMagnet = this._playerState.trailMagnet;
-    for (const ev of updateScraps(this._waveState.scraps, this._pickupPlayerScratch, dilatedDt, this._trailScratch)) {
-      this._handlePickupEvent(ev, dilatedDt);
-    }
-    for (const ev of updateBoostZones(this._waveState.boostZones, this._pickupPlayerScratch, dilatedDt)) {
-      this._handlePickupEvent(ev, dilatedDt);
-    }
-  }
-
-  private _handlePickupEvent(ev: string, _dt: number): void {
-    if (ev === 'scrap') {
-      const scoreDelta = Math.round(10 * getEffectiveScoreMult(this._playerState)); // NOTE: not in original — scales with Jungle rewardMult
-      addScore(this._scoringState, scoreDelta);
-      const { grant, carry } = accrueScrap(this._scrapCarry, this._runProgression.rewardMult); // NOTE: not in original — fractional carry for Jungle +50% scrap
-      this._scrapCarry = carry;
-      this._playerState.scrapBank += grant; // NOTE: not in original — scrap economy currency
-      this._scoringState.runStats.scrapCollected += grant; // NOTE: not in original — run stats tracking
-      eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: scoreDelta });
-      // NOTE: not in original — gold sparks match scrap glyph color for instant visual readback (Bug 1.9)
-      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 8, color: 0xFFB000 });
-      eventBus.emit('eventLog', { text: '+SCRAP', color: '#35f2d0' });
-      this._ctx.audioManager.play('scrap_pickup');
-    } else if (ev === 'speed_pickup' || ev === 'boost') {
-      this._playerState.speedBoostTimer = CFG.BOOST_ZONE_DURATION;
-      // NOTE: not in original — cyan burst + audio on collect matches speed glyph (Bug 1.9)
-      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 14, color: 0x35F2D0 });
-      eventBus.emit('eventLog', { text: ev === 'boost' ? 'SPEED BOOST!' : 'SPEED!', color: '#35f2d0' });
-      this._ctx.audioManager.play('scrap_pickup');
-    } else if (ev === 'trail_boost') {
-      this._trailState.maxPoints = Math.min(600, this._trailState.maxPoints + 200);
-      // NOTE: not in original — purple sparks match trail_boost arrow glyph (Bug 1.9)
-      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 12, color: 0xAA88FF });
-      eventBus.emit('eventLog', { text: 'TRAIL+', color: '#cc66ff' });
-      this._ctx.audioManager.play('scrap_pickup');
-    } else if (ev === 'bomb') {
-      this._applyBombPickup();
-    } else if (ev === 'time_slow') {
-      this._screenFx.slowmo(0.3, 3.0);
-      // NOTE: not in original — blue sparks match time_slow clock glyph (Bug 1.9)
-      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 12, color: 0x44AAFF });
-      eventBus.emit('eventLog', { text: 'TIME SLOW!', color: '#44aaff' });
-      this._ctx.audioManager.play('scrap_pickup');
-    } else if (ev === 'trail_token') {
-      this._trailState.maxPoints = Math.min(800, this._trailState.maxPoints + 200);
-      // NOTE: not in original — magenta sparks match trail_token diamond glyph (Bug 1.9)
-      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 14, color: 0xFF44CC });
-      eventBus.emit('eventLog', { text: 'TRAIL++', color: '#ff44cc' });
-      this._ctx.audioManager.play('scrap_pickup');
-    } else if (ev === 'shield_pickup') {
-      this._playerState.shield = true;
-      // NOTE: not in original — green sparks match shield pentagon glyph (Bug 1.9)
-      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'spark', count: 16, color: 0x44FF88 });
-      eventBus.emit('eventLog', { text: 'SHIELD!', color: '#44ff88' });
-      this._ctx.audioManager.play('scrap_pickup');
-    }
-  }
-
-  private _applyBombPickup(): void {
-    const isVisible = this._ctx.camera.isVisible;
-    let kills = 0;
-    for (const e of this._enemies) {
-      if (!e.alive) continue;
-      if (!isVisible(e.x, e.y, 50)) continue;
-
-      if (e.type === 'boss') {
-        // Bomb respects boss armor — same rule as encirclement (trailUpdate.ts:141)
-        if (e.armored || e.bossVulnerable === false) {
-          e.hitFlashTimer = CFG.BOSS_HIT_FLASH_S;  // deflect: flash but no damage
-          continue;
-        }
-        e.health = (e.health ?? 1) - 1;
-        e.hitFlashTimer = CFG.BOSS_HIT_FLASH_S;
-        if (e.health > 0) continue;  // chip damage only — boss survives
-      }
-
-      e.alive = false;
-      kills++;
-      eventBus.emit('enemyKilled', { x: e.x, y: e.y, type: e.type, isElite: e.armored });
-    }
-    if (kills > 0) {
-      const bonus = Math.round(kills * 50 * getEffectiveScoreMult(this._playerState));
-      addScore(this._scoringState, bonus);
-      eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: bonus });
-      updateRunStats(this._scoringState.runStats, { type: 'bomb', killCount: kills });
-      // NOTE: not in original — radial shard burst at player position + shockwave zoom-out
-      eventBus.emit('spawnParticles', { x: this._playerState.x, y: this._playerState.y, type: 'shard', count: 30 });
-      // NOTE: not in original — red full-screen flash + camera shake for bomb detonation feedback (Bug 1.6)
-      this._screenFx.flash(0xFF2200, 0.55, 0.35);
-      this._screenFx.shake(10, 0.45);
-      // Brief zoom-out pulse so the shockwave reads spatially
-      this._screenFx.zoom(0.92, 0.3);
-      eventBus.emit('eventLog', { text: `BOMB! x${kills}`, color: '#FF4444' });
-    }
-    // Sweep bomb-killed enemies out immediately (swap-and-pop)
-    for (let i = this._enemies.length - 1; i >= 0; i--) {
-      if (!this._enemies[i].alive) {
-        this._enemies[i] = this._enemies[this._enemies.length - 1];
-        this._enemies.pop();
-      }
-    }
-  }
-
-  private _tickProps(dilatedDt: number): void {
-    const propHits   = checkPlayerPropCollision(this._propsState, this._playerState);
-    const propEvents = handlePropCollisions(propHits, this._playerState);
-    for (const ev of propEvents) {
-      if (ev.type === 'solid_bounce') {
-        eventBus.emit('spawnParticles', { x: ev.x, y: ev.y, type: 'shard', count: 2 });
-      } else if (ev.type === 'hazard_hit') {
-        // Crystal hazard: apply damage respecting invuln/ghost frames/damageResist
-        if (this._playerState.invulnTimer <= 0 && this._playerState.ghostFrameTimer <= 0) {
-          const dmg = Math.ceil((ev.damage ?? 8) * (1 - (this._playerState.damageResist ?? 0)));
-          if (dmg > 0) {
-            this._playerState.hp = Math.max(0, this._playerState.hp - dmg);
-            this._playerState.invulnTimer = CFG.HIT_INVULN;
-            this._playerState.lastHitTimer = 0;
-            eventBus.emit('playerDamaged', { amount: dmg, x: ev.x, y: ev.y });
-            eventBus.emit('spawnParticles', { x: ev.x, y: ev.y, type: 'shard', count: 4 });
-            if (this._playerState.hp <= 0 && !this._death.active) {
-              this._death.trigger();
-            }
-          }
-        }
-      }
-    }
-    updatePropCooldowns(this._propsState, dilatedDt);
-    if (checkNearMissProp(this._propsState, this._playerState)) {
-      const hmResult = processHazardNearMiss(this._playerState, this._scoringState.score);
-      this._scoringState.score      = hmResult.score;
-      this._scoringState.comboLevel = hmResult.comboLevel;
-      this._playerState.comboLevel  = hmResult.comboLevel;
-      eventBus.emit('nearMiss', { x: this._playerState.x, y: this._playerState.y });
-    }
-  }
-
-  /** Updates and applies damage/slow effects from bomb/hazard zones. */
-  private _tickHazardZones(dilatedDt: number): void {
-    const zones = this._waveState.hazardZones;
-    for (let i = zones.length - 1; i >= 0; i--) {
-      zones[i].life -= dilatedDt;
-      zones[i].phase += dilatedDt;
-      if (zones[i].life <= 0) {
-        zones[i] = zones[zones.length - 1];
-        zones.pop();
-        continue;
-      }
-      const dx = this._playerState.x - zones[i].x;
-      const dy = this._playerState.y - zones[i].y;
-      const dist = Math.hypot(dx, dy);
-      if (dist < zones[i].radius) {
-        const prevHp = this._playerState.hp;
-        const effect = applyHazardZoneDamage(
-          this._playerState.hp,
-          this._playerState.slowTimer ?? 0,
-          this._playerState.invulnTimer,
-          this._playerState.ghostFrameTimer,
-          this._playerState.damageResist,
-          zones[i].x,
-          zones[i].y,
-          zones[i].radius,
-          this._playerState.x,
-          this._playerState.y,
-          dilatedDt,
-        );
-        this._playerState.hp = effect.hp;
-        this._playerState.slowTimer = effect.slowTimer;
-        this._playerState.slowStrength = effect.slowStrength;
-        if (prevHp !== effect.hp) {
-          this._playerState.lastHitTimer = 0;
-        }
-        if (this._playerState.hp <= 0 && !this._death.active) {
-          this._death.trigger();
-        }
-      }
-    }
-  }
-
-  /** Ticks per-biome hazard zones (heat cracks, corruption). Delegates to BiomeSystem. */
-  private _tickBiomeHazards(dilatedDt: number): void {
-    this._biomeSystem.tick(dilatedDt, this._playerState, this._death);
-  }
-
-  /** Returns true if enemies array was modified. */
-  private _tickEnemies(dilatedDt: number): boolean {
-    let changed = false;
-    // Repopulate scratch array in place — same instance used by _tickScraps (both run within one frame)
-    this._trailScratch.length = this._trailState.count;
-    for (let i = 0; i < this._trailState.count; i++) {
-      this._trailScratch[i] = getTrailPoint(this._trailState, i);
-    }
-    const trailPts = this._trailScratch;
-
-    for (let i = this._enemies.length - 1; i >= 0; i--) {
-      const enemy = this._enemies[i];
-      if (!enemy.alive) {
-        this._enemies[i] = this._enemies[this._enemies.length - 1];
-        this._enemies.pop();
-        changed = true;
-        continue;
-      }
-      const result = updateEnemy(
-        enemy,
-        this._playerState,
-        dilatedDt,
-        this._gameClock,
-        this._ctx.camera.isVisible,
-        trailPts,
-      );
-
-      // Check for bomb drop and spawn hazard zone
-      if (enemy._dropBomb) {
-        enemy._dropBomb = false;
-        this._waveState.hazardZones.push({
-          x: enemy.x,
-          y: enemy.y,
-          life: CFG.BOMB_ZONE_DURATION,
-          radius: CFG.BOMB_ZONE_RADIUS,
-          phase: 0,
-        });
-      }
-      // Core boss: spawn minion ring when flag is set
-      if (enemy._bossSpawnMinion) {
-        enemy._bossSpawnMinion = false;
-        this._spawnMinionRing(enemy.x, enemy.y, 6);
-        changed = true;
-      }
-      checkEnemyPropCollision(this._propsState, enemy);
-      if (result.despawned) {
-        // swap-and-pop
-        this._enemies[i] = this._enemies[this._enemies.length - 1];
-        this._enemies.pop();
-        changed = true;
-      }
-    }
-    return changed;
-  }
-
-  /** Returns true if any enemies were removed (collision kill or near-miss scrap). */
-  private _tickCombat(rawDt: number, dilatedDt: number): boolean {
-    let changed = false;
-
-    // --- Near-miss + collision (before trail update so encirclement doesn't remove enemies first) ---
-    for (let i = this._enemies.length - 1; i >= 0; i--) {
-      const enemy = this._enemies[i];
-      if (!enemy.alive) continue;
-
-      if (checkNearMiss(this._playerState, enemy)) {
-        const oldCombo = this._scoringState.comboLevel;
-        const nmResult = processNearMiss(this._playerState, enemy, this._scoringState.score);
-        this._scoringState.score      = nmResult.score;
-        this._scoringState.comboLevel = nmResult.comboLevel;
-        this._playerState.comboLevel  = nmResult.comboLevel;
-        updateRunStats(this._scoringState.runStats, { type: 'near_miss', comboLevel: oldCombo });
-        this._scoringState.lastEngagementTimer = 0;  // near-miss counts as engagement
-        // Combo heal at milestones 3/5/8 (intentional: also fires from near-miss like original)
-        this._playerState.hp = applyComboHeal(
-          oldCombo, nmResult.comboLevel,
-          this._playerState.comboHeal,
-          this._playerState.hp, this._playerState.maxHp,
-        );
-        this._checkComboMilestone(oldCombo, nmResult.comboLevel);
-        // Near-miss scrap spawn: 35% chance (matches original game.js)
-        if (Math.random() < CFG.SCRAP_NEAR_MISS_CHANCE) {
-          this._waveState.scraps.push({ x: enemy.x, y: enemy.y, life: 15, type: 'scrap' });
-        }
-        eventBus.emit('nearMiss', { x: enemy.x, y: enemy.y });
-      }
-
-      if (checkPlayerEnemyCollision(this._playerState, enemy)) {
-        const dmgResult = processPlayerHit(this._playerState, enemy, this._waveState.waveIndex);
-        if (dmgResult.type === 'hit') {
-          eventBus.emit('playerDamaged', {
-            amount: dmgResult.finalDamage,
-            x: this._playerState.x,
-            y: this._playerState.y,
-          });
-        }
-        if (this._playerState.hp <= 0 && !this._death.active) {
-          this._death.trigger();
-        }
-        changed = true;
-      }
-    }
-
-    // Per-frame player timers
-    updateNearMissStreak(this._playerState, dilatedDt);
-    applyHpRegen(this._playerState, dilatedDt);
-
-    return changed;
-  }
-
-  /** Returns true if any enemies were killed (encircle or trail burn). */
-  private _tickTrail(dilatedDt: number): boolean {
-    let changed = false;
-    const loopResult = updateTrail(this._trailState, this._playerState, this._enemies, dilatedDt);
-
-    if (loopResult !== null) {
-      // Boss non-lethal chip hit: shake, sparks, knockback, EventLog
-      for (const hitBoss of loopResult.hitBosses) {
-        const remaining = (hitBoss as EnemyState).health ?? 0;
-        this._screenFx.shake(5, 0.2);
-        this._particles.spawn(hitBoss.x, hitBoss.y, 0x44FFCC, 18, {
-          type: 'spark',
-          vxMin: -200, vxMax: 200,
-          vyMin: -200, vyMax: 200,
-          lifeMin: 0.2, lifeMax: 0.35,
-        });
-        // Knockback: push boss away from encirclement center (player position)
-        const kbDx = (hitBoss as EnemyState).x - this._playerState.x;
-        const kbDy = (hitBoss as EnemyState).y - this._playerState.y;
-        const kbDist = Math.hypot(kbDx, kbDy) || 1;
-        (hitBoss as EnemyState).vx += (kbDx / kbDist) * CFG.BOSS_CHIP_KNOCKBACK;
-        (hitBoss as EnemyState).vy += (kbDy / kbDist) * CFG.BOSS_CHIP_KNOCKBACK;
-        eventBus.emit('eventLog', { text: `BOSS HIT! ${remaining} HP left`, color: '#44FFCC' });
-      }
-
-      const killCount = loopResult.killedEnemies.length;
-      if (killCount > 0) {
-        const oldCombo       = this._scoringState.comboLevel;
-        const encircleResult = computeEncircleOutcome(
-          killCount,
-          this._scoringState.comboLevel,
-          getEffectiveScoreMult(this._playerState),
-          this._playerState.encircleScoreBonus,
-        );
-        addScore(this._scoringState, encircleResult.scoreDelta);
-        this._scoringState.comboLevel = encircleResult.comboLevel;
-        this._playerState.comboLevel  = encircleResult.comboLevel;
-        updateRunStats(this._scoringState.runStats, { type: 'encircle', killCount, comboLevel: oldCombo });
-        this._scoringState.lastEngagementTimer = 0;  // encirclement kill counts as engagement
-        // Combo heal at milestones (intentional improvement: also fires from encirclement)
-        this._playerState.hp = applyComboHeal(
-          oldCombo, encircleResult.comboLevel,
-          this._playerState.comboHeal,
-          this._playerState.hp, this._playerState.maxHp,
-        );
-        eventBus.emit('scoreChanged', { score: this._scoringState.score, delta: encircleResult.scoreDelta });
-        this._checkComboMilestone(oldCombo, encircleResult.comboLevel);
-
-        // Chain Lightning: chain from each encirclement kill to nearest surviving enemy (world.js:397-424)
-        if (this._playerState.chainLightning) {
-          const { chains, scoreGained } = applyChainLightning(
-            loopResult.killedEnemies as EnemyState[],
-            this._enemies,
-            getEffectiveScoreMult(this._playerState),
-          );
-          if (scoreGained > 0) addScore(this._scoringState, scoreGained);
-          for (const c of chains) {
-            // Arc: dense sparks along the chain line (src→dst) + burst at midpoint
-            const steps = 5;
-            for (let s = 0; s <= steps; s++) {
-              const t = s / steps;
-              const jx = (c.dstX - c.srcX) * t + c.srcX + (Math.random() - 0.5) * 24;
-              const jy = (c.dstY - c.srcY) * t + c.srcY + (Math.random() - 0.5) * 24;
-              this._particles.spawn(jx, jy, 0xAAEEFF, 3, {
-                type: 'spark', vxMin: -60, vxMax: 60, vyMin: -60, vyMax: 60, lifeMin: 0.1, lifeMax: 0.22,
-              });
-            }
-            // Bright burst at midpoint
-            this._particles.spawn(c.midX, c.midY, 0xFFFFFF, 12, {
-              type: 'spark', vxMin: -120, vxMax: 120, vyMin: -120, vyMax: 120, lifeMin: 0.15, lifeMax: 0.3,
-            });
-            this._ctx.audioManager.play('near_miss');  // reuse near_miss sfx as chain audio cue
-          }
-        }
-      }
-
-      if (loopResult.encircleCount > 0) {
-        eventBus.emit('encirclement', {
-          count: loopResult.encircleCount,
-          x:     loopResult.polygon[0].x,
-          y:     loopResult.polygon[0].y,
-        });
-      }
-
-      for (const dead of loopResult.killedEnemies) {
-        const deathEvent: EnemyDeathEvent = {
-          type:    (dead as EnemyState).type,
-          x:       dead.x,
-          y:       dead.y,
-          isElite: false,
-        };
-        eventBus.emit('enemyKilled', {
-          x: dead.x, y: dead.y,
-          type: (dead as EnemyState).type,
-          isElite: deathEvent.isElite,
-        });
-        if ((dead as EnemyState).type === 'splitter') {
-          this._spawnSplitChasers(dead.x, dead.y);
-        }
-        changed = true;
-      }
-
-      // Remove dead enemies from array (swap-and-pop)
-      for (let i = this._enemies.length - 1; i >= 0; i--) {
-        if (!this._enemies[i].alive) {
-          this._enemies[i] = this._enemies[this._enemies.length - 1];
-          this._enemies.pop();
-        }
-      }
-    }
-
-    // Trail Burn: enemies touching the trail take damage (game.js:717-743)
-    const burnResults = applyTrailBurn(this._playerState, this._enemies, this._trailState, dilatedDt);
-    for (const r of burnResults) {
-      if (r.enemyDied) {
-        addScore(this._scoringState, 50 * getEffectiveScoreMult(this._playerState));
-        // Intentional improvement: burn kills increment combo by +1 (half of encircle's +2)
-        const oldCombo = this._scoringState.comboLevel;
-        const newCombo = Math.min(CFG.MAX_COMBO, oldCombo + 1);
-        this._scoringState.comboLevel = newCombo;
-        this._playerState.comboLevel  = newCombo;
-        this._playerState.hp = applyComboHeal(oldCombo, newCombo, this._playerState.comboHeal, this._playerState.hp, this._playerState.maxHp);
-        this._checkComboMilestone(oldCombo, newCombo);
-        eventBus.emit('eventLog', { text: 'BURN!', color: '#FF6600' });
-        if (r.enemyType === 'splitter') this._spawnSplitChasers(r.ex, r.ey);
-      }
-      eventBus.emit('spawnParticles', { x: r.ex, y: r.ey, type: 'spark', count: 4, color: 0xFF6600 });
-      if (r.enemyDied) changed = true;
-    }
-
-    // Sweep dead enemies from trail burn (swap-and-pop)
-    if (burnResults.some(r => r.enemyDied)) {
-      for (let i = this._enemies.length - 1; i >= 0; i--) {
-        if (!this._enemies[i].alive) {
-          this._enemies[i] = this._enemies[this._enemies.length - 1];
-          this._enemies.pop();
-        }
-      }
-    }
-
-    return changed;
   }
 
   private _tickRenderers(dilatedDt: number): void {

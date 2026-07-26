@@ -3,7 +3,6 @@
 
 import { CFG } from '@core/config';
 import { dist, lerp } from '@core/utils';
-import { type Rng, randFloat } from '@core/rng';
 import type { EnemyType } from '@core/config';
 
 // ── Interfaces ─────────────────────────────────────────────────
@@ -324,8 +323,8 @@ export function computeHordeCount(waveIndex: number): number {
   return Math.min(CFG.HORDE_MAX_COUNT, CFG.HORDE_BASE_COUNT + Math.floor(waveIndex * CFG.HORDE_WAVE_GROWTH));
 }
 
-export function rollHordeTrigger(rng: Rng): number {
-  return randFloat(rng, CFG.HORDE_TRIGGER_MIN, CFG.HORDE_TRIGGER_MAX);
+export function rollHordeTrigger(rng: () => number): number {
+  return CFG.HORDE_TRIGGER_MIN + (CFG.HORDE_TRIGGER_MAX - CFG.HORDE_TRIGGER_MIN) * rng();
 }
 
 export function shouldTriggerHorde(waveTimer: number, combatDuration: number, hordeTrigger: number): boolean {

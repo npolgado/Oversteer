@@ -20,6 +20,7 @@ export function updateEnemy(
   gameClock: number,
   isVisible: (x: number, y: number, margin: number) => boolean,
   trailPoints?: Array<{ x: number; y: number }> | null,
+  rng: () => number = Math.random,
 ): EnemyUpdateResult {
   // Declare per-type flags
   let wantDrift = false;
@@ -70,8 +71,8 @@ export function updateEnemy(
     // Flank side switching and striking
     state.flankSwitchTimer = (state.flankSwitchTimer ?? 3) - dt;
     if (state.flankSwitchTimer <= 0) {
-      state.flankSide = Math.random() < 0.5 ? 1 : -1;
-      state.flankSwitchTimer = 3 + Math.random() * 2;
+      state.flankSide = rng() < 0.5 ? 1 : -1;
+      state.flankSwitchTimer = 3 + rng() * 2;
     }
     const distToPlayer = dist(state.x, state.y, player.x, player.y);
     const pSpeed = Math.hypot(player.vx, player.vy);
@@ -109,14 +110,14 @@ export function updateEnemy(
       } else {
         // Drift ended, set cooldown before next drift
         wantDrift = false;
-        state.driftToggleTimer = 1.5 + Math.random() * 1.5;
+        state.driftToggleTimer = 1.5 + rng() * 1.5;
       }
     } else {
       // Not drifting — count down until next drift
       state.driftToggleTimer = (state.driftToggleTimer ?? 2) - dt;
       if (state.driftToggleTimer <= 0) {
         wantDrift = true;
-        state.driftDuration = 1 + Math.random() * 1.5;
+        state.driftDuration = 1 + rng() * 1.5;
       }
     }
   }
@@ -160,9 +161,13 @@ export function updateEnemy(
   }
 
   // Despawn conditions
-  if (state.age >= state.lifespan) return { despawned: true };
-  if (state.offscreenTimer > CFG.ENEMY_OFFSCREEN_DESPAWN) return { despawned: true };
-  if (dist(state.x, state.y, player.x, player.y) > CFG.ENEMY_FAR_DESPAWN_DIST) return { despawned: true };
+  // Bosses leave the field only via death (HP depletion / encirclement), never generic lifecycle.
+  // NOTE: not in original — Phase 4.9 fix: prevents "defeat by driving away" (boss despawn → bossKilled).
+  if (state.type !== 'boss') {
+    if (state.age >= state.lifespan) return { despawned: true };
+    if (state.offscreenTimer > CFG.ENEMY_OFFSCREEN_DESPAWN) return { despawned: true };
+    if (dist(state.x, state.y, player.x, player.y) > CFG.ENEMY_FAR_DESPAWN_DIST) return { despawned: true };
+  }
 
   return { despawned: false };
 }

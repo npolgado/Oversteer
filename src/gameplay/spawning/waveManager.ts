@@ -3,7 +3,6 @@
 
 import { CFG, type EnemyType } from '@core/config';
 import { clamp } from '@core/utils';
-import { makeRng } from '@core/rng';
 import { rollHordeTrigger, computeHordeCount, shouldTriggerHorde, type ScrapPickup, type BoostZone, getEnemyPool, shouldSpawnElite, computeWaveTiming, computeWaveSpawnBatch } from '@gameplay/pureLogic';
 import type { Prop } from '@gameplay/world/propsSystem';
 
@@ -111,7 +110,7 @@ export function makeWaveState(): WaveState {
 
 // ── startWave ────┐─────────┐───────────┐─────────
 
-export function startWave(state: WaveState): void {
+export function startWave(state: WaveState, rng: () => number = Math.random): void {
   state.waveIndex++;
   const timing = computeWaveTiming(state.waveIndex);
   state.currentFirstSpawn = timing.firstSpawn;
@@ -133,7 +132,7 @@ export function startWave(state: WaveState): void {
   state.boostZoneTimer = CFG.BOOST_ZONE_SPAWN_INTERVAL;
   state.hordeTriggered = false;
   state.hordeSpawnTimer = 0;
-  state.hordeTrigger = rollHordeTrigger(makeRng(Date.now() + Math.random() * 0xFFFFFF | 0));
+  state.hordeTrigger = rollHordeTrigger(rng);
   // Boss wave setup
   if (isBossWave(state.waveIndex)) {
     state.bossActive = true;
@@ -181,6 +180,7 @@ function pickEnemyType(
   score: number,
   waveIndex: number,
   weightMult: Partial<Record<EnemyType, number>> = {},
+  rng: () => number = Math.random,
 ): EnemyType {
   const base = getEnemyPool(score);
   if (base !== _cachedBase || weightMult !== _cachedMult) {
@@ -189,9 +189,9 @@ function pickEnemyType(
     _cachedPool = _buildWeightedPool(base, weightMult);
   }
   const pool = _cachedPool.length > 0 ? _cachedPool : (base as EnemyType[]);
-  const type = pool[Math.floor(Math.random() * pool.length)];
+  const type = pool[Math.floor(rng() * pool.length)];
   // Elite override: 12% chance from wave 4+
-  if (waveIndex >= 4 && Math.random() < 0.12) return 'elite';
+  if (waveIndex >= 4 && rng() < 0.12) return 'elite';
   return type;
 }
 
@@ -204,6 +204,7 @@ export function updateWave(
   enemyCount: number,
   bossAlive = false,
   enemyWeightMult: Partial<Record<EnemyType, number>> = {},
+  rng: () => number = Math.random,
 ): WaveEvent[] {
   const events: WaveEvent[] = [];
 
@@ -260,11 +261,11 @@ export function updateWave(
         const count = computeHordeCount(state.waveIndex);
         for (let b = 0; b < batchCount; b++) {
           const requests: SpawnRequest[] = [];
-          const baseAngle = Math.random() * Math.PI * 2;
+          const baseAngle = rng() * Math.PI * 2;
           for (let i = 0; i < count; i++) {
             const t = count > 1 ? (i / (count - 1) - 0.5) : 0;
             const angle = baseAngle + t * CFG.HORDE_ARC_RAD;
-            requests.push({ type: pickEnemyType(score, state.waveIndex, enemyWeightMult), count: 1, angle, distance: CFG.HORDE_SPAWN_DIST });
+            requests.push({ type: pickEnemyType(score, state.waveIndex, enemyWeightMult, rng), count: 1, angle, distance: CFG.HORDE_SPAWN_DIST });
           }
           events.push({ type: 'horde', spawnRequests: requests, count });
         }
@@ -276,10 +277,10 @@ export function updateWave(
     if (state.spawnTimer <= 0) {
       // NOTE: not in original — emit a batch of enemies per tick at higher waves
       const batch = computeWaveSpawnBatch(state.waveIndex);
-      const baseAngle = Math.random() * Math.PI * 2;
+      const baseAngle = rng() * Math.PI * 2;
       const requests: SpawnRequest[] = [];
       for (let b = 0; b < batch; b++) {
-        const type = pickEnemyType(score, state.waveIndex, enemyWeightMult);
+        const type = pickEnemyType(score, state.waveIndex, enemyWeightMult, rng);
         // Spread batch members at slightly different angles to avoid perfect overlap
         const angle = baseAngle + (b / Math.max(1, batch)) * Math.PI * 2;
         requests.push({ type, count: 1, angle, distance: 550 });
@@ -293,8 +294,8 @@ export function updateWave(
     if (state.burstQueue > 0) {
       state.burstDelay -= dt;
       if (state.burstDelay <= 0) {
-        const type = pickEnemyType(score, state.waveIndex, enemyWeightMult);
-        const angle = Math.random() * Math.PI * 2;
+        const type = pickEnemyType(score, state.waveIndex, enemyWeightMult, rng);
+        const angle = rng() * Math.PI * 2;
         events.push({
           type: 'spawn',
           requests: [{ type, count: 1, angle, distance: 550 }],
@@ -377,6 +378,7 @@ export function tickScrapSpawn(
   playerX: number,
   playerY: number,
   props: Prop[] = [], // NOTE: not in original — obstacle avoidance
+  rng: () => number = Math.random,
 ): ScrapSpawnResult | null {
   if (state.phase !== 'combat') return null;
   state.scrapTimer -= dt;
@@ -386,8 +388,8 @@ export function tickScrapSpawn(
   // NOTE: not in original — generate 5 candidates, pick first clear of solid props
   const candidates: Array<{ x: number; y: number }> = [];
   for (let attempt = 0; attempt < 5; attempt++) {
-    const dist = 220 + Math.random() * 120;
-    const angle = Math.random() * Math.PI * 2;
+    const dist = 220 + rng() * 120;
+    const angle = rng() * Math.PI * 2;
     candidates.push({
       x: clamp(playerX + Math.cos(angle) * dist, 40, CFG.WORLD_W - 40),
       y: clamp(playerY + Math.sin(angle) * dist, 40, CFG.WORLD_H - 40),
@@ -402,6 +404,7 @@ export function tickBoostZoneSpawn(
   playerX: number,
   playerY: number,
   props: Prop[] = [], // NOTE: not in original — obstacle avoidance
+  rng: () => number = Math.random,
 ): void {
   if (state.phase !== 'combat') return;
   state.boostZoneTimer -= dt;
@@ -411,8 +414,8 @@ export function tickBoostZoneSpawn(
   // NOTE: not in original — generate 5 candidates, pick first clear of solid props
   const candidates: Array<{ x: number; y: number }> = [];
   for (let attempt = 0; attempt < 5; attempt++) {
-    const spawnDist = 200 + Math.random() * 200;
-    const angle = Math.random() * Math.PI * 2;
+    const spawnDist = 200 + rng() * 200;
+    const angle = rng() * Math.PI * 2;
     candidates.push({
       x: clamp(playerX + Math.cos(angle) * spawnDist, 60, CFG.WORLD_W - 60),
       y: clamp(playerY + Math.sin(angle) * spawnDist, 60, CFG.WORLD_H - 60),

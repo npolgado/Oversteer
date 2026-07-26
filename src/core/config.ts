@@ -312,6 +312,11 @@ export interface CfgShape {
   BOSS_MINION_MAX: number;         // max total minions per boss fight
   BOSS_VULNERABLE_DUR: number;
   BOSS_INVULN_DUR: number;
+  BOSS_INVULN_WARN_T: number;      // NOTE: not in original — Core pre-vulnerable gold-flicker window
+  BOSS_RECOVER_DUR: number;        // NOTE: not in original — Pursuer stagger/punish window after charge
+  BOSS_REFLECTOR_PAUSE_DUR: number; // NOTE: not in original — Reflector center-pause vulnerable window
+  BOSS_REFLECTOR_VULN_R: number;   // NOTE: not in original — proximity to center that triggers pause
+  BOSS_CHIP_KNOCKBACK: number;     // NOTE: not in original — impulse applied on successful encirclement chip
   BOSS_SPAWN_DIST_MIN: number;     // min distance from player on boss spawn
   BOSS_SPAWN_DIST_RANGE: number;   // additional random range above min
   BOSS_WAVE_INTERVAL: number;      // every N waves is a boss wave

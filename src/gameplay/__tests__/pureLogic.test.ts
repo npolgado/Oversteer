@@ -203,7 +203,7 @@ describe('shouldTriggerHorde', () => {
 describe('rollHordeTrigger', () => {
   it('seeded roll stays within range', () => {
     const rng = makeRng(1234);
-    const roll = rollHordeTrigger(rng);
+    const roll = rollHordeTrigger(rng.next);
     expect(roll).toBeGreaterThanOrEqual(0.60);
     expect(roll).toBeLessThanOrEqual(0.85);
   });
