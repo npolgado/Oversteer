@@ -50,11 +50,14 @@ export class PickupRenderer {
       }
     }
 
-    // Draw pickups via registry (each type defines its own draw function)
+    // Draw pickups via registry (each type defines its own draw function).
+    // Shared sine pulse (same cadence as boost zones above) drives contrast on icon glow/outline
+    // so pickups stay readable against busy biome backgrounds. NOTE: not in original (OVR-4).
+    const pickupPulse = 0.5 + 0.5 * Math.sin(Date.now() / 300);
     for (const s of scraps) {
       const def = getPickupDef((s.type ?? 'scrap') as PickupType);
       if (def) {
-        def.draw(this._g, s.x, s.y);
+        def.draw(this._g, s.x, s.y, pickupPulse);
       } else {
         // Unknown pickup type — draw magenta marker so the missing registry entry is visible during playtest
         // Mirror any new PickupType added to pureLogic.ts in pickupRegistry.ts
