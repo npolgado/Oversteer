@@ -337,6 +337,18 @@ describe('applyChainLightning', () => {
     expect(chains[0].midX).toBeCloseTo(50);
     expect(chains[0].midY).toBeCloseTo(0);
   });
+
+  it('returns arc endpoint coords for bolt FX', () => {
+    const dead = makeEnemyState('chaser', 0, 0, 0);
+    dead.alive = false;
+    const survivor = makeEnemyState('chaser', 100, 0, 0);
+    survivor.health = 2;
+    const { chains } = applyChainLightning([dead], [survivor], 1);
+    expect(chains[0].fromX).toBeCloseTo(0);
+    expect(chains[0].fromY).toBeCloseTo(0);
+    expect(chains[0].toX).toBeCloseTo(100);
+    expect(chains[0].toY).toBeCloseTo(0);
+  });
 });
 
 // ── processNearMiss ─────────────────────────────────────────────

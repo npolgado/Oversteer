@@ -38,6 +38,17 @@ interface Ring {
   color: number;
 }
 
+// NOTE: not in original — jagged lightning-bolt line FX (e.g. Chain Lightning upgrade arc).
+interface Bolt {
+  x1: number; y1: number;
+  x2: number; y2: number;
+  /** Perpendicular jitter offsets for each interior joint, precomputed at spawn for a stable zigzag. */
+  jitter: number[];
+  life: number;
+  maxLife: number;
+  color: number;
+}
+
 const MAX_SKIDS = 600;
 
 export interface SpawnOpts {
@@ -52,6 +63,7 @@ export class ParticleSystem {
   private _particlesLayer: Container;
   private _particles: Particle[] = [];
   private _rings: Ring[] = [];
+  private _bolts: Bolt[] = []; // NOTE: not in original
   private _skidMarks: SkidMark[] = new Array(MAX_SKIDS).fill(null).map(() => ({
     x: 0, y: 0, color: 0, alpha: 0, age: 999, angle: 0, width: 14,
   }));
@@ -64,6 +76,7 @@ export class ParticleSystem {
   private _smokeGfx: Graphics;
   private _ringGfx: Graphics;
   private _skidGfx: Graphics;
+  private _boltGfx: Graphics; // NOTE: not in original
 
   constructor(
     particlesLayer: Container,
@@ -91,6 +104,8 @@ export class ParticleSystem {
     this._particlesLayer.addChild(this._smokeGfx);
     this._ringGfx = new Graphics();
     this._particlesLayer.addChild(this._ringGfx);
+    this._boltGfx = new Graphics(); // NOTE: not in original
+    this._particlesLayer.addChild(this._boltGfx);
   }
 
   spawn(
@@ -162,6 +177,15 @@ export class ParticleSystem {
     this._rings.push({ x, y, radius: 0, maxRadius: 40, life: 0.2, maxLife: 0.2, color });
   }
 
+  // NOTE: not in original — jagged bolt line between two points (e.g. Chain Lightning arc).
+  addBolt(x1: number, y1: number, x2: number, y2: number, color: number): void {
+    const JOINTS = 4;
+    const JITTER_PX = 14;
+    const jitter: number[] = [];
+    for (let i = 0; i < JOINTS; i++) jitter.push((Math.random() * 2 - 1) * JITTER_PX);
+    this._bolts.push({ x1, y1, x2, y2, jitter, life: 0.22, maxLife: 0.22, color });
+  }
+
   addSkid(x: number, y: number, color: number, alpha: number, angle = 0, width = 14): void {
     this._skidMarks[this._skidHead] = { x, y, color, alpha, age: 0, angle, width };
     this._skidHead = (this._skidHead + 1) % MAX_SKIDS;
@@ -213,10 +237,21 @@ export class ParticleSystem {
     // Skid marks age
     for (let i = 0; i < this._skidCount; i++) this._skidMarks[i].age += dt;
 
+    // Bolts (swap-and-pop) — NOTE: not in original
+    for (let i = this._bolts.length - 1; i >= 0; i--) {
+      const b = this._bolts[i];
+      b.life -= dt;
+      if (b.life <= 0) {
+        this._bolts[i] = this._bolts[this._bolts.length - 1];
+        this._bolts.pop();
+      }
+    }
+
     // Render layers — each clears and redraws its persistent Graphics.
     this._renderSmoke();
     this._renderRings();
     this._renderSkids();
+    this._renderBolts();
   }
 
   // NOTE: not in original — renders all smoke/fallback particles into one persistent Graphics per frame.
@@ -275,6 +310,34 @@ export class ParticleSystem {
     }
   }
 
+  // NOTE: not in original — renders jagged bolt lines with a glow pass + bright core pass.
+  private _renderBolts(): void {
+    this._boltGfx.clear();
+    for (const b of this._bolts) {
+      const alpha = b.life / b.maxLife;
+      const dx = b.x2 - b.x1;
+      const dy = b.y2 - b.y1;
+      const len = Math.hypot(dx, dy) || 1;
+      // Perpendicular unit vector for jitter offsets.
+      const nx = -dy / len;
+      const ny = dx / len;
+      const joints = b.jitter.length;
+      const points: number[] = [b.x1, b.y1];
+      for (let i = 1; i <= joints; i++) {
+        const t = i / (joints + 1);
+        const px = b.x1 + dx * t + nx * b.jitter[i - 1] * alpha;
+        const py = b.y1 + dy * t + ny * b.jitter[i - 1] * alpha;
+        points.push(px, py);
+      }
+      points.push(b.x2, b.y2);
+
+      // Glow pass: wide, low-alpha.
+      this._boltGfx.poly(points, false).stroke({ color: b.color, width: 6, alpha: alpha * 0.35 });
+      // Core pass: thin, bright.
+      this._boltGfx.poly(points, false).stroke({ color: b.color, width: 2, alpha });
+    }
+  }
+
   clear(): void {
     // Remove all GPU-batched sprites before clearing the array.
     for (const p of this._particles) {
@@ -282,9 +345,11 @@ export class ParticleSystem {
     }
     this._particles = [];
     this._rings = [];
+    this._bolts = [];
     this._smokeGfx.clear();
     this._ringGfx.clear();
     this._skidGfx.clear();
+    this._boltGfx.clear();
     this._skidHead = 0;
     this._skidCount = 0;
   }
@@ -294,6 +359,7 @@ export class ParticleSystem {
     this._smokeGfx.destroy();
     this._ringGfx.destroy();
     this._skidGfx.destroy();
+    this._boltGfx.destroy();
     this._spriteContainer.destroy();
   }
 }

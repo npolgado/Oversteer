@@ -1249,7 +1249,10 @@ export class GameLoop {
           );
           if (scoreGained > 0) addScore(this._scoringState, scoreGained);
           for (const c of chains) {
-            eventBus.emit('spawnParticles', { x: c.midX, y: c.midY, type: 'spark', count: 6, color: 0x88CCFF });
+            // NOTE: not in original — dedicated arc line + zap SFX (original only had the spark burst).
+            this._particles.addBolt(c.fromX, c.fromY, c.toX, c.toY, 0x88CCFF);
+            this._particles.spawn(c.midX, c.midY, 0x88CCFF, 6, { type: 'spark' });
+            this._ctx.audioManager.play('chain_zap');
           }
         }
       }
