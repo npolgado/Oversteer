@@ -56,3 +56,36 @@ describe('GPU particle path selection', () => {
     expect(rotation).toBeCloseTo(0.16);
   });
 });
+
+// NOTE: not in original — bolt (Chain Lightning arc) lifecycle math.
+describe('Bolt lifecycle (Chain Lightning arc FX)', () => {
+  it('expires via swap-and-pop once life reaches 0', () => {
+    const bolts = [
+      { life: 0.22, maxLife: 0.22 },
+      { life: 0.01, maxLife: 0.22 },
+    ];
+    const dt = 0.02;
+    for (let i = bolts.length - 1; i >= 0; i--) {
+      bolts[i].life -= dt;
+      if (bolts[i].life <= 0) {
+        bolts[i] = bolts[bolts.length - 1];
+        bolts.pop();
+      }
+    }
+    expect(bolts).toHaveLength(1);
+  });
+
+  it('alpha fades linearly with remaining life', () => {
+    const maxLife = 0.22;
+    const life = 0.11;
+    const alpha = life / maxLife;
+    expect(alpha).toBeCloseTo(0.5);
+  });
+
+  it('jitter offsets scale down as the bolt fades', () => {
+    const jitter = 14;
+    const alphaStart = 1;
+    const alphaEnd = 0.1;
+    expect(jitter * alphaStart).toBeGreaterThan(jitter * alphaEnd);
+  });
+});

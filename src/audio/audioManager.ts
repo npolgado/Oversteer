@@ -77,8 +77,8 @@ const audioManager = {
       const soundCount = Object.keys(this.sounds).length;
       const ctxState = this.ctx?.state ?? 'null';
       const gainOk = this.masterGain != null;
-      const summary = `ctx=${ctxState}  sounds=${soundCount}/7  masterGain=${gainOk ? 'live' : 'null'}  sfxVol=${this.sfxVolume}  musicVol=${this.musicVolume}  muted=${this.muted}`;
-      if (soundCount < 7 || !gainOk) {
+      const summary = `ctx=${ctxState}  sounds=${soundCount}/8  masterGain=${gainOk ? 'live' : 'null'}  sfxVol=${this.sfxVolume}  musicVol=${this.musicVolume}  muted=${this.muted}`;
+      if (soundCount < 8 || !gainOk) {
         logError('audio', `DEGRADED — ${summary}`);
       } else {
         log('audio', `OK — ${summary}`);
@@ -191,6 +191,17 @@ const audioManager = {
         b[i] = (Math.sin(2 * Math.PI * 1200 * t) * 0.2 + (Math.random() * 2 - 1) * 0.05) * env * env;
       }
     }, 0.08));
+
+    // chain_zap: bright descending buzz + crackle, 0.12s (Chain Lightning arc cue)
+    this.sounds['chain_zap'] = new Howl(wav((b, sr, len) => {
+      for (let i = 0; i < len; i++) {
+        const t = i / sr, env = 1 - t / 0.12;
+        const freq = 1600 * Math.pow(0.2, t / 0.12); // fast downward sweep
+        const buzz = Math.sin(2 * Math.PI * freq * t) > 0 ? 0.35 : -0.35; // square = buzzy, distinct from sine sweeps
+        const crackle = (Math.random() * 2 - 1) * 0.15;
+        b[i] = (buzz + crackle) * env * env;
+      }
+    }, 0.12));
 
     // boss_sting: deep descending chord + punch (1.2s)
     this.sounds['boss_sting'] = new Howl(wav((b, sr, len) => {
